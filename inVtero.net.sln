@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.23107.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVtero.net", "inVtero.net\inVtero.net.csproj", "{BBA65FAD-57B1-4B78-B262-E542A88440D6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "quickdumps", "quickdumps\quickdumps.csproj", "{BAA7175A-C661-40F9-833B-DDDE1826A1F2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Debug|x64.ActiveCfg = Debug|x64
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Debug|x64.Build.0 = Debug|x64
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Release|x64.ActiveCfg = Release|x64
+		{BBA65FAD-57B1-4B78-B262-E542A88440D6}.Release|x64.Build.0 = Release|x64
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Debug|x64.ActiveCfg = Debug|x64
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Debug|x64.Build.0 = Debug|x64
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Release|x64.ActiveCfg = Release|x64
+		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(TeamFoundationVersionControl) = preSolution
+		SccNumberOfProjects = 3
+		SccEnterpriseProvider = {4CA58AB2-18FA-4F8D-95D4-32DDF27D184C}
+		SccTeamFoundationServer = https://ktwo.visualstudio.com/defaultcollection
+		SccLocalPath0 = .
+		SccProjectUniqueName1 = inVtero.net\\inVtero.net.csproj
+		SccProjectName1 = inVtero.net
+		SccLocalPath1 = inVtero.net
+		SccProjectUniqueName2 = quickdumps\\quickdumps.csproj
+		SccProjectName2 = quickdumps
+		SccLocalPath2 = quickdumps
+	EndGlobalSection
+EndGlobal
