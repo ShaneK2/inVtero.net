@@ -5,7 +5,7 @@ Virtual Machiene Introspection techniques
 ## quickdumps
 Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
 
-![In Vtero](https://https://github.com/ShaneK2/inVtero.net/tree/master/images/inVtero.jpg)
+![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
 
 
 ### Ideal circumstances
