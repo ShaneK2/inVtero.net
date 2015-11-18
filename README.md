@@ -2,11 +2,10 @@
 Find/Extract processes, hypervisors (including nested) in memory dumps using microarchitechture independent
 Virtual Machiene Introspection techniques
 
-## quickdumps
-Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
-
 ![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
 
+## quickdumps
+Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
 
 ### Ideal circumstances
 The way we initalize our virtual to physical address translation, there are no dependencies on input file format.  Any .DMP,
