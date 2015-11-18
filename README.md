@@ -5,6 +5,9 @@ Virtual Machiene Introspection techniques
 ## quickdumps
 Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
 
+![In Vtero](https://https://github.com/ShaneK2/inVtero.net/tree/master/images/inVtero.jpg)
+
+
 ### Ideal circumstances
 The way we initalize our virtual to physical address translation, there are no dependencies on input file format.  Any .DMP,
 .RAW, .DD should be fine.  There is a big if unfortunatly.  If the underlying capture format uses some form of extents storage
