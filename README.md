@@ -41,12 +41,6 @@ CPU microarchitechtures without any code changes (or I will likely setup some cl
 Either way, brute forcing should be fairly quick.  I try to make the most of multi-core CPU's, so if you have extra cores, 
 they will likely get a workout if your analyzing a huge dump with many VM's.
 
-Roses are <span style="color:red">red</span>, violets are <span style="color:blue">blue</span>.
-
-<p>I like to eat <span class="orange" style="color:white" >oranges</span>.
-
-#pricing-section h3 
-
 Example run from a laptop:
 ```
 
