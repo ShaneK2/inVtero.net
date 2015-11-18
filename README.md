@@ -65,10 +65,17 @@ Data scanned: 34,171,150,654.00 rate: 1,515.000 MB/s
 In the above example, VMWARE's EPTP is at index 14 in it's VMCS.
 
 ### Bugs :(
-* We'll see if I get this one knocked out but right now it's only dumping kernel memory from each layer.  Working on user-space
-        from guest OS VM's. 
+~~* We'll see if I get this one knocked out but right now it's only dumping kernel memory from each layer.  Working on user-space
+        from guest OS VM's.~~ 
+* Lots of TODO's but I'm going to add as soon as possiable.  The main issue right now is that I'm really hestitant to add anything
+   that's OS supplied even if it'd be a huge help.  I think sufficent context is available to avoid adding any logical OS dependencies.
+   I like how Rekal pledges this but it seems their profile archive is very large also, so a bit of both.  
+   There's a bit of cleanup to do still. This is still alpha, but will be activly developing.
+
 * Expand to more known EPTP types so no brute force required
     * Brute force only takes a minute or so though... ;)
+* Going to create a PFN bitmap index to auto-magically determine run's (currently, if your trying to dump/query anything after a run,
+   it will cause problems or be missed etc.  Will be adding this next to ensure we get 100% comprehensive dumps.
 
 ## Goals
 To refrain from using OS logical structures to support memory analysis.  It's likely that most OS layer structures, data,
