@@ -1,0 +1,13 @@
+** Started changelog
+
+** Removed Serial (non parallized code paths)
+
+** Restructured class hierarchy
+
+** Removed RaptorDB in favor of simple protocol-buf
+
+** Generic scanning modes for unknown OS's (VMCS has always been generic)
+
+** Changed error checking, added exceptions 
+
+** 

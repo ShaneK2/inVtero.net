@@ -25,19 +25,20 @@ using System.Threading.Tasks;
 using System.IO.MemoryMappedFiles;
 using System.Diagnostics;
 using System.Collections.Concurrent;
+using System.Threading;
 // Details on this struct can be found here and likely many other sources
 // Microsoft published this origionally on the singularity project's codeplex (along with some other ingerestiVng things)
 //      http://volatility.googlecode.com/svn-history/r2779/branches/scudette/tools/windows/winpmem/executable/Dump.h
 //          //  Microsoft Research Singularity
 //          typedef struct _PHYSICAL_MEMORY_RUN64
 //          {
-//              ULONG64 BasePage;
-//              ULONG64 PageCount;
+//              long64 BasePage;
+//              long64 PageCount;
 //          }
 //          typedef struct _PHYSICAL_MEMORY_DESCRIPTOR64
 //          {
-//              ULONG NumberOfRuns;
-//              ULONG64 NumberOfPages;
+//              long NumberOfRuns;
+//              long64 NumberOfPages;
 //              PHYSICAL_MEMORY_RUN64 Run[1];
 //          }
 //
@@ -52,90 +53,123 @@ namespace inVtero.net
     /// </summary>
     public class Mem : IDisposable
     {
-        public ulong StartOfMemory; // adjust for .DMP headers or something
-        public ulong GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
+        public long StartOfMemory; // adjust for .DMP headers or something
+        public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
-        IDictionary<ulong, ulong> DiscoveredGaps;
+        IDictionary<long, long> DiscoveredGaps;
 
         MemoryMappedViewAccessor mappedAccess;
         MemoryMappedFile mappedFile;
         FileStream mapStream;
-        MemoryDescriptor MD;
+        public MemoryDescriptor MD;
 
         string MemoryDump;
-        ulong FileSize;
+        long FileSize;
 
         const int PAGE_SIZE = 0x1000;
+        static int mindex = 0;
+
+        long MapWindowSize;
+        long MapViewBase;
+        long MapViewSize;
 
         public Mem(String mFile)
         {
             GapScanSize = 0x10000000;
             StartOfMemory = 0;
 
+            MapViewBase = 0;
+            MapViewSize = MapWindowSize = (0x1000 * 0x1000 * 64); // 1G
+
+
             if (File.Exists(mFile))
             {
+
                 MemoryDump = mFile;
-                FileSize = (ulong)new FileInfo(MemoryDump).Length;
+                FileSize = new FileInfo(MemoryDump).Length;
                 MD = new MemoryDescriptor(FileSize);
+
+                MapViewSize = FileSize < MapWindowSize ? FileSize : MapWindowSize;
+
+                var lmindex = Interlocked.Increment(ref mindex);
+
+                var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString();
 
                 mapStream = new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 mappedFile = MemoryMappedFile.CreateFromFile(mapStream,
-                        Path.GetFileNameWithoutExtension(MemoryDump),
+                        mapName,
                         0,
                         MemoryMappedFileAccess.Read,
                         null,
                         HandleInheritability.Inheritable,
                         false);
 
-                DiscoveredGaps = new Dictionary<ulong, ulong>();
-                AddressEnvalope = new ConcurrentDictionary<HARDWARE_ADDRESS_ENTRY, List<AddressX>>();
+                mappedAccess = mappedFile.CreateViewAccessor(
+                    MapViewBase,
+                    MapViewSize,
+                    MemoryMappedFileAccess.Read);
+
+                DiscoveredGaps = new Dictionary<long, long>();
 
             }
         }
 
 
-        public T[] GetValueFromPT<T>(ulong TableRegister, ulong Addr, ref bool Success) where T : struct
+        public long GetPageFromFileOffset(long FileOffset, ref long[] block)
         {
-            var paddr = VirtualToPhysical(TableRegister, Addr, ref Success);
-            if (!Success)
-                return null;
-            var data = GetPageForPhysAddr<T>(paddr);
-            return data;
+            var rv = 0L;
+            var NewMapViewBase = MapViewBase;
+            var NewMapViewSize = MapViewSize;
+
+            var CheckBase = FileOffset / MapViewSize;
+            if (MapViewBase != CheckBase * MapViewSize)
+                NewMapViewBase = CheckBase * MapViewSize;
+
+            var AbsOffset = FileOffset - NewMapViewBase;
+            var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
+
+            try
+            {
+                if (NewMapViewBase != MapViewBase)
+                {
+                    if (NewMapViewBase + MapViewSize > FileSize)
+                        NewMapViewSize = FileSize - NewMapViewBase;
+                    else
+                        NewMapViewSize = MapViewSize;
+
+                    mappedAccess = mappedFile.CreateViewAccessor(
+                        NewMapViewBase,
+                        NewMapViewSize,
+                        MemoryMappedFileAccess.Read);
+
+                    MapViewBase = NewMapViewBase;
+
+                }
+                if(block != null)
+                    UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block);
+
+                rv = mappedAccess.ReadInt64(AbsOffset);
+            }
+            catch (Exception ex)
+            {
+                block = null;
+                throw new MemoryMapWindowFailedException("Unable to map or read into", ex);
+            }
+            return rv;
         }
 
-        // Extract a single page of data from a Virtual location (CR3 translation)
-        public T[] GetVirtualPage<T>(ulong CR3, ulong Addr, ref bool Success) where T : struct
-        {
-            var paddr = VirtualToPhysical(CR3, Addr, ref Success);
-            if (!Success)
-                return null;
-            var data = GetPageForPhysAddr<T>(paddr);
-            return data;
-        }
-
-        // Extract a single page of data from a Virtual location (EPTP & CR3 translation)
-        public T[] GetHyperPage<T>(HARDWARE_ADDRESS_ENTRY eptp, HARDWARE_ADDRESS_ENTRY CR3, ulong Addr, ref bool Success) where T : struct
-        {
-            var paddr = VirtualToPhysical(eptp, CR3, Addr, ref Success);
-            if (!Success)
-                return null;
-            var data = GetPageForPhysAddr<T>(paddr);
-            
-            return data;
-        }
         // Extract a single page of data from a physical address in source dump
         // accout for memory gaps/run layout
         // TODO: Add windowing currently uses naieve single-page-at-a-time view
-        public T[] GetPageForPhysAddr<T>(HARDWARE_ADDRESS_ENTRY PAddr) where T : struct
+        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
         {
-            ulong FileOffset = 0;
             // convert PAddr to PFN
             var PFN = PAddr.NextTable_PFN;
 
             // paranoid android setting
             var Fail = true;
 
-            ulong IndexedPFN = 0;
+            long IndexedPFN = 0;
             for (int i = 0; i < MD.NumberOfRuns; i++)
             {
                 if (PFN >= MD.Run[i].BasePage && PFN < (MD.Run[i].BasePage + MD.Run[i].PageCount))
@@ -148,277 +182,183 @@ namespace inVtero.net
                 IndexedPFN += MD.Run[i].PageCount;
             }
             if (Fail)
-                return null;
+                throw new MemoryRunMismatchException(PAddr.PTE);
 
             // Determine file offset based on indexed/gap adjusted PFN and page size
-            FileOffset = StartOfMemory + (IndexedPFN * PAGE_SIZE);
+            var FileOffset = StartOfMemory + (IndexedPFN * PAGE_SIZE);
 
-            T[] block = null;
-
-            try {
-                block = new T[512];
-                mappedAccess = mappedFile.CreateViewAccessor(
-                    (long)FileOffset,
-                    (long)4096,
-                    MemoryMappedFileAccess.Read);
-
-                mappedAccess.ReadArray(0, block, 0, 512);
-
-            } catch (Exception) {
-                Fail = true;
-            }
-
-            if (Fail)
-                return null;
-
-            return block;
+            // add back in the file offset for possiable exact byte lookup
+            return GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block);
         }
 
-        public ulong GetPFNAtPhysicalAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref bool Success)
+
+        public long GetValueAtPhysicalAddr(HARDWARE_ADDRESS_ENTRY PAddr)
         {
-            var pageData = GetPageForPhysAddr<ulong>(PAddr);
-            if (pageData == null)
-            {
-                Success = false;
-                return 0;
-            }
-            Success = true;
+            long[] block = null;
+            return GetPageForPhysAddr(PAddr, ref block);
 
-            return pageData[PAddr.AddressOffset >> 3] & 0xFFFFFFFFFF000;
-        }
-
-        public T GetValueAtPhysicalAddr<T>(HARDWARE_ADDRESS_ENTRY PAddr, ref bool Success) where T : struct
-        {
-            Success = false;
-            var pageData = GetPageForPhysAddr<T>(PAddr);
-            if (pageData == null)
-                return default(T);
-
-            Success = true;
-            return pageData[PAddr.AddressOffset >> 3];
+            //return pageData[PAddr.AddressOffset >> 3];
         }
 
         // Translates virtual address to physical address  (normal CR3 path)
         // Since Valid & Read access overlap each other for EPT and normal PT go through this path for both
-        public HARDWARE_ADDRESS_ENTRY VirtualToPhysical(HARDWARE_ADDRESS_ENTRY aCR3, ulong Addr, ref bool Success)
+        public HARDWARE_ADDRESS_ENTRY VirtualToPhysical(HARDWARE_ADDRESS_ENTRY aCR3, long Addr)
         {
-            var rv = HARDWARE_ADDRESS_ENTRY.MinAddr;
+            var rv = HARDWARE_ADDRESS_ENTRY.MaxAddr;
             var va = new VIRTUAL_ADDRESS(Addr);
+            var ConvertedV2P = new List<HARDWARE_ADDRESS_ENTRY>();
+            var Attempted = HARDWARE_ADDRESS_ENTRY.MinAddr;
 
             //Console.WriteLine($"V2P CR3 = {aCR3.PTE:X16}  VA = {va}");
-
             // PML4E
-            var PML4E = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>(aCR3.NextTableAddress | va.PML4, ref Success);
-            //Console.WriteLine($"PML4E = {PML4E.PTE:X16}");
-
-            if (PML4E.Valid && Success)
+            try
             {
-                // PDPTE
-                var PDPTE = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>(PML4E.NextTableAddress | va.DirectoryPointerOffset, ref Success);
-                //Console.WriteLine($"PDPTE = {PDPTE.PTE:X16}");
-
-                if (PDPTE.Valid && Success)
+                Attempted = (HARDWARE_ADDRESS_ENTRY) aCR3.NextTableAddress | (va.PML4 << 3);
+                var PML4E = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                //Console.WriteLine($"PML4E = {PML4E.PTE:X16}");
+                ConvertedV2P.Add(PML4E);
+                if (PML4E.Valid)
                 {
-                    if (!PDPTE.LargePage)
-                    {
-                        // PDE
-                        var PDE = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>(PDPTE.NextTableAddress | va.DirectoryOffset, ref Success);
-                        //Console.WriteLine($"PDE = {PDE.PTE:X16}");
+                    Attempted = PML4E.NextTableAddress | (va.DirectoryPointerOffset << 3);
+                    var PDPTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                    ConvertedV2P.Add(PDPTE);
+                    //Console.WriteLine($"PDPTE = {PDPTE.PTE:X16}");
 
-                        if (PDE.Valid && Success)
+                    if (PDPTE.Valid)
+                    {
+                        if (!PDPTE.LargePage)
                         {
-                            if (!PDE.LargePage)
+                            Attempted = PDPTE.NextTableAddress | (va.DirectoryOffset << 3);
+                            var PDE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                            ConvertedV2P.Add(PDE);
+                            //Console.WriteLine($"PDE = {PDE.PTE:X16}");
+
+                            if (PDE.Valid)
                             {
-                                // PTE
-                                var PTE = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>(PDE.NextTableAddress | va.TableOffset, ref Success);
-                                //Console.WriteLine($"PTE = {PTE.PTE:X16}");
-
-                                // page is normal 4kb
-                                if (PTE.Valid && Success)
-                                    rv = PTE.NextTableAddress | va.Offset;
-                                else
-                                    Success = false;
-                            }
-                            else
-                            {   // we have a 2MB page
-                                rv = (PDE.PTE & 0xFFFFFFE00000) | (Addr & 0x1FFFFF);
-                            }
-                        }else
-                            Success = false;
-                    }
-                    else
-                    {   // we have a 1GB page
-                        rv = (PDPTE.PTE & 0xFFFFC0000000) | (Addr & 0x3FFFFFFF);
-                    }
-                }
-                else
-                    Success = false;
-            }
-            else
-                Success = false;
-
-            Console.WriteLine($"return from V2P {rv:X16}");
-            return rv;
-        }
-
-        /// <summary>
-        /// Determine if there's a memory gap we need to adjust for behind a hypervisor layer
-        /// This should be done 
-        /// </summary>
-        /// <param name="HPA_CR3">Host Physical Address of CR3 to be verified</param>
-        /// <param name="GPA_CR3">Guest Physical Address of CR3 </param>
-        /// <returns>a size that needs to be subtrated from the address to re-align</returns>
-        ulong ValidateAndGetGap(HARDWARE_ADDRESS_ENTRY HPA_CR3, HARDWARE_ADDRESS_ENTRY GPA_CR3)
-        {
-            ulong rv = ulong.MaxValue;
-            var Loc = 0;
-
-            var hostCR3p = GetPageForPhysAddr<HARDWARE_ADDRESS_ENTRY>(HPA_CR3);
-
-            while (Loc == 0 && hostCR3p != null)
-            {
-                foreach (var each in Typical_Offsets.Each)
-                    if ((hostCR3p[each].PTE & 0xFFFFFFFFF000) == GPA_CR3.PTE)
-                        Loc = each;
-
-                // If we havent found the pointer, reduce by a typical gap size
-                if (Loc == 0)
-                {
-                    if (HPA_CR3.PTE > GapScanSize)
-                    {
-                        HPA_CR3.PTE -= GapScanSize;
-                        rv += GapScanSize;
-
-                        hostCR3p = GetPageForPhysAddr<HARDWARE_ADDRESS_ENTRY>(HPA_CR3);
-                        if (hostCR3p == null)
-                            return rv;
-                    }
-                    else
-                        return rv;
-                } 
-            }
-            return rv;
-        }
-
-        // Translates virtual address to physical address by way of CR3->EPTP double dereferencing (up to 24 loads)
-        public HARDWARE_ADDRESS_ENTRY VirtualToPhysical(HARDWARE_ADDRESS_ENTRY eptp, HARDWARE_ADDRESS_ENTRY aCR3, ulong Addr, ref bool Success)
-        {
-            var rv = HARDWARE_ADDRESS_ENTRY.MinAddr;
-            var va = new VIRTUAL_ADDRESS(Addr);
-            var gPa = new VIRTUAL_ADDRESS(aCR3);
-
-            //convert Guest CR3 gPA into Host CR3 pPA
-            var gpaCR3 = VirtualToPhysical(eptp, aCR3, ref Success);
-
-            // Validate page table. Possibly adjust for run gaps
-            var GapSize = ValidateAndGetGap(gpaCR3, aCR3);
-            // let's just ignore failures for now
-            if (GapSize == ulong.MaxValue)
-            {
-                Debug.Print("Table verification error.  YMMV.");
-                GapSize = 0;
-            }
-
-            Console.WriteLine($"In V2P2P, using CR3 {aCR3.PTE:X16}, found guest phys CR3 {gpaCR3.PTE:X16}, attemptng load of PML4E from {(gpaCR3 | va.PML4):X16}");
-
-            // gPML4E - as we go were getting gPA's which need to pPA
-            var gPML4E = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>((gpaCR3.NextTableAddress - GapSize) | va.PML4, ref Success);
-
-            Console.WriteLine($"guest PML4E = {gPML4E}");
-
-            // take CR3 and extract gPhys for VA we want to query
-            if (Success)
-            {
-                // hPML4E
-                var hPML4E = VirtualToPhysical(eptp, gPML4E.NextTableAddress, ref Success);
-                if (Success)
-                {
-                    // gPDPTE
-                    var gPDPTE = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>((hPML4E.NextTableAddress - GapSize) | va.DirectoryPointerOffset, ref Success);
-                    if (Success)
-                    {
-                        // hPDPTE
-                        var hPDPTE = VirtualToPhysical(eptp, gPDPTE.NextTableAddress, ref Success);
-                        if (Success)
-                        {
-                            if (!hPDPTE.LargePage)
-                            {
-                                // gPDE
-                                var gPDE = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>((hPDPTE.NextTableAddress - GapSize) | va.DirectoryOffset, ref Success);
-                                if (Success)
+                                if (!PDE.LargePage)
                                 {
-                                    //hPDE
-                                    var hPDE = VirtualToPhysical(eptp, gPDE.NextTableAddress, ref Success);
-                                    if (Success)
-                                    {
-                                        if (!hPDE.LargePage)
-                                        {
-                                            // gPTE
-                                            var gPTE = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>((hPDE.NextTableAddress - GapSize) | va.TableOffset, ref Success);
-                                            if (Success)
-                                            {
-                                                var hPTE = VirtualToPhysical(eptp, gPTE.NextTableAddress, ref Success);
-                                                if (Success)
-                                                {
-                                                    rv = (hPTE.NextTableAddress - GapSize) | va.Offset;
-                                                }
-                                            }
-                                        }
-                                        else
-                                        {
-                                            rv = (hPDE.PTE & 0xFFFFFFE00000) | (Addr & 0x1FFFFF);
-                                        }
-                                    }
+                                    Attempted = PDE.NextTableAddress | (va.TableOffset << 3);
+                                    var PTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                                    ConvertedV2P.Add(PTE);
+                                    //Console.WriteLine($"PTE = {PTE.PTE:X16}");
+
+                                    // page is normal 4kb
+                                    if (PTE.Valid)
+                                        rv = PTE.NextTableAddress | va.Offset;
+                                }
+                                else
+                                {   // we have a 2MB page
+                                    rv = (PDE.PTE & 0xFFFFFFE00000) | (Addr & 0x1FFFFF);
                                 }
                             }
-                            else
-                            {
-                                rv = (hPDPTE.PTE & 0xFFFFC0000000) | (Addr & 0x3FFFFFFF);
-                            }
+                        }
+                        else
+                        {   // we have a 1GB page
+                            rv = (PDPTE.PTE & 0xFFFFC0000000) | (Addr & 0x3FFFFFFF);
                         }
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                throw new PageNotFoundException("V2P conversion error page not found", Attempted, ConvertedV2P, ex);
+            }
+            
+            //Console.WriteLine($"return from V2P {rv:X16}");
+            // serialize the dictionary out
+
+
             return rv;
         }
 
-        // meant to be key: CR3 / Top level address of page table - List's are all addresses found that can be addressed by this process.
-        ConcurrentDictionary<HARDWARE_ADDRESS_ENTRY, List<AddressX>> AddressEnvalope;
-
-        /// <summary>
-        /// Suck up the page table into a managed representation
-        /// 
-        /// This serves several purposes.  
-        ///   1. Deteciton of run's/gaps.  
-        ///         We can infer run's exist when we detect abnormally large jumps in PFN values.
-        ///         IF the values can not be found then there must be a gap.
-        /// </summary>
-        /// <param name="aCR3"></param>
-        public void CacheAndEnum(HARDWARE_ADDRESS_ENTRY aCR3)
+        // Translates virtual address to physical address by way of CR3->EPTP double dereferencing (up to 24 loads)
+        public HARDWARE_ADDRESS_ENTRY VirtualToPhysical(HARDWARE_ADDRESS_ENTRY eptp, HARDWARE_ADDRESS_ENTRY aCR3, long Addr)
         {
-            bool Success = false;
-            if (AddressEnvalope == null)
+            var rv = HARDWARE_ADDRESS_ENTRY.MinAddr;
+            var va = new VIRTUAL_ADDRESS(Addr);
+            var gVa = new VIRTUAL_ADDRESS(aCR3.PTE);
+            var Attempted = HARDWARE_ADDRESS_ENTRY.MinAddr;
+            var ConvertedV2hP = new List<HARDWARE_ADDRESS_ENTRY>();
+
+            try
             {
-                //var PML4E = GetValueAtPhysicalAddr<HARDWARE_ADDRESS_ENTRY>(aCR3.NextTableAddress, ref Success);
-                HARDWARE_ADDRESS_ENTRY[] PML4E = GetPageForPhysAddr<HARDWARE_ADDRESS_ENTRY>(aCR3.NextTableAddress);
+                Attempted = gVa.Address;
+                //convert Guest CR3 gPA into Host CR3 pPA
+                var gpaCR3 = VirtualToPhysical(eptp, gVa.Address);
 
-                if (!Success)
-                    return;
+                // Validate page table. Possibly adjust for run gaps
+                //var GapSize = ValidateAndGetGap(gpaCR3, aCR3);
+                // let's just ignore failures for now
+                //if (GapSize == long.MaxValue)
+                //Debug.Print("Table verification error.  YMMV.");
+                long GapSize = 0;
+                //}
 
-                for (int i = 0; i < 512; i++)
-                {
+                //Console.WriteLine($"In V2P2P, using CR3 {aCR3.PTE:X16}, found guest phys CR3 {gpaCR3.PTE:X16}, attemptng load of PML4E from {(gpaCR3 | va.PML4):X16}");
+                // gPML4E - as we go were getting gPA's which need to pPA
+
+                Attempted = (gpaCR3.NextTableAddress - GapSize) | (va.PML4 << 3);
+
+                var gPML4E = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                ConvertedV2hP.Add(gPML4E);
+
+                //Console.WriteLine($"guest PML4E = {gPML4E}");
+                // take CR3 and extract gPhys for VA we want to query
+                
+                var hPML4E = VirtualToPhysical(eptp, gPML4E.NextTableAddress);
+                if (EPTP.IsValid(hPML4E.PTE) && EPTP.IsValid2(hPML4E.PTE))
+                { 
+                    Attempted = (hPML4E.NextTableAddress - GapSize) | (va.DirectoryPointerOffset << 3);
+                    var gPDPTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                    ConvertedV2hP.Add(gPDPTE);
+                    var hPDPTE = VirtualToPhysical(eptp, gPDPTE.NextTableAddress);
+
+                    if (EPTP.IsValid(hPDPTE.PTE))
+                    {
+                        if(!EPTP.IsLargePDPTE(hPDPTE.PTE))
+                        {
+                            if (EPTP.IsValid2(hPDPTE.PTE))
+                            {
+                                Attempted = (hPDPTE.NextTableAddress - GapSize) | (va.DirectoryOffset << 3);
+                                var gPDE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                                ConvertedV2hP.Add(gPDE);
+                                var hPDE = VirtualToPhysical(eptp, gPDE.NextTableAddress);
+
+                                if (EPTP.IsValid(hPDE.PTE))
+                                {
+                                    if (!EPTP.IsLargePDE(hPDE.PTE))
+                                    {
+                                        if (EPTP.IsValid2(hPDE.PTE))
+                                        {
+                                            Attempted = (hPDE.NextTableAddress - GapSize) | (va.TableOffset << 3);
+                                            var gPTE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
+                                            ConvertedV2hP.Add(gPTE);
+                                            var hPTE = VirtualToPhysical(eptp, gPTE.NextTableAddress);
+
+                                            if (EPTP.IsValidEntry(hPTE.PTE))
+                                                rv = (hPTE.NextTableAddress - GapSize) | va.Offset;
+                                        }
+                                    }
+                                    else
+                                        rv = (hPDE.PTE & 0xFFFFFFE00000) | (Addr & 0x1FFFFF);
+                                }
+                            }
+                        }
+                        else
+                            rv = (hPDPTE.PTE & 0xFFFFC0000000) | (Addr & 0x3FFFFFFF);
+                    }
                 }
             }
+            catch(PageNotFoundException ex)
+            {
+                throw new ExtendedPageNotFoundException(
+                    $"V2gP2hP conversion error. EPTP:{eptp}, CR3:{aCR3}, Requesting:{Attempted} Step:{ConvertedV2hP.Count()}. Step of 0 may indicate invalid EPTP.{Environment.NewLine}"
+                    , eptp, aCR3, Attempted, ConvertedV2hP, ex);
+            }
+            return rv;
         }
 
-
-        public void CacheAndEnum(HARDWARE_ADDRESS_ENTRY eptp, HARDWARE_ADDRESS_ENTRY aCR3)
-        {
-
-        }
-
-
-        #region IDisposable Support
+#region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
         protected virtual void Dispose(bool disposing)
         {
@@ -427,13 +367,13 @@ namespace inVtero.net
                 // release / clear up streams
                 if (disposing)
                 {
-                    if(mappedAccess != null)
+                    if (mappedAccess != null)
                         mappedAccess.Dispose();
 
-                    if(mappedFile != null)
+                    if (mappedFile != null)
                         mappedFile.Dispose();
 
-                    if(mapStream != null)
+                    if (mapStream != null)
                         mapStream.Dispose();
 
                     mappedAccess = null;
@@ -461,6 +401,149 @@ namespace inVtero.net
             // mine as well even though only releasing managed streams
             GC.SuppressFinalize(this);
         }
-        #endregion
+#endregion
+    }
+
+
+    public class MemException : Exception
+    {
+        public MemException() { }
+        public MemException(string message) : base(message) { }
+    }
+
+    public class PageNotFoundException : Exception
+    {
+        public List<HARDWARE_ADDRESS_ENTRY> PagesFound;
+        public HARDWARE_ADDRESS_ENTRY LastPageAttempted;
+
+        public PageNotFoundException(string message, HARDWARE_ADDRESS_ENTRY lastPageAttempted, List<HARDWARE_ADDRESS_ENTRY> pagesFound, Exception ex)
+            : base(message, ex)
+        {
+            PagesFound = pagesFound;
+            LastPageAttempted = lastPageAttempted;
+        }
+    }
+
+    public class ExtendedPageNotFoundException : Exception
+    {
+        public List<HARDWARE_ADDRESS_ENTRY> EPFound;
+        public HARDWARE_ADDRESS_ENTRY LastEPAttempted;
+        public HARDWARE_ADDRESS_ENTRY RequestedEPTP;
+        public HARDWARE_ADDRESS_ENTRY RequestedCR3;
+
+        public ExtendedPageNotFoundException(string message, HARDWARE_ADDRESS_ENTRY eptpUsed, HARDWARE_ADDRESS_ENTRY cr3Used, HARDWARE_ADDRESS_ENTRY lastEPAttempted, List<HARDWARE_ADDRESS_ENTRY> ePFound, PageNotFoundException ex)
+            : base(message, ex)
+        {
+
+            EPFound = ePFound;
+            LastEPAttempted = lastEPAttempted;
+            RequestedCR3 = cr3Used;
+            RequestedEPTP = eptpUsed;
+        }
+    }
+
+    public class MemoryRunMismatchException : Exception
+    {
+        public long PageRunNumber;
+        public MemoryRunMismatchException()
+            : base("Examine Mem:MemoryDescriptor to determine why the requested PFN (page run number) wsa not present. Inaccurate gap list creation/walking is typiaclly to blame.")
+        { }
+        public MemoryRunMismatchException(long pageRunNumber) : this()
+        {
+            PageRunNumber = pageRunNumber;
+        }
+    }
+
+
+    public class MemoryMapWindowFailedException : Exception
+    {
+        public MemoryMapWindowFailedException() : base()
+        { }
+        public MemoryMapWindowFailedException(string message) : base(message)
+        { }
+        public MemoryMapWindowFailedException(string message, Exception ex) : base(message, ex)
+        { }
+
     }
 }
+
+
+
+#if UNUSED
+
+        public T[] GetValueFromPT<T>(long TableRegister, long Addr) where T : struct
+        {
+            var paddr = VirtualToPhysical(TableRegister, Addr);
+
+            var data = GetPageForPhysAddr<T>(paddr);
+            return data;
+        }
+
+        // Extract a single page of data from a Virtual location (CR3 translation)
+        public T[] GetVirtualPage<T>(long CR3, long Addr)
+        {
+            var paddr = VirtualToPhysical(CR3, Addr);
+
+            var data = GetPageForPhysAddr(paddr);
+            return data;
+        }
+
+        // Extract a single page of data from a Virtual location (EPTP & CR3 translation)
+        public T[] GetHyperPage(HARDWARE_ADDRESS_ENTRY eptp, HARDWARE_ADDRESS_ENTRY CR3, long Addr) 
+        {
+            var paddr = VirtualToPhysical(eptp, CR3, Addr);
+
+            var data = GetPageForPhysAddr<T>(paddr);
+
+            return data;
+        }
+        
+        public long GetPFNAtPhysicalAddr(HARDWARE_ADDRESS_ENTRY PAddr)
+        {
+            var pageData = GetPageForPhysAddr(PAddr);
+            if (pageData == null)
+                return long.MaxValue;
+
+            return pageData[PAddr.AddressOffset >> 3] & 0xFFFFFFFFFF000;
+        }
+        
+        /// <summary>
+        /// Determine if there's a memory gap we need to adjust for behind a hypervisor layer
+        /// This should be done 
+        /// </summary>
+        /// <param name="HPA_CR3">Host Physical Address of CR3 to be verified</param>
+        /// <param name="GPA_CR3">Guest Physical Address of CR3 </param>
+        /// <returns>a size that needs to be subtrated from the address to re-align</returns>
+        long ValidateAndGetGap(HARDWARE_ADDRESS_ENTRY HPA_CR3, HARDWARE_ADDRESS_ENTRY GPA_CR3)
+        {
+            var rv = long.MaxValue;
+            var Loc = 0;
+
+            var hostCR3p = new GetPageForPhysAddr(HPA_CR3);
+
+            while (Loc == 0 && hostCR3p != null)
+            {
+                foreach (var each in MagicNumbers.Each)
+                    if ((hostCR3p[each].PTE & 0xFFFFFFFFF000) == GPA_CR3.PTE)
+                        Loc = each;
+
+                // If we havent found the pointer, reduce by a typical gap size
+                if (Loc == 0)
+                {
+                    if (HPA_CR3.PTE > GapScanSize)
+                    {
+                        HPA_CR3.PTE -= GapScanSize;
+                        rv += GapScanSize;
+
+                        hostCR3p = GetPageForPhysAddr(HPA_CR3);
+                        if (hostCR3p == null)
+                            return rv;
+                    }
+                    else
+                        return rv;
+                }
+            }
+            return rv;
+        }
+
+#endif
