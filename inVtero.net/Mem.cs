@@ -17,14 +17,10 @@
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 using System;
-using System.IO;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.IO;
 using System.IO.MemoryMappedFiles;
-using System.Diagnostics;
-using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading;
 // Details on this struct can be found here and likely many other sources
 // Microsoft published this origionally on the singularity project's codeplex (along with some other ingerestiVng things)
@@ -468,82 +464,3 @@ namespace inVtero.net
 }
 
 
-
-#if UNUSED
-
-        public T[] GetValueFromPT<T>(long TableRegister, long Addr) where T : struct
-        {
-            var paddr = VirtualToPhysical(TableRegister, Addr);
-
-            var data = GetPageForPhysAddr<T>(paddr);
-            return data;
-        }
-
-        // Extract a single page of data from a Virtual location (CR3 translation)
-        public T[] GetVirtualPage<T>(long CR3, long Addr)
-        {
-            var paddr = VirtualToPhysical(CR3, Addr);
-
-            var data = GetPageForPhysAddr(paddr);
-            return data;
-        }
-
-        // Extract a single page of data from a Virtual location (EPTP & CR3 translation)
-        public T[] GetHyperPage(HARDWARE_ADDRESS_ENTRY eptp, HARDWARE_ADDRESS_ENTRY CR3, long Addr) 
-        {
-            var paddr = VirtualToPhysical(eptp, CR3, Addr);
-
-            var data = GetPageForPhysAddr<T>(paddr);
-
-            return data;
-        }
-        
-        public long GetPFNAtPhysicalAddr(HARDWARE_ADDRESS_ENTRY PAddr)
-        {
-            var pageData = GetPageForPhysAddr(PAddr);
-            if (pageData == null)
-                return long.MaxValue;
-
-            return pageData[PAddr.AddressOffset >> 3] & 0xFFFFFFFFFF000;
-        }
-        
-        /// <summary>
-        /// Determine if there's a memory gap we need to adjust for behind a hypervisor layer
-        /// This should be done 
-        /// </summary>
-        /// <param name="HPA_CR3">Host Physical Address of CR3 to be verified</param>
-        /// <param name="GPA_CR3">Guest Physical Address of CR3 </param>
-        /// <returns>a size that needs to be subtrated from the address to re-align</returns>
-        long ValidateAndGetGap(HARDWARE_ADDRESS_ENTRY HPA_CR3, HARDWARE_ADDRESS_ENTRY GPA_CR3)
-        {
-            var rv = long.MaxValue;
-            var Loc = 0;
-
-            var hostCR3p = new GetPageForPhysAddr(HPA_CR3);
-
-            while (Loc == 0 && hostCR3p != null)
-            {
-                foreach (var each in MagicNumbers.Each)
-                    if ((hostCR3p[each].PTE & 0xFFFFFFFFF000) == GPA_CR3.PTE)
-                        Loc = each;
-
-                // If we havent found the pointer, reduce by a typical gap size
-                if (Loc == 0)
-                {
-                    if (HPA_CR3.PTE > GapScanSize)
-                    {
-                        HPA_CR3.PTE -= GapScanSize;
-                        rv += GapScanSize;
-
-                        hostCR3p = GetPageForPhysAddr(HPA_CR3);
-                        if (hostCR3p == null)
-                            return rv;
-                    }
-                    else
-                        return rv;
-                }
-            }
-            return rv;
-        }
-
-#endif

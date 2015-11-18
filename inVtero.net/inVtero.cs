@@ -16,16 +16,12 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+using inVtero.net.Support;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
-using System.Threading;
-using System.Text;
-using inVtero.net.Support;
 using static System.Console;
 
 namespace inVtero.net
@@ -145,7 +141,7 @@ namespace inVtero.net
 
                     if (corralated > 0.50 && !ASGroups[CurrASID].Contains(proc))
                     {
-                        WriteLine($"MemberProces: Groupt {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{corralated:P3}] PID [{proc.CR3Value:X}]");
+                        WriteLine($"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{corralated:P3}] PID [{proc.CR3Value:X}]");
 
                         ASGroups[CurrASID].Add(proc);
                         // global list to quickly scan

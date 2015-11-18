@@ -41,27 +41,63 @@ CPU microarchitechtures without any code changes (or I will likely setup some cl
 Either way, brute forcing should be fairly quick.  I try to make the most of multi-core CPU's, so if you have extra cores, 
 they will likely get a workout if your analyzing a huge dump with many VM's.
 
+Roses are <span style="color:red">red</span>, violets are <span style="color:blue">blue</span>.
+
+<p>I like to eat <span class="orange" style="color:white" >oranges</span>.
+
+#pricing-section h3 
+
 Example run from a laptop:
 ```
 
+Process CR3 [00000002DD41F000] File Offset [0000000293A12000] Diff [FFFFFFFFB65F3000] Type [Windows]
+159 candiate process page tables. Time so far: 00:01:01.4826693, second pass starting. rate: 32588.149 MB/s
+Hypervisor: VMCS revision field: 16384 [00004000] abort indicator: NO_ABORT [00000000]▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+Hypervisor: Windows CR3 found [00000000016A0000)] byte-swapped: [00006A0100000000] @ PAGE/File Offset = [00000001262DA000]
+[435][00000000006F0054]
 Hypervisor: VMCS revision field: VMWARE_NESTED [00000001] abort indicator: NO_ABORT [00000000]
-Hypervisor: Windows CR3 found = [00000000001AB000)] byte-swapped: [00B01A0000000000] @ PAGE/File Offset = [0000000195923000]
-Dumping possiable physical Block Values.  [Offset-decimal][Value-hex]
-
-[3][00000000986E2000] [14][000000007433301E] [277][0000000080050033] [278][00000000001AB000] [279][00000000000526F8]
-[284][000000007F5F5000] [323][000000008005003B] [324][0000000074C00248] [325][00000000000626E0] [372][000000000033EFFB]
-[415][00000000FFFFFFFF]
-
+Hypervisor: Windows CR3 found [00000000001AB000)] byte-swapped: [00B01A0000000000] @ PAGE/File Offset = [00000001308D3000]
+[14][000000007433301E]
 Hypervisor: VMCS revision field: VMWARE_NESTED [00000001] abort indicator: NO_ABORT [00000000]
-Hypervisor: Windows CR3 found = [00000000001AB000)] byte-swapped: [00B01A0000000000] @ PAGE/File Offset = [00000001959A4000]
-Dumping possiable physical Block Values.  [Offset-decimal][Value-hex]
+Hypervisor: Windows CR3 found [00000000001AB000)] byte-swapped: [00B01A0000000000] @ PAGE/File Offset = [0000000130AD1000]
+[14][000000007433301E]
+Hypervisor: VMCS revision field: VMWARE_NESTED [00000001] abort indicator: NO_ABORT [00000000]
+Hypervisor: Windows CR3 found [00000000001AB000)] byte-swapped: [00B01A0000000000] @ PAGE/File Offset = [00000001314CF000]
+[14][000000007433301E]
+Hypervisor: VMCS revision field: 0 [00000000] abort indicator: NO_ABORT [00000000]
+Hypervisor: Windows CR3 found [00000000016A0000)] byte-swapped: [00006A0100000000] @ PAGE/File Offset = [0000000160643000]
+[106][00000000001E001C]
+Hypervisor: VMCS revision field: VMWARE_NESTED [00000001] abort indicator: NO_ABORT [00000000]
+Hypervisor: Windows CR3 found [00000000001AB000)] byte-swapped: [00B01A0000000000] @ PAGE/File Offset = [0000000195922000]
+[14][000000007433301E]
+Hypervisor: VMCS revision field: VMWARE_NESTED [00000001] abort indicator: NO_ABORT [00000000]
+Hypervisor: Windows CR3 found [00000000001AB000)] byte-swapped: [00B01A0000000000] @ PAGE/File Offset = [00000001959A3000]
+[14][000000007433301E]
+159 candiate VMCS pages. Time to process: 00:02:51.8973861
+Data scanned: 34,171,150,654.00Second pass done.  rate: 1277.967 MB/s▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+grouping and joinging all memory
+Scanning for group correlations
+MemberProces: Groupt 1 Type [Windows] GroupCorrelation [100.000 %] PID [1AB000]
+MemberProces: Groupt 1 Type [Windows] GroupCorrelation [90.909 %] PID [16A0000]
+MemberProces: Groupt 1 Type [Windows] GroupCorrelation [90.909 %] PID [1FCA000]
+MemberProces: Groupt 1 Type [Windows] GroupCorrelation [90.909 %] PID [62AB000]
 
-[3][00000000986E2000] [14][000000007433301E] [277][0000000080050033] [278][00000000001AB000] [279][00000000000526F8]
-[284][000000007F610000] [323][000000008005003B] [324][0000000074C00258] [325][00000000000626E0] [372][000000000033EFFB]
-[415][00000000FFFFFFFF]
+```
+## If you see above, 
 
-10 candiate VMCS pages. Time to process: 00:03:43.1639847
-Data scanned: 34,171,150,654.00 rate: 1,515.000 MB/s
+```
+MemberProces: Groupt 1 Type [Windows] GroupCorrelation [90.909 %] PID [34CE8000]
+MemberProces: Groupt 1 Type [Windows] GroupCorrelation [90.909 %] PID [37300000]
+MemberProces: Groupt 1 Type [Windows] GroupCorrelation [90.909 %] PID [7DCC6000]
+Finished Group 1 collected size 48 next group
+Scanning for group correlations
+MemberProces: Groupt 2 Type [FreeBSD] GroupCorrelation [100.000 %] PID [65C8000]
+MemberProces: Groupt 2 Type [FreeBSD] GroupCorrelation [100.000 %] PID [6B51000]
+MemberProces: Groupt 2 Type [FreeBSD] GroupCorrelation [100.000 %] PID [6CC9000]
+
+
+
+
 ```
 
 In the above example, VMWARE's EPTP is at index 14 in it's VMCS.

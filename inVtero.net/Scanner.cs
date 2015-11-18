@@ -1,14 +1,31 @@
-﻿using System;
+﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
+
+//Copyright(C) 2015 Shane Macaulay
+
+//This program is free software; you can redistribute it and/or
+//modify it under the terms of the GNU General Public License
+//as published by the Free Software Foundation; either version 2
+//of the License, or(at your option) any later version.
+
+//This program is distributed in the hope that it will be useful,
+//but WITHOUT ANY WARRANTY; without even the implied warranty of
+//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+//GNU General Public License for more details.
+
+//You should have received a copy of the GNU General Public License
+//along with this program; if not, write to the Free Software
+//Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+using inVtero.net.Support;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using inVtero.net.Support;
 
 namespace inVtero.net
 {
@@ -23,7 +40,6 @@ namespace inVtero.net
 
         // using bag since it has the same collection interface as List
         public ConcurrentDictionary<long, DetectedProc> DetectedProcesses;
-        //public ParallelQuery<KeyValuePair<long, DetectedProc>> VMCSScanSet;
         public DetectedProc[] VMCSScanSet;
 
         #region class instance variables
@@ -32,7 +48,6 @@ namespace inVtero.net
         public List<VMCS> HVLayer;
         public bool DumpVMCSPage;
 
-        PTType HostOS;
         List<MemoryRun> Gaps;
 
         List<Func<long, bool>> CheckMethods;
@@ -85,7 +100,7 @@ namespace inVtero.net
         /// The VMCS scan is based on the LINK pointer, abort code and CR3 register
         /// We  later isolate the EPTP based on constraints for that pointer
         /// </summary>
-        /// <param name="offset"></param>
+        /// <param name="xoffset"></param>
         /// <returns>true if the page being scanned is a candidate</returns>
         public bool VMCS(long xoffset)
         {
@@ -574,23 +589,17 @@ namespace inVtero.net
 
 #pragma warning disable HeapAnalyzerImplicitParamsRule // Array allocation for params parameter
                                     Parallel.Invoke(() =>
-                                    Parallel.ForEach(
-                                        CheckMethods,
-                                            () => offset,
-                                            (check, parall, init_offset) =>
-                                            {
-                                                if (check(init_offset))
-                                                    return 1;
-                                                return 0;
-                                            },
-                                            (candidate) => Interlocked.Add(ref rv, (int) candidate)),
-                                        () => {
-                                            if (CurrMapBase < mapSize)
-                                                UnsafeHelp.ReadBytes(reader, CurrMapBase, ref buffers[filled]);
-                                        }
+                                    Parallel.ForEach<Func<long, bool>>(CheckMethods, (check) => {
+
+                                        check(offset);
+
+                                    }), () => {
+                                        if (CurrMapBase < mapSize)
+                                            UnsafeHelp.ReadBytes(reader, CurrMapBase, ref buffers[filled]);
+                                    }
                                     );
-                                    if (ExitAfter > 0 && rv == ExitAfter)
-                                        return rv;
+                                    if (ExitAfter > 0 && ExitAfter == DetectedProcesses.Count())
+                                        return DetectedProcesses.Count();
 
                                     var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
                                     if (progress != ProgressBarz.Progress)
@@ -606,7 +615,7 @@ namespace inVtero.net
                     }
                 } // close map
             } // close stream
-            return rv;
+            return DetectedProcesses.Count();
         }
        
     }
