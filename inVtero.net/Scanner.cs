@@ -548,8 +548,6 @@ namespace inVtero.net
         /// <returns></returns>
         public int Analyze(int ExitAfter = 0)
         {
-            var rv = 0x0;
-
             CurrWindowBase = 0;
             mapSize = (64 * 1024 * 1024);
 

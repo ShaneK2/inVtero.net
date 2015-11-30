@@ -60,6 +60,7 @@ namespace inVtero.net
 
         DetectedProc DP;
         Mem mem;
+        
 
         public static PageTable AddProcess(DetectedProc dp, Mem mem)
         {
