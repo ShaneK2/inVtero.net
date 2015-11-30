@@ -177,9 +177,9 @@ namespace quickdumps
                 WriteLine("grouping and joinging all memory");
                 vtero.GroupAS();
 
-                vtero.DumpASToFile();
+                //vtero.DumpASToFile();
 
-                //vtero.ExtrtactAddressSpaces();
+                vtero.ExtrtactAddressSpaces();
                 vtero.DumpFailList();
 
                 WriteLine($"Final analysis compleated, address spaces extracted. {Timer.Elapsed} {PrintRate(vtero.FileSize * 3, Timer.Elapsed)}");
