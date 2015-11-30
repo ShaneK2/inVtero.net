@@ -52,6 +52,7 @@
 
 using inVtero.net;
 using System;
+using System.IO;
 using System.Diagnostics;
 using static System.Console;
 
@@ -62,6 +63,12 @@ namespace quickdumps
     {
         static Stopwatch Timer;
 
+        static void PrintHelp()
+        {
+            WriteLine("inVtero FileName [win|fbsd|obsd|nbsd|!]");
+            WriteLine("\"inVtero FileName winfbsd\"  (e.g. Run FreeBSD and Windows together)");
+        }
+
         public static void Main(string[] args)
         {
             #region fluff
@@ -70,12 +77,17 @@ namespace quickdumps
 
             if (args.Length == 0 || args.Length > 2)
             {
-                WriteLine("inVtero FileName [win|fbsd|obsd|nbsd|!]");
-                WriteLine("\"inVtero FileName winfbsd\"  (e.g. Run FreeBSD and Windows together)");
+                PrintHelp();
                 return;
             }
             try {
                 Filename = args[0];
+
+                if (!File.Exists(Filename))
+                {
+                    PrintHelp();
+                    return;
+                }
 
                 if (args.Length > 1)
                 {
@@ -164,6 +176,9 @@ namespace quickdumps
                 #region TEST
                 WriteLine("grouping and joinging all memory");
                 vtero.GroupAS();
+
+                vtero.DumpASToFile();
+
                 //vtero.ExtrtactAddressSpaces();
                 vtero.DumpFailList();
 
