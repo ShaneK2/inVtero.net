@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -143,11 +142,11 @@ namespace inVtero.net
                     {
                         WriteLine($"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{corralated:P3}] PID [{proc.CR3Value:X}]");
 
+                        proc.AddressSpaceID = CurrASID;
                         ASGroups[CurrASID].Add(proc);
                         // global list to quickly scan
                         grouped.Add(proc);
                     }
-
                 }
                 ForegroundColor = ConsoleColor.Yellow;
 
@@ -173,7 +172,6 @@ namespace inVtero.net
                 AlikelyKernelSet = from ptes in UnGroupedProc.First().TopPageTablePage
                                    where ptes.Key > 255 && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
                                    select ptes.Value;
-
             }
 
             Console.WriteLine($"Done All process groups.");
@@ -192,22 +190,7 @@ namespace inVtero.net
                 foreach (var dp in ctx.AS)
                     dp.vmcs = ctx.EPTctx;
 
-
-            // now we have everything joined up
-
-
-
-            //foreach (var groupList in ASGroups.Values)
-            //{
-            //    var CR3CtxFound = groupList.Intersect(eptpz.Select(x => x.dp));
-            //    if (CR3CtxFound != null && CR3CtxFound.Count() > 0)
-            //        foreach (var dp in groupList)
-            //            dp.vmcs = eptpz;
-            //}
-
-
-
-
+            // were good, all Processes should have a VMCS if applicable and be identifiable by AS ID
         }
 
         /// <summary>
@@ -257,19 +240,14 @@ namespace inVtero.net
                             var pt = PageTable.AddProcess(proc, memAxs);
                             if (pt != null && VerboseOutput)
                             {
-                                var currKern = from ptes in proc.TopPageTablePage
-                                                       where ptes.Key > 255 && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
-                                                       select ptes.Value;
-
-                                var interSection = currKern.Intersect(AlikelyKernelSet);
-
-                                var corralated = interSection.Count() * 1.00 / AlikelyKernelSet.Count();
-                                WriteLine($"PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] GroupCorrelation [{corralated:P3}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
+                                WriteLine($"PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
 
                                 sx++;
                                 curr++;
                                 var progress = Convert.ToInt32((Convert.ToDouble(curr) / Convert.ToDouble(tot) * 100.0) + 0.5);
                                 ProgressBarz.RenderConsoleProgress(progress);
+
+                                WriteLine($"CorrectMap: {Mem.cntInAccessor}  NewMap: {Mem.cntOutAccsor}");
 
                             }
                         }
@@ -321,6 +299,44 @@ namespace inVtero.net
             //        WriteLine($"extracted {proc.PageTableType} PTE from process {proc.vmcs.EPTP:X16}:{proc.CR3Value:X16}, high phys address was {proc.PT.HighestFound}");
         }
 
+        public void DumpASToFile()
+        {
+            
+
+
+            using (var memAxs = new Mem(MemFile))
+            {
+                var tdp = (from p in Processes
+                                  where p.AddressSpaceID == 1 && p.vmcs != null
+                                  orderby p.CR3Value ascending
+                                  select p);
+
+                Parallel.ForEach(tdp, (x) =>
+                {
+                    //foreach (var x in tdp)
+                    PageTable.AddProcess(x, memAxs);
+                    WriteLine($"PID {x.CR3Value:X} cnt:{x.PT.RootPageTable.PFNCount}");
+                });
+
+                var largest = (from p in Processes
+                               where p.AddressSpaceID == 1 && p.vmcs != null
+                               orderby p.PT.RootPageTable.PFNCount ascending
+                               select p).Take(1).First();
+
+                PageTable.AddProcess(largest, memAxs);
+
+
+                var pml4 = largest.PT.RootPageTable;
+
+                WriteLine($"Test dumping {largest}, {pml4.PFNCount} entries scanned.");
+
+                var MemRanges = pml4.SubTables.SelectMany(x => x.Value.SubTables);
+
+                WriteLine($"MemRanges = {MemRanges.Count()} available.");
+                foreach (var pte in largest.TopPageTablePage)
+                    WriteLine($"VA = {pte.Key:X}  {pte.Value}");
+            }
+        }
 
         // eventually we can get to where we know everything
         // grouped and organized

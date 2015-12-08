@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +25,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using static inVtero.net.UnsafeHelp;
+using static System.Console;
 
 namespace inVtero.net
 {
@@ -79,6 +80,10 @@ namespace inVtero.net
                 if ((value & PTType.NetBSD) == PTType.NetBSD)
                     CheckMethods.Add(NetBSD);
 
+
+                if ((value & PTType.LinuxS) == PTType.LinuxS)
+                    CheckMethods.Add(LinuxS);
+
                 if ((value & PTType.VMCS) == PTType.VMCS)
                     CheckMethods.Add(VMCS);
             }
@@ -124,6 +129,10 @@ namespace inVtero.net
             //{
             KnownAbortCode = typeof(VMCS_ABORT).GetEnumValues().Cast<VMCS_ABORT>().Any(x => x == Acode);
             //});
+
+
+
+            // TODO: Link pointer may not always be needed, evaluate removing this constraint
             // Find a 64bit value for link ptr
             for (int l = 0; l < block.Length; l++)
             {
@@ -134,7 +143,7 @@ namespace inVtero.net
                 if (LinkCount > 32)
                     return false;
             }
-            // We expect to have 1 Link pointer at least
+            // Currently, we expect to have 1 Link pointer at least
             if (LinkCount == 0 || !KnownAbortCode)
                 return false;
 
@@ -196,10 +205,10 @@ namespace inVtero.net
                         }
                         if (Candidate && Vtero.VerboseOutput)
                         {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine(sbRED.ToString());
-                            Console.ForegroundColor = ConsoleColor.DarkGreen;
-                            Console.WriteLine(sb.ToString());
+                            ForegroundColor = ConsoleColor.Red;
+                            WriteLine(sbRED.ToString());
+                            ForegroundColor = ConsoleColor.DarkGreen;
+                            WriteLine(sb.ToString());
                         }
 
                         VMCS vmcsFound = null;
@@ -214,6 +223,85 @@ namespace inVtero.net
                     }
                 }
             });
+            return Candidate;
+        }
+
+        long[] LinuxSFirstPage;
+        List<long[]> LinuxSFirstPages = new List<long[]>();
+
+        /// <summary>
+        /// The LinuxS check is a single pass state preserving scanner
+        /// 
+        /// This was created using kernel 3.19 as a baseline.  More to follow.
+        /// 
+        /// </summary>
+        /// <param name="offset"></param>
+        /// <returns></returns>
+        public bool LinuxS(long offset)
+        {
+            var Candidate = false;
+            var group = -1;
+
+            // The main observation on kern319 is the given set below of must-have offsets that are identical and 0x7f8 which is unique per process
+            // Next is the behaviour that uses entries in 2 directions from top down and bottom up 
+            // i.e. 0x7f0 0x0 are the next expected values.
+            // All orthers would be unset in the top level / base page
+            //
+            // Kernel should have only the magnificnet entries
+            // memcmp 0 ranges 8-7f0, 800-880, 888-c88, c98-e88, e90-ea0, ea8-ff0
+            // after first (likely kernel) page table found, use it's lower 1/2 to validate other detected page tables
+            // linux was found (so far) to have a consistant kernel view.
+            var kern319 = new Dictionary<int,bool> { [0x7f8] = false, [0x880] = true, [0xc90] = true, [0xe88] = true, [0xea0] = true, [0xff0] = true, [0xff8] = true };
+
+            var Profiles = new List<Dictionary<int, bool>>();
+
+           if(((block[0xFF]  & 0xfff) == 0x067) &&
+              ((block[0x110] & 0xfff) == 0x067) &&
+              ((block[0x192] & 0xfff) == 0x067) &&
+              ((block[0x1d1] & 0xfff) == 0x067) &&
+              ((block[0x1d4] & 0xfff) == 0x067) &&
+              ((block[0x1fe] & 0xfff) == 0x067) &&
+              ((block[0x1ff] & 0xfff) == 0x067) &&
+              
+              // this is the largest block of 0's 
+              // just do this one to qualify
+              IsZero(block, 8, 0xe0)
+              )
+
+            /*
+            if (IsZero(block, 8,     0xE0) &&
+                IsZero(block, 0x100, 0x10) &&
+                IsZero(block, 0x111, 0x80) &&
+                IsZero(block, 0x193, 0x3e) &&
+                IsZero(block, 0x1D2, 0x02) &&
+                IsZero(block, 0x1D5, 0x29))
+            */
+            {
+                // before we catalouge this entry, check to see if we can put it in a group
+                for (int i = 0; i < LinuxSFirstPages.Count(); i++)
+                    if (EqualBytesLongUnrolled(block, LinuxSFirstPages[i], 0x100))
+                        group = i;
+
+                // if we havent found anything yet, setup first page
+                if (LinuxSFirstPage == null)
+                {
+                    LinuxSFirstPage = block;
+                    LinuxSFirstPages.Add(block);
+                    group = 0;
+                }
+                
+                // load DP 
+                var dp = new DetectedProc { CR3Value = offset, FileOffset = offset, Diff = 0, Mode = 2, Group = group, PageTableType = PTType.LinuxS };
+                for (int p = 0; p < 0x200; p++)
+                    if (block[p] != 0)
+                        dp.TopPageTablePage.Add(p, block[p]);
+
+                if (Vtero.VerboseOutput)
+                    WriteLine(dp.ToString());
+
+                DetectedProcesses.TryAdd(offset, dp);
+                Candidate = true;
+            }
             return Candidate;
         }
 
@@ -247,7 +335,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if(Vtero.VerboseOutput)
-                            Console.WriteLine(dp.ToString());
+                            WriteLine(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -289,7 +377,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            Console.WriteLine(dp.ToString());
+                            WriteLine(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -326,7 +414,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            Console.WriteLine(dp.ToString());
+                            WriteLine(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -382,7 +470,7 @@ namespace inVtero.net
 
                                     DetectedProcesses.TryAdd(offset, dp);
                                     if (Vtero.VerboseOutput)
-                                        Console.WriteLine(dp.ToString());
+                                        WriteLine(dp.ToString());
                                     Candidate = true;
                                 }
                             }
@@ -429,7 +517,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            Console.WriteLine(dp.ToString());
+                            WriteLine(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -476,7 +564,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            Console.WriteLine(dp.ToString());
+                            WriteLine(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -520,7 +608,7 @@ namespace inVtero.net
                         var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 1, PageTableType = PTType.Windows };
 
                         DetectedProcesses.TryAdd(offset, dp);
-                        Console.WriteLine(dp);
+                        WriteLine(dp);
 
                         Candidate = true;
                     }
@@ -543,13 +631,10 @@ namespace inVtero.net
         /// <summary>
         /// A simple memory mapped scan over the input provided in the constructor
         /// </summary>
-        /// <param name="Checkers">a List of Func which return bool if the current page is a candidate</param>
         /// <param name="ExitAfter">Optionally stop checking or exit early after this many candidates.  0 does not exit early.</param>
         /// <returns></returns>
         public int Analyze(int ExitAfter = 0)
         {
-            var rv = 0x0;
-
             CurrWindowBase = 0;
             mapSize = (64 * 1024 * 1024);
 

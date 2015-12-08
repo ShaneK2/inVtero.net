@@ -13,5 +13,12 @@ namespace inVtero.net
     /// </summary>
     public class Dumper
     {
+
+
+
+        public Dumper()
+        { }
+
+
     }
 }
