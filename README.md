@@ -2,6 +2,10 @@
 Find/Extract processes, hypervisors (including nested) in memory dumps using microarchitecture independent
 Virtual Machine Introspection techniques
 
+| x64 Release |
+|:------------|
+|![Build status](https://ktwo.visualstudio.com/DefaultCollection/_apis/public/build/definitions/16d48273-682e-4b01-8392-1f83fc2c3bcd/4/badge)|
+
 ![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
 
 ## quickdumps
