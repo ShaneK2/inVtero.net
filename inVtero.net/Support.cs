@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -314,9 +313,11 @@ namespace inVtero.net
         OpenBSD = 4,
         NetBSD = 8,
         HyperV = 0x10,
-        GENERIC = 0x40000000,
+        LinuxS = 0x10000000,    // Jumping fo Linux since this is now a state saving check
+                                // LinuxS is still a single pass
+        GENERIC = 0x40000000,   // Generic stateless
         ALL = int.MaxValue,
-        VMCS = 0x80000000,
+        VMCS = 0x80000000,      // VMCS uses state also and also 2 pass
     }
     [Flags]
     public enum EPT_MemType

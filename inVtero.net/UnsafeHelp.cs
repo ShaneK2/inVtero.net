@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,7 +25,6 @@ namespace inVtero.net
 {
     public class UnsafeHelp
     {
-
         public static unsafe void ReadBytes(MemoryMappedViewAccessor view, long offset, ref long[] arr)
         {
             //byte[] arr = new byte[num];
@@ -45,26 +43,27 @@ namespace inVtero.net
         public static unsafe extern void* CopyMemory(void* dest, void* src, ulong count);
 
 
-        public static unsafe bool EqualBytesLongUnrolled(long[] data1, long[] data2, int maxlen = 0)
+        public static unsafe bool EqualBytesLongUnrolled(long[] data1, long[] data2, int offset = 0, int maxlen = 0)
         {
             if (data1 == data2)
                 return true;
+
             if (data1.Length != data2.Length)
                 return false;
 
             fixed (long* bytes1 = data1, bytes2 = data2)
             {
-                int len = 0;
+                var len = 0;
 
-                if (maxlen != 0 && maxlen < data1.Length)
-                    len = maxlen;
+                if (maxlen != 0 && maxlen < (data1.Length - offset))
+                    len = maxlen - offset;
                 else
-                    len = data1.Length;
+                    len = data1.Length - offset;
 
                 int rem = len % (sizeof(long) * 16);
-                long* b1 = (long*)bytes1;
-                long* b2 = (long*)bytes2;
-                long* e1 = (long*)(bytes1 + len - rem);
+                long* b1 = (long*)bytes1 + offset;
+                long* b2 = (long*)bytes2 + offset;
+                long* e1 = (long*)(bytes1 + offset + len - rem);
 
                 while (b1 < e1)
                 {
@@ -88,14 +87,13 @@ namespace inVtero.net
                 return true;
             }
         }
-        public static unsafe bool IsZero(long[] data)
+        public static unsafe bool IsZero(long[] data, int offset = 0, int count = 512)
         {
             fixed (long* bytes = data)
             {
-                int len = data.Length;
-                int rem = len % (sizeof(long) * 16);
-                long* b = (long*)bytes;
-                long* e = (long*)(bytes + len - rem);
+                int rem = count % (sizeof(long) * 16);
+                long* b = (long*)bytes + offset;
+                long* e = (long*)(bytes + count - rem);
 
                 while (b < e)
                 {
@@ -108,7 +106,7 @@ namespace inVtero.net
                 }
 
                 for (int i = 0; i < rem; i++)
-                    if (data[len - 1 - i] != 0)
+                    if (data[count - 1 - i] != 0)
                         return false;
 
                 return true;

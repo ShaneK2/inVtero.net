@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -74,8 +73,9 @@ namespace inVtero.net
             GapScanSize = 0x10000000;
             StartOfMemory = 0;
 
-            MapViewBase = 0;
-            MapViewSize = MapWindowSize = (0x1000 * 0x1000 * 64); // 1G
+            MapViewBase = 0;                                      // BUGBUG: Track down windowing issues not working 
+                                                                  // as efficently as it needs to
+            MapViewSize = MapWindowSize = (0x1000 * 0x1000 * 32); // pretty huge still, 512MB 
 
 
             if (File.Exists(mFile))
@@ -110,6 +110,8 @@ namespace inVtero.net
             }
         }
 
+        public static ulong cntInAccessor = 0;
+        public static ulong cntOutAccsor = 0;
 
         public long GetPageFromFileOffset(long FileOffset, ref long[] block)
         {
@@ -128,6 +130,8 @@ namespace inVtero.net
             {
                 if (NewMapViewBase != MapViewBase)
                 {
+                    cntInAccessor++;
+
                     if (NewMapViewBase + MapViewSize > FileSize)
                         NewMapViewSize = FileSize - NewMapViewBase;
                     else
@@ -141,6 +145,9 @@ namespace inVtero.net
                     MapViewBase = NewMapViewBase;
 
                 }
+                else
+                    cntOutAccsor++;
+
                 if(block != null)
                     UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block);
 

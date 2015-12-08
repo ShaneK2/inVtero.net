@@ -4,8 +4,7 @@
 
 //This program is free software; you can redistribute it and/or
 //modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either version 2
-//of the License, or(at your option) any later version.
+//as published by the Free Software Foundation.
 
 //This program is distributed in the hope that it will be useful,
 //but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,12 +36,16 @@
 //              - Delocate memory based on hosted .reloc files (don't you want to memory dumps that match disk files?!?!)
 //              - Match dumped binaries to known secure hashes (who want's to dissassemble/analyze ntdll when you dont have too!)
 //              
-//          * Test/Support open .net runtimes Rosylin and such on other platforms
-//              - Now that WCF is open, it's a sinch to connect to our web services
+//          ~~* Test/Support open .net runtimes Rosylin and such on other platforms (done see Reloc)~~
+//              ~~- Now that WCF is open, it's a sinch to connect to our web services~~
+//
+//          * Memory run detection
+//              - Validate top level page references and auto extend for raw, still tbd bitmap dmp for Windows
+//
 //
 // TODO:PageTable.cs
-//          + group/associate CR3's which belong together and are under the control of a given EPTP
-//              + can group by identifying shared kernel PTE entries e.g. all processes & kernel share most significant kernel entries
+//~~          + group/associate CR3's which belong together and are under the control of a given EPTP
+//              + can group by identifying shared kernel PTE entries e.g. all processes & kernel share most significant kernel entries (done) ~~
 //          + Cache tables into internal/peformance representation
 //              + PreLoad EPTP references into direct addresses
 //      Dumper.cs
@@ -65,15 +68,17 @@ namespace quickdumps
 
         static void PrintHelp()
         {
-            WriteLine("inVtero FileName [win|fbsd|obsd|nbsd|!]");
-            WriteLine("\"inVtero FileName winfbsd\"  (e.g. Run FreeBSD and Windows together)");
+            WriteLine("inVtero FileName [win|lin|fbsd|obsd|nbsd|gen|-vmcs|!]");
+            WriteLine("\"inVtero FileName winfbsd\"  (will run FreeBSD and Windows together)");
+            WriteLine("\"inVtero FileName !-obsd-nbsd\" (will run all scanners except for OpenBSD and NetBSD)");
+            WriteLine("Using -* should disbale that scanner, you can not enable only a VMCS scan since VMCS EPTP detection requires a prior scan.");
         }
 
         public static void Main(string[] args)
         {
             #region fluff
             var Version = PTType.UNCONFIGURED;
-            string Filename = null;
+            string Filename = string.Empty;
 
             if (args.Length == 0 || args.Length > 2)
             {
@@ -93,18 +98,34 @@ namespace quickdumps
                 {
                     var spec = args[1].ToLower();
 
-                    if (spec.Contains("gen"))
-                        Version |= PTType.GENERIC;
                     if (spec.Contains("win"))
                         Version |= PTType.Windows;
+                    if (spec.Contains("lin"))
+                        Version |= PTType.LinuxS;
                     if (spec.Contains("fbsd"))
                         Version |= PTType.FreeBSD;
                     if (spec.Contains("obsd"))
                         Version |= PTType.OpenBSD;
                     if (spec.Contains("nbsd"))
                         Version |= PTType.NetBSD;
+                    if (spec.Contains("gen"))
+                        Version |= PTType.GENERIC;
+
                     if (spec.Contains("!"))
                         Version |= PTType.ALL;
+
+                    if (spec.Contains("-vmcs"))
+                        Version = Version & ~PTType.VMCS;
+                    if (spec.Contains("-obsd"))
+                        Version = Version & ~PTType.OpenBSD;
+                    if (spec.Contains("-nbsd"))
+                        Version = Version & ~PTType.NetBSD;
+                    if (spec.Contains("-fbsd"))
+                        Version = Version & ~PTType.FreeBSD;
+                    if (spec.Contains("-lin"))
+                        Version = Version & ~PTType.LinuxS;
+                    if (spec.Contains("-win"))
+                        Version = Version & ~PTType.Windows;
                 }
                 else
                     Version = PTType.ALL;
@@ -132,12 +153,12 @@ namespace quickdumps
 
                 Write(msg);
 
-                WriteLine(PrintRate(vtero.FileSize, Timer.Elapsed));
+                WriteLine(FormatRate(vtero.FileSize, Timer.Elapsed));
                 BackgroundColor = ConsoleColor.Black;
                 ForegroundColor = ConsoleColor.Cyan;
                 if (procCount < 3)
                 {
-                    WriteLine("Seems like a fail.  See if this is Linux or something that a different detection technique is needed? :(");
+                    WriteLine("Seems like a fail. Try generic scanning or implment a state scan like LinuxS");
                     return;
                 }
                 //BackgroundColor = ConsoleColor.White;
@@ -156,34 +177,39 @@ namespace quickdumps
                 // future may have a reason to isolate based on original locationAG
                 #endregion
 
-                var VMCSCount = vtero.VMCSScan();
+                if ((Version & PTType.VMCS) == PTType.VMCS)
+                {
+                    var VMCSCount = vtero.VMCSScan();
 
-                //Timer.Stop();
+                    //Timer.Stop();
 
-                #region VMCS page detection
-                ForegroundColor = ConsoleColor.Blue;
-                BackgroundColor = ConsoleColor.Yellow;
+                    #region VMCS page detection
+                    ForegroundColor = ConsoleColor.Blue;
+                    BackgroundColor = ConsoleColor.Yellow;
 
 
-                WriteLine($"{VMCSCount} candiate VMCS pages. Time to process: {Timer.Elapsed}");
-                Write($"Data scanned: {vtero.FileSize:N}");
+                    WriteLine($"{VMCSCount} candiate VMCS pages. Time to process: {Timer.Elapsed}");
+                    Write($"Data scanned: {vtero.FileSize:N}");
 
-                // second time 
-                WriteLine("Second pass done. " + PrintRate(vtero.FileSize * 2, Timer.Elapsed));
-                BackgroundColor = ConsoleColor.Black;
-                ForegroundColor = ConsoleColor.Cyan;
+                    // second time 
+                    WriteLine("Second pass done. " + FormatRate(vtero.FileSize * 2, Timer.Elapsed));
+                    BackgroundColor = ConsoleColor.Black;
+                    ForegroundColor = ConsoleColor.Cyan;
+                    
+                    #region TEST
+                    // each of these depends on a VMCS scan/pass having been done at the moment
+                    WriteLine("grouping and joinging all memory");
 
-                #region TEST
-                WriteLine("grouping and joinging all memory");
-                vtero.GroupAS();
+                    vtero.GroupAS();
 
-                //vtero.DumpASToFile();
+                    vtero.ExtrtactAddressSpaces();
 
-                vtero.ExtrtactAddressSpaces();
-                vtero.DumpFailList();
+                    vtero.DumpASToFile();
 
-                WriteLine($"Final analysis compleated, address spaces extracted. {Timer.Elapsed} {PrintRate(vtero.FileSize * 3, Timer.Elapsed)}");
+                    vtero.DumpFailList();
 
+                    WriteLine($"Final analysis compleated, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
+                }
                 #endregion
                 #endregion
             } catch (Exception ex)
@@ -207,9 +233,9 @@ namespace quickdumps
             ResetColor();
         }
 
-        static string PrintRate(long siz, TimeSpan t)
+        static string FormatRate(long siz, TimeSpan t)
         {
-            string rv = string.Empty;
+            var rv = string.Empty;
             if (t.Seconds > 0)
             {
                 var cnt = siz * 1.00 / t.Seconds;
