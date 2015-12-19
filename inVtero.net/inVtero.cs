@@ -80,8 +80,6 @@ namespace inVtero.net
             //                    select new KeyValuePair<long, DetectedProc>(CR3Masters.Key, CR3Masters.First())).AsParallel();
 
             scan.VMCSScanSet = Processes.GroupBy(p => p.CR3Value).Select(pg => pg.First()).ToArray();
-       
-
 
             var rv = scan.Analyze();
 
@@ -233,43 +231,51 @@ namespace inVtero.net
                     var sx = 0;
                     //foreach (var proc in p)
                     Parallel.ForEach(p, (proc) =>
-                    { 
-                        try
+                    {
+                    try
+                    {
+                        proc.vmcs = space;
+                        var pt = PageTable.AddProcess(proc, memAxs);
+                        if (pt != null && VerboseOutput)
                         {
-                            proc.vmcs = space;
-                            var pt = PageTable.AddProcess(proc, memAxs);
-                            if (pt != null && VerboseOutput)
-                            {
-                                WriteLine($"PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
+                            WriteLine($"PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
 
-                                sx++;
-                                curr++;
-                                var progress = Convert.ToInt32((Convert.ToDouble(curr) / Convert.ToDouble(tot) * 100.0) + 0.5);
-                                ProgressBarz.RenderConsoleProgress(progress);
+                            sx++;
+                            curr++;
+                            var progress = Convert.ToInt32((Convert.ToDouble(curr) / Convert.ToDouble(tot) * 100.0) + 0.5);
+                            ProgressBarz.RenderConsoleProgress(progress);
 
-                                WriteLine($"CorrectMap: {Mem.cntInAccessor}  NewMap: {Mem.cntOutAccsor}");
+                            WriteLine($"CorrectMap: {Mem.cntInAccessor}  NewMap: {Mem.cntOutAccsor}");
 
-                            }
                         }
-                        catch (ExtendedPageNotFoundException eptpX)
-                        {
+                    }
+                    catch (ExtendedPageNotFoundException eptpX)
+                    {
                             WriteLine($"Bad EPTP selection;{Environment.NewLine}\tEPTP:{eptpX.RequestedEPTP}{Environment.NewLine}\t CR3:{eptpX.RequestedCR3}{Environment.NewLine} Attempting to skip to next proc.");
+
+                            memAxs.DumpPFNIndex();
+
                         }
                         catch (MemoryRunMismatchException mrun)
                         {
                             WriteLine($"Error in accessing memory for PFN {mrun.PageRunNumber:X16}");
+
+                            memAxs.DumpPFNIndex();
                         }
                         catch (PageNotFoundException pnf)
                         {
                             WriteLine($"Error in selecting page, see {pnf}");
+
+                            memAxs.DumpPFNIndex();
                         }
                         catch(Exception ex)
                         {
                             WriteLine($"Error in memspace extraction: {ex.ToString()}");
+
+                            memAxs.DumpPFNIndex();
                         }
 
                         WriteLine($"{sx} VMCS dominated process address spaces and were decoded succsessfully.");
-
 
                     });
                     //}

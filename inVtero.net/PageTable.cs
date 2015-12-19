@@ -117,7 +117,9 @@ namespace inVtero.net
                 if (SLAT != 0)
                 {
                     var hl3HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
-                    hl3HW_Addr = mem.VirtualToPhysical(SLAT, l3HW_Addr);
+
+                    try { hl3HW_Addr = mem.VirtualToPhysical(SLAT, l3HW_Addr); } catch (Exception) { WriteLine($"level3: Failed lookup {l3HW_Addr:X16}"); }
+
                     l3HW_Addr = hl3HW_Addr;
                 }
                 if (l3HW_Addr == long.MaxValue)
@@ -150,78 +152,83 @@ namespace inVtero.net
                     top_sub.Value.SubTables.Add(s3va, l3PFN);
                     entries++;
 
-                    // get the page that the current l3PFN describes
-                    var l2HW_Addr = l3PTE.NextTableAddress;
-                    if (SLAT != 0)
+                    /// TODO: Double check if this is a real bit... 
+                    /// I added it to help weed out some failure cases
+                    if (!l3PTE.LargePage)
                     {
-                        var hl2HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
-                        try { hl2HW_Addr = mem.VirtualToPhysical(SLAT, l2HW_Addr); } catch(Exception ex) { WriteLine($"level2: Unable to V2P {l3PTE}"); }
-                        l2HW_Addr = hl2HW_Addr;
-                    }
-                    // TODO: more error handlng of exceptions & bad return's
-                    // TODO: support software PTE types 
-                    if (l2HW_Addr == HARDWARE_ADDRESS_ENTRY.MaxAddr)
-                        continue;
-
-                    l3PFN.hostPTE = l2HW_Addr;
-                    var lvl2_page = new long[512];
-
-                    try { mem.GetPageForPhysAddr(l2HW_Addr, ref lvl2_page); } catch (Exception ex) { WriteLine($"level2: Failed lookup {l2HW_Addr:X16}"); }
-
-                    if (lvl2_page == null)
-                        continue;
-
-                    // copy VA 
-                    var s2va = new VIRTUAL_ADDRESS(s3va.Address);
-                    // extract PTE's for each set entry
-                    for (uint i2 = 0; i2 < 512; i2++)
-                    {
-                        if (lvl2_page[i2] == 0)
+                        // get the page that the current l3PFN describes
+                        var l2HW_Addr = l3PTE.NextTableAddress;
+                        if (SLAT != 0)
+                        {
+                            var hl2HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
+                            try { hl2HW_Addr = mem.VirtualToPhysical(SLAT, l2HW_Addr); } catch (Exception ex) { WriteLine($"level2: Unable to V2P {l3PTE}"); }
+                            l2HW_Addr = hl2HW_Addr;
+                        }
+                        // TODO: more error handlng of exceptions & bad return's
+                        // TODO: support software PTE types 
+                        if (l2HW_Addr == HARDWARE_ADDRESS_ENTRY.MaxAddr)
                             continue;
 
-                        var l2PTE = new HARDWARE_ADDRESS_ENTRY(lvl2_page[i2]);
-                        s2va.DirectoryOffset = i2;
+                        l3PFN.hostPTE = l2HW_Addr;
+                        var lvl2_page = new long[512];
 
-                        var l2PFN = new PFN(l2PTE, s2va.Address, CR3, SLAT);
-                        l3PFN.SubTables.Add(s2va, l2PFN);
-                        entries++;
+                        try { mem.GetPageForPhysAddr(l2HW_Addr, ref lvl2_page); } catch (Exception ex) { WriteLine($"level2: Failed lookup {l2HW_Addr:X16}"); }
 
-                        if (!l2PTE.LargePage)
+                        if (lvl2_page == null)
+                            continue;
+
+                        // copy VA 
+                        var s2va = new VIRTUAL_ADDRESS(s3va.Address);
+                        // extract PTE's for each set entry
+                        for (uint i2 = 0; i2 < 512; i2++)
                         {
-
-                            var l1HW_Addr = l2PTE.NextTableAddress;
-                            if (SLAT != 0)
-                            {
-                                var hl1HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
-                                try { hl1HW_Addr = mem.VirtualToPhysical(SLAT, l1HW_Addr); } catch (Exception ex) { WriteLine($"level1: Unable to V2P {l2PTE}"); }
-
-                                l1HW_Addr = hl1HW_Addr;
-                            }
-                            if (l1HW_Addr == HARDWARE_ADDRESS_ENTRY.MaxAddr)
+                            if (lvl2_page[i2] == 0)
                                 continue;
 
-                            l2PFN.hostPTE = l1HW_Addr;
+                            var l2PTE = new HARDWARE_ADDRESS_ENTRY(lvl2_page[i2]);
+                            s2va.DirectoryOffset = i2;
 
-                            var lvl1_page = new long[512];
+                            var l2PFN = new PFN(l2PTE, s2va.Address, CR3, SLAT);
+                            l3PFN.SubTables.Add(s2va, l2PFN);
+                            entries++;
 
-                            try { mem.GetPageForPhysAddr(l1HW_Addr, ref lvl1_page); } catch (Exception ex) { WriteLine($"level1: Failed lookup {l1HW_Addr:X16}"); }
-
-                            if (lvl1_page == null)
-                                continue;
-
-                            var s1va = new VIRTUAL_ADDRESS(s2va.Address);
-
-                            for (uint i1 = 0; i1 < 512; i1++)
+                            if (!l2PTE.LargePage)
                             {
-                                if (lvl1_page[i1] == 0)
+
+                                var l1HW_Addr = l2PTE.NextTableAddress;
+                                if (SLAT != 0)
+                                {
+                                    var hl1HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
+                                    try { hl1HW_Addr = mem.VirtualToPhysical(SLAT, l1HW_Addr); } catch (Exception ex) { WriteLine($"level1: Unable to V2P {l2PTE}"); }
+
+                                    l1HW_Addr = hl1HW_Addr;
+                                }
+                                if (l1HW_Addr == HARDWARE_ADDRESS_ENTRY.MaxAddr)
                                     continue;
 
-                                var l1PTE = new HARDWARE_ADDRESS_ENTRY(lvl1_page[i1]);
-                                s1va.TableOffset = i1;
+                                l2PFN.hostPTE = l1HW_Addr;
 
-                                var l1PFN = new PFN(l1PTE, s1va.Address, CR3, SLAT);
-                                l2PFN.SubTables.Add(s1va, l1PFN);
-                                entries++;
+                                var lvl1_page = new long[512];
+
+                                try { mem.GetPageForPhysAddr(l1HW_Addr, ref lvl1_page); } catch (Exception ex) { WriteLine($"level1: Failed lookup {l1HW_Addr:X16}"); }
+
+                                if (lvl1_page == null)
+                                    continue;
+
+                                var s1va = new VIRTUAL_ADDRESS(s2va.Address);
+
+                                for (uint i1 = 0; i1 < 512; i1++)
+                                {
+                                    if (lvl1_page[i1] == 0)
+                                        continue;
+
+                                    var l1PTE = new HARDWARE_ADDRESS_ENTRY(lvl1_page[i1]);
+                                    s1va.TableOffset = i1;
+
+                                    var l1PFN = new PFN(l1PTE, s1va.Address, CR3, SLAT);
+                                    l2PFN.SubTables.Add(s1va, l1PFN);
+                                    entries++;
+                                }
                             }
                         }
                     }

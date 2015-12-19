@@ -82,12 +82,14 @@
     </StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
     <Reference Include="protobuf-net, Version=2.0.0.668, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
-      <HintPath>..\packages\protobuf-net.2.0.0.668\lib\net40\protobuf-net.dll</HintPath>
+      <HintPath>..\packages\protobuf-net.2.1.0-alpha-1\lib\net45\protobuf-net.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DetectedProc.cs" />
@@ -101,6 +103,7 @@
     <Compile Include="Scanner.cs" />
     <Compile Include="Support.cs" />
     <Compile Include="Support\ProgressBar.cs" />
+    <Compile Include="Support\WAHBitarray2.cs" />
     <Compile Include="UnsafeHelp.cs" />
   </ItemGroup>
   <ItemGroup>

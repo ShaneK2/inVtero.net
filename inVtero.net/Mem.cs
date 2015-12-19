@@ -21,6 +21,10 @@ using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Threading;
+
+using RaptorDB;
+using System.Collections.Concurrent;
+
 // Details on this struct can be found here and likely many other sources
 // Microsoft published this origionally on the singularity project's codeplex (along with some other ingerestiVng things)
 //      http://volatility.googlecode.com/svn-history/r2779/branches/scudette/tools/windows/winpmem/executable/Dump.h
@@ -51,6 +55,9 @@ namespace inVtero.net
         public long StartOfMemory; // adjust for .DMP headers or something
         public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
+        const int PageCacheMax = 100000;
+        static ConcurrentDictionary<long, long[]> PageCache;
+
         IDictionary<long, long> DiscoveredGaps;
 
         MemoryMappedViewAccessor mappedAccess;
@@ -68,7 +75,23 @@ namespace inVtero.net
         long MapViewBase;
         long MapViewSize;
 
-        public Mem(String mFile)
+        WAHBitArray pfnTableIdx;
+        public void DumpPFNIndex()
+        {
+            var idx = pfnTableIdx.GetBitIndexes();
+            int i = 0;
+
+            Console.WriteLine("Dumping PFN index");
+            foreach (var pfn in idx)
+            {
+                Console.Write("{pfn:X8} ");
+                i += 8;
+                if (i >= Console.WindowWidth - 7)
+                    Console.Write(Environment.NewLine);
+            }
+        }
+
+        public Mem(String mFile, uint[] BitmapArray = null)
         {
             GapScanSize = 0x10000000;
             StartOfMemory = 0;
@@ -77,6 +100,18 @@ namespace inVtero.net
                                                                   // as efficently as it needs to
             MapViewSize = MapWindowSize = (0x1000 * 0x1000 * 32); // pretty huge still, 512MB 
 
+            // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
+            // PageCache may be better off than a huge window...
+            if (PageCache == null)
+                PageCache = new ConcurrentDictionary<long, long[]>(8, PageCacheMax); 
+
+            if (BitmapArray != null)
+                pfnTableIdx = new WAHBitArray(WAHBitArray.TYPE.Bitarray, BitmapArray);
+            else
+                pfnTableIdx = new WAHBitArray();
+
+            // 32bit's of pages should be pleanty?
+            pfnTableIdx.Length = (int) (MapViewSize / 0x1000);
 
             if (File.Exists(mFile))
             {
@@ -123,8 +158,15 @@ namespace inVtero.net
             if (MapViewBase != CheckBase * MapViewSize)
                 NewMapViewBase = CheckBase * MapViewSize;
 
-            var AbsOffset = FileOffset - NewMapViewBase;
-            var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
+            if (FileOffset > FileSize)
+                return 0;
+
+            if (FileOffset < NewMapViewBase)
+                throw new OverflowException("FileOffset must be >= than base");
+
+
+             var AbsOffset = FileOffset - NewMapViewBase;
+            var BlockOffset = AbsOffset & (PAGE_SIZE - 1);
 
             try
             {
@@ -169,6 +211,18 @@ namespace inVtero.net
             // convert PAddr to PFN
             var PFN = PAddr.NextTable_PFN;
 
+            if (PageCache.ContainsKey(PFN))
+            {
+                if (PageCache.TryGetValue(PAddr, out block))
+                    return block[PAddr & 0xfff];
+            }
+
+            // record our access attempt to the pfnIndex
+            if (PFN > int.MaxValue)
+                return 0;
+
+            pfnTableIdx.Set((int)PFN, true);
+
             // paranoid android setting
             var Fail = true;
 
@@ -191,7 +245,12 @@ namespace inVtero.net
             var FileOffset = StartOfMemory + (IndexedPFN * PAGE_SIZE);
 
             // add back in the file offset for possiable exact byte lookup
-            return GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block);
+            var rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block);
+
+            if(block != null)
+                PageCache.TryAdd(PFN, block);
+
+            return rv;
         }
 
 
@@ -266,7 +325,13 @@ namespace inVtero.net
             {
                 throw new PageNotFoundException("V2P conversion error page not found", Attempted, ConvertedV2P, ex);
             }
-            
+            finally
+            {
+                foreach(var paddr in ConvertedV2P)
+                {
+
+                }
+            }
             //Console.WriteLine($"return from V2P {rv:X16}");
             // serialize the dictionary out
 
@@ -449,7 +514,7 @@ namespace inVtero.net
     {
         public long PageRunNumber;
         public MemoryRunMismatchException()
-            : base("Examine Mem:MemoryDescriptor to determine why the requested PFN (page run number) wsa not present. Inaccurate gap list creation/walking is typiaclly to blame.")
+            : base("Examine Mem:MemoryDescriptor to determine why the requested PFN (page run number) was not present. Inaccurate gap list creation/walking is typiaclly to blame.")
         { }
         public MemoryRunMismatchException(long pageRunNumber) : this()
         {

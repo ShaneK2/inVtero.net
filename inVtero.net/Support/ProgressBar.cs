@@ -20,14 +20,17 @@ namespace inVtero.net.Support
         {
             Progress = percentage;
 
-            CursorTop++;
-            CurrTop = CursorTop;
-            // this means we need to scroll
-            //if (CurrTop >= WindowHeight)
-                //MoveBufferArea(0, CurrTop, BufferWidth, BufferHeight - CurrTop, 0, CurrTop);
 
-            startOnLine = CurrTop - 1;
-                
+            if (CursorTop > 1 && CurrTop < BufferHeight - 2)
+            {
+                CursorTop++;
+                CurrTop = CursorTop;
+                // this means we need to scroll
+                //if (CurrTop >= WindowHeight)
+                //MoveBufferArea(0, CurrTop, BufferWidth, BufferHeight - CurrTop, 0, CurrTop);
+                startOnLine = CurrTop - 1;
+            }  
+
             CursorVisible = false;
             var originalColor = ForegroundColor;
             var origback = BackgroundColor;
@@ -43,7 +46,6 @@ namespace inVtero.net.Support
             CursorTop = startOnLine;
             CursorLeft = 0;
             ForegroundColor = originalColor;
-            //BackgroundColor = origback;
             CursorVisible = true;
         }
     }

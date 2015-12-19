@@ -78,7 +78,8 @@ namespace quickdumps
         {
             #region fluff
             var Version = PTType.UNCONFIGURED;
-            string Filename = string.Empty;
+            var Filename = string.Empty;
+            var SkipVMCS = false;
 
             if (args.Length == 0 || args.Length > 2)
             {
@@ -115,7 +116,8 @@ namespace quickdumps
                         Version |= PTType.ALL;
 
                     if (spec.Contains("-vmcs"))
-                        Version = Version & ~PTType.VMCS;
+                        SkipVMCS = true;
+
                     if (spec.Contains("-obsd"))
                         Version = Version & ~PTType.OpenBSD;
                     if (spec.Contains("-nbsd"))
@@ -177,7 +179,7 @@ namespace quickdumps
                 // future may have a reason to isolate based on original locationAG
                 #endregion
 
-                if ((Version & PTType.VMCS) == PTType.VMCS)
+                if (!SkipVMCS)
                 {
                     var VMCSCount = vtero.VMCSScan();
 
@@ -192,7 +194,7 @@ namespace quickdumps
                     Write($"Data scanned: {vtero.FileSize:N}");
 
                     // second time 
-                    WriteLine("Second pass done. " + FormatRate(vtero.FileSize * 2, Timer.Elapsed));
+                    WriteLine($"Second pass done. {FormatRate(vtero.FileSize * 2, Timer.Elapsed)}");
                     BackgroundColor = ConsoleColor.Black;
                     ForegroundColor = ConsoleColor.Cyan;
                     
