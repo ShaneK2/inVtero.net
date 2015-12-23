@@ -124,7 +124,7 @@ namespace inVtero.net
         }
 
         public HARDWARE_ADDRESS_ENTRY(long pte) { PTE = pte; }
-        public bool Valid { get { return (PTE & 1) != 0; } }
+        public bool Valid { get { return (PTE & 1) != 0; } set { if (value) PTE |= 1; else PTE &= ~1; } }
         public bool Dirty1 { get { return (PTE & 2) != 0; } }
         public bool Owner { get { return (PTE & 4) != 0; } }
         public bool WriteThrough { get { return (PTE & 8) != 0; } }
@@ -260,15 +260,21 @@ namespace inVtero.net
     /// </summary>
     public class MemoryDescriptor
     {
-        public int NumberOfRuns;
+        public long StartOfMemmory; // this object does not have to be a 1:1 to the native type
+        public long NumberOfRuns;
         public long NumberOfPages;
         public List<MemoryRun> Run;
-        public MemoryDescriptor(long MemSize)
+
+        public MemoryDescriptor()
+        {
+            Run = new List<MemoryRun>();
+        }
+
+        public MemoryDescriptor(long MemSize) : this()
         {
             NumberOfPages = MemSize / 4096;
             NumberOfRuns = 1;
 
-            Run = new List<MemoryRun>();
             Run.Add(new MemoryRun { BasePage = 0, PageCount = NumberOfPages });
         }
     }

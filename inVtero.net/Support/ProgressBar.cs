@@ -10,6 +10,8 @@ namespace inVtero.net.Support
         public static ConsoleColor pBarColor;
         public static int Progress;
 
+        public static bool DisableProgressBar = false;
+
         private static int startOnLine;
         private static char progressBarCharacter = '\u2592';
         private static int CurrTop;
@@ -18,9 +20,9 @@ namespace inVtero.net.Support
 
         public static void  RenderConsoleProgress(int percentage)
         {
+            if (DisableProgressBar) return;
+
             Progress = percentage;
-
-
             if (CursorTop > 1 && CurrTop < BufferHeight - 2)
             {
                 CursorTop++;

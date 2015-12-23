@@ -63,7 +63,9 @@ namespace inVtero.net
             //TopEPT = new Dictionary<int, HARDWARE_ADDRESS_ENTRY>();
         }
 
-        [ProtoMember(1)]
+        //[ProtoMember(1)]
+        // this is usully captured somewhere else also so
+        // avoid recursion
         public DetectedProc dp; // which proc this came from
         [ProtoMember(2)]
         public long gCR3_off;

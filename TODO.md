@@ -8,12 +8,14 @@ of page table walks that will populate an embedded RaptorDB (performed fairly we
 provide a comprehensive mapping even if it may require more than 2 passes.  Trying to keep things space efficent w/o blowing
 too much CPU. :)
 
-
+## Format awareness
+New formats made this is to enhance usefullness. Will be finalinzing generic PFN/RUN extraction eventually but practically 
+being more usefull sooner is nice.
 
 ## Upcoming Changes
-* Improved memory map windowing
-* Process/GM grouping 
+~~* Improved memory map windowing~~
+~~* Process/GM grouping~~
 
 
-### Not so upcoming, still coming
+### Soonish, see @Reloc
 * Delocation -- match disk hashes to what comes out of memory

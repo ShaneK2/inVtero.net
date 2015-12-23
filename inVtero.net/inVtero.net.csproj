@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>inVtero.net</RootNamespace>
     <AssemblyName>inVtero.net</AssemblyName>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <SccProjectName>SAK</SccProjectName>
@@ -101,6 +101,7 @@
     <Compile Include="PFN.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Scanner.cs" />
+    <Compile Include="Specialties\CrashDump.cs" />
     <Compile Include="Support.cs" />
     <Compile Include="Support\ProgressBar.cs" />
     <Compile Include="Support\WAHBitarray2.cs" />

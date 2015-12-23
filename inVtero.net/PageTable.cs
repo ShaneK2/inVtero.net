@@ -28,22 +28,22 @@ namespace inVtero.net
     /// Group regions and address spaces
     /// 
     /// TODO: Enumerate and expose available virtual addresses for a given page table
-    ///  - probably just do a recursive routine to desend/enum all available virtual addresses
+    ///  - probably just do a recursive routine to descend/enum all available virtual addresses
     /// 
-    /// TODO: Implment join-on-shared-kernel-spaces
+    /// TODO: Implement join-on-shared-kernel-spaces
     /// 
     /// TODO: Convert all of the names into tee http://www.pagetable.com/?p=308 convention :)
     /// </summary>
     [ProtoContract]
     public class PageTable
     {
-        // Faild List is the list of entries which were not able to load
-        // this is uaually the result of a miscalculated memory run configuration
+        // failed List is the list of entries which were not able to load
+        // this is usually the result of a miscalculated memory run configuration
         [ProtoMember(1)]
         public List<HARDWARE_ADDRESS_ENTRY> Failed;
 
         // The present invalid list is the list of 'invalid' as far as the hardware goes
-        // This is uaually due to software paging, prototype or some alternative PTE state
+        // This is usually due to software paging, prototype or some alternative PTE state
         // It may be better to say 'Present' here but over all an invalid state just means that 
         // the OS/MM is handling the state of the page and not the hardware.  (swap etc..)
         [ProtoMember(2)]
@@ -60,8 +60,7 @@ namespace inVtero.net
         DetectedProc DP;
         Mem mem;
         
-
-        public static PageTable AddProcess(DetectedProc dp, Mem mem)
+        public static PageTable AddProcess(DetectedProc dp, Mem mem, bool OnlyUserSpace = false)
         {
             long Address = 0;
             int AddressIndex = 0;
@@ -85,13 +84,30 @@ namespace inVtero.net
 
             // any output is error/warning output
 
-            var cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value);
+            var cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
             Debug.WriteLine($"extracted {cnt} PTE from process {dp.vmcs.EPTP:X16}:{dp.CR3Value:X16}");
+            if(cnt == 0)
+            {
+                WriteLine($"BAD EPTP {dp.vmcs.EPTP:X16}, try a different candidate or this dump may lack a hypervisor. Attempting PT walk W/O SLAT");
+                dp.vmcs = null;
+                cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
+                WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");
+            }
 
             dp.PT = rv;
             return rv;
         }
 
+        /// <summary>
+        /// An Inline extraction for the page table hierarchy.
+        /// Why not let the compiler do it?  I have code clones here?
+        /// 
+        /// I guess so, but we can see/deal with the subtle differences at each level here as we implement them.
+        /// e.g. some levels have LargePage bits and we may also lay over other CPU modes here like 32 in 64 etc..
+        /// </summary>
+        /// <param name="top"></param>
+        /// <param name="Level"></param>
+        /// <returns></returns>
         long InlineExtract(PFN top, int Level)
         {
             if (Level == 0)
@@ -100,10 +116,12 @@ namespace inVtero.net
             var entries = 0L;
 
             var VA = new VIRTUAL_ADDRESS(top.VA);
+            //WriteLine($"4: Scanning {top.PageTable:X16}");
+
             var hPA = HARDWARE_ADDRESS_ENTRY.MinAddr;
 
-            var CR3 = top.PageTable;
             var SLAT = top.SLAT;
+            var CR3 = top.PageTable;
 
             // pull level 4 entries attach level 3
             foreach (var top_sub in top.SubTables)
@@ -118,21 +136,22 @@ namespace inVtero.net
                 {
                     var hl3HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
 
-                    try { hl3HW_Addr = mem.VirtualToPhysical(SLAT, l3HW_Addr); } catch (Exception) { WriteLine($"level3: Failed lookup {l3HW_Addr:X16}"); }
+                    try { hl3HW_Addr = mem.VirtualToPhysical(SLAT, l3HW_Addr); } catch (Exception) { if (Vtero.DiagOutput) WriteLine($"level3: Failed lookup {l3HW_Addr:X16}"); }
 
                     l3HW_Addr = hl3HW_Addr;
                 }
-                if (l3HW_Addr == long.MaxValue)
+                if (SLAT != 0 && (l3HW_Addr == long.MaxValue || l3HW_Addr == long.MaxValue-1))
                     continue;
 
                 // copy VA since were going to be making changes
                 var s3va = new VIRTUAL_ADDRESS(top_sub.Key.Address);
+                //WriteLine($"3: Scanning {s3va.Address:X16}");
 
                 top_sub.Value.hostPTE = l3HW_Addr; // cache translated value
                 var lvl3_page = new long[512];
 
                 // extract the l3 page for each PTEEntry we had in l4
-                try { mem.GetPageForPhysAddr(l3HW_Addr, ref lvl3_page); } catch (Exception) { WriteLine($"level3: Failed lookup {l3HW_Addr:X16}"); }
+                try { mem.GetPageForPhysAddr(l3HW_Addr, ref lvl3_page); } catch (Exception) { if (Vtero.DiagOutput) WriteLine($"level3: Failed lookup {l3HW_Addr:X16}"); }
 
                 if (lvl3_page == null)
                     continue;
@@ -161,10 +180,10 @@ namespace inVtero.net
                         if (SLAT != 0)
                         {
                             var hl2HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
-                            try { hl2HW_Addr = mem.VirtualToPhysical(SLAT, l2HW_Addr); } catch (Exception ex) { WriteLine($"level2: Unable to V2P {l3PTE}"); }
+                            try { hl2HW_Addr = mem.VirtualToPhysical(SLAT, l2HW_Addr); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"level2: Unable to V2P {l3PTE}"); }
                             l2HW_Addr = hl2HW_Addr;
                         }
-                        // TODO: more error handlng of exceptions & bad return's
+                        // TODO: more error handling of exceptions & bad returns
                         // TODO: support software PTE types 
                         if (l2HW_Addr == HARDWARE_ADDRESS_ENTRY.MaxAddr)
                             continue;
@@ -172,13 +191,15 @@ namespace inVtero.net
                         l3PFN.hostPTE = l2HW_Addr;
                         var lvl2_page = new long[512];
 
-                        try { mem.GetPageForPhysAddr(l2HW_Addr, ref lvl2_page); } catch (Exception ex) { WriteLine($"level2: Failed lookup {l2HW_Addr:X16}"); }
+                        try { mem.GetPageForPhysAddr(l2HW_Addr, ref lvl2_page); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"level2: Failed lookup {l2HW_Addr:X16}"); }
 
                         if (lvl2_page == null)
                             continue;
 
                         // copy VA 
                         var s2va = new VIRTUAL_ADDRESS(s3va.Address);
+                        //WriteLine($"2: Scanning {s2va.Address:X16}");
+
                         // extract PTE's for each set entry
                         for (uint i2 = 0; i2 < 512; i2++)
                         {
@@ -194,12 +215,11 @@ namespace inVtero.net
 
                             if (!l2PTE.LargePage)
                             {
-
                                 var l1HW_Addr = l2PTE.NextTableAddress;
                                 if (SLAT != 0)
                                 {
                                     var hl1HW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
-                                    try { hl1HW_Addr = mem.VirtualToPhysical(SLAT, l1HW_Addr); } catch (Exception ex) { WriteLine($"level1: Unable to V2P {l2PTE}"); }
+                                    try { hl1HW_Addr = mem.VirtualToPhysical(SLAT, l1HW_Addr); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"level1: Unable to V2P {l2PTE}"); }
 
                                     l1HW_Addr = hl1HW_Addr;
                                 }
@@ -210,12 +230,13 @@ namespace inVtero.net
 
                                 var lvl1_page = new long[512];
 
-                                try { mem.GetPageForPhysAddr(l1HW_Addr, ref lvl1_page); } catch (Exception ex) { WriteLine($"level1: Failed lookup {l1HW_Addr:X16}"); }
+                                try { mem.GetPageForPhysAddr(l1HW_Addr, ref lvl1_page); } catch (Exception ex) { if(Vtero.DiagOutput) WriteLine($"level1: Failed lookup {l1HW_Addr:X16}"); }
 
                                 if (lvl1_page == null)
                                     continue;
 
                                 var s1va = new VIRTUAL_ADDRESS(s2va.Address);
+                                //WriteLine($"1: Scanning {s1va.Address:X16}");
 
                                 for (uint i1 = 0; i1 < 512; i1++)
                                 {
@@ -234,51 +255,53 @@ namespace inVtero.net
                     }
                 }
             }
-            top.PFNCount += entries;
+            //top.PFNCount += entries;
             return entries;
         }
 
-        long FillTable(VIRTUAL_ADDRESS VA, int PageIndex, long CR3)
+        long FillTable(VIRTUAL_ADDRESS VA, int PageIndex, long CR3, bool OnlyUserSpace = false)
         {
             var entries = 0L;
             var PageTable = new Dictionary<VIRTUAL_ADDRESS, PFN>();
-
             // We can just pick up the top level page to speed things up 
             // we've already visited this page so were not going to waste time looking up the VA->PA
             //var page = new long[512];
             //mem.GetPageFromFileOffset(FileOffset, ref page);
-
 
             // clear out the VA for the other indexes since were looking at the top level
             VA.Address = 0;
 
             foreach (var kvp in DP.TopPageTablePage)
             {
-                // Only extract user portion, kerenl will be mostly redundant
-                if (kvp.Key >= 256)
+                // Only extract user portion, kernel will be mostly redundant
+                if(OnlyUserSpace && kvp.Key >= 256)
                     continue;
-
 
                 // were at the top level (4th)
                 VA.PML4 = kvp.Key;
 
-                var pfn = new PFN(kvp.Value, VA.Address, CR3, DP.vmcs.EPTP);
+                var pfn = new PFN(kvp.Value, VA.Address, CR3, DP.vmcs == null ? 0 : DP.vmcs.EPTP);
                 PageTable.Add(VA, pfn);
                 entries++;
             }
             WriteLine();
 
             // simulated top entry
-            RootPageTable = new PFN(DP.TopPageTablePage[PageIndex], VA.Address, CR3, DP.vmcs.EPTP)
+            RootPageTable = new PFN(DP.TopPageTablePage[PageIndex], VA.Address, CR3, DP.vmcs == null ? 0 : DP.vmcs.EPTP)
             {
-                SubTables = PageTable,
-                // a hint for the full count of entries extracted
-                PFNCount = entries
+                SubTables = PageTable
             };
 
-            // desend the remaining levels
-            entries += InlineExtract(RootPageTable, 3);
+            // descend the remaining levels
+            // if we find nothing, we can be sure the value were using for EPTP or CR3 is bogus
+            var new_entries = InlineExtract(RootPageTable, 3);
+            if (new_entries == 0)
+                return 0;
 
+            entries += new_entries;
+            // a hint for the full count of entries extracted
+            RootPageTable.PFNCount = entries;
+            
             return entries;
         }
     }

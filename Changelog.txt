@@ -1,3 +1,21 @@
+-- Dec'15
+** .NET 461
+** PAGEDUMP64 file format support
+** VMWare support workaround (convert or use memory run data from vmss2core)
+** Fixes for non-hypervisor based process idnetification
+** Big perf boost with page cache over mapped files
+** Fixes to InlineExtract
+
+
+---- 
+
+
+** Fixed misc options, page cache working well 
+
+** brought back bitmap index from RaptorDB
+
+** Added Linux support, works for Ubuntu ;) 3.x -> 4.x will test more
+
 ** Started changelog
 
 ** Removed Serial (non parallized code paths)

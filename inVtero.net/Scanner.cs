@@ -243,14 +243,14 @@ namespace inVtero.net
             var group = -1;
 
             // The main observation on kern319 is the given set below of must-have offsets that are identical and 0x7f8 which is unique per process
-            // Next is the behaviour that uses entries in 2 directions from top down and bottom up 
+            // Next is the behavior that uses entries in 2 directions from top down and bottom up 
             // i.e. 0x7f0 0x0 are the next expected values.
-            // All orthers would be unset in the top level / base page
+            // All others would be unset in the top level / base page
             //
-            // Kernel should have only the magnificnet entries
+            // Kernel should have only the magnificent entries
             // memcmp 0 ranges 8-7f0, 800-880, 888-c88, c98-e88, e90-ea0, ea8-ff0
             // after first (likely kernel) page table found, use it's lower 1/2 to validate other detected page tables
-            // linux was found (so far) to have a consistant kernel view.
+            // Linux was found (so far) to have a consistent kernel view.
             var kern319 = new Dictionary<int,bool> { [0x7f8] = false, [0x880] = true, [0xc90] = true, [0xe88] = true, [0xea0] = true, [0xff0] = true, [0xff8] = true };
 
             var Profiles = new List<Dictionary<int, bool>>();
@@ -277,12 +277,12 @@ namespace inVtero.net
                 IsZero(block, 0x1D5, 0x29))
             */
             {
-                // before we catalouge this entry, check to see if we can put it in a group
+                // before we catalog this entry, check to see if we can put it in a group
                 for (int i = 0; i < LinuxSFirstPages.Count(); i++)
                     if (EqualBytesLongUnrolled(block, LinuxSFirstPages[i], 0x100))
                         group = i;
 
-                // if we havent found anything yet, setup first page
+                // if we haven't found anything yet, setup first page
                 if (LinuxSFirstPage == null)
                 {
                     LinuxSFirstPage = block;
@@ -350,7 +350,7 @@ namespace inVtero.net
             #define L4_SLOT_DIRECT		510
         */
         /// <summary>
-        /// Slighyly better check then NetBSD so I guess consider it beta!
+        /// Slightly better check then NetBSD so I guess consider it beta!
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
@@ -569,8 +569,8 @@ namespace inVtero.net
                     }
                 }
             }
-            // mode 1 is implmented to hit on very few supported bits
-            // developing a version close to this that will work for linux
+            // mode 1 is implemented to hit on very few supported bits
+            // developing a version close to this that will work for Linux
             #region MODE 1 IS PRETTY LOOSE
 #if MODE_1
             else
@@ -578,7 +578,7 @@ namespace inVtero.net
                 //if (((block[0] & 3) == 3) && (block[0x1ed] & 3) == 3)		
                 if ((block[0] & 1) == 1 && (block[0xf68 / 8] & 1) == 1)
             {
-                // a posssible kernel first PFN? should look somewhat valid... 
+                // a possible kernel first PFN? should look somewhat valid... 
                 if (!SetDiff)
                 {
                     // I guess we could be attacked here too, the system kernel could be modified/hooked/bootkit enough 
@@ -652,8 +652,8 @@ namespace inVtero.net
                         HandleInheritability.Inheritable,
                         false))
                     {
-                        var fi = new FileInfo(Filename);
-                        FileSize = fi.Length;
+                        if (FileSize == 0)
+                            FileSize = new FileInfo(Filename).Length;
 
                         while (CurrWindowBase < FileSize)
                         {
