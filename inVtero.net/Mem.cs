@@ -237,7 +237,7 @@ namespace inVtero.net
             }
 
             // record our access attempt to the pfnIndex
-            if (PFN > int.MaxValue || PFN > MD.NumberOfPages)
+            if (PFN > int.MaxValue || PFN > MD.MaxAddressablePageNumber)
                 return 0;
 
             pfnTableIdx.Set((int)PFN, true);
@@ -263,7 +263,7 @@ namespace inVtero.net
             // Determine file offset based on indexed/gap adjusted PFN and page size
             var FileOffset = StartOfMemory + (IndexedPFN * PAGE_SIZE);
 
-            // add back in the file offset for possiable exact byte lookup
+            // add back in the file offset for possible exact byte lookup
             var rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block);
 
             if(block != null)
@@ -361,8 +361,6 @@ namespace inVtero.net
             }
             //Console.WriteLine($"return from V2P {rv:X16}");
             // serialize the dictionary out
-
-
             return rv;
         }
 

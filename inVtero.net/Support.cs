@@ -250,19 +250,45 @@ namespace inVtero.net
     /// <summary>
     /// Run's allow for gaps in address space
     /// </summary>
+    [ProtoContract]
     public class MemoryRun
     {
+        [ProtoMember(1)] // 
         public long BasePage;
+        [ProtoMember(2)]
         public long PageCount;
+        [ProtoMember(3)] // physical page number
+        public long regionPPN;
+
+        public override string ToString()
+        {
+            return $"BasePage: {BasePage:X16} PageCount: {PageCount:X16} PhysicalPageNumber {regionPPN:X16}";
+        }
     }
     /// <summary>
     /// Setup one default memory run for the entire range
     /// </summary>
+    [ProtoContract]
     public class MemoryDescriptor
     {
+        [ProtoMember(1)]
         public long StartOfMemmory; // this object does not have to be a 1:1 to the native type
+        [ProtoMember(2)]
         public long NumberOfRuns;
+        [ProtoMember(3)]
         public long NumberOfPages;
+
+        [ProtoMember(4)]
+        long maxAddressablePageNumber;
+        public long MaxAddressablePageNumber { get {
+
+                if (maxAddressablePageNumber != 0)
+                    return maxAddressablePageNumber;
+
+                maxAddressablePageNumber = Run.Count > 0 ? Run[Run.Count - 1].BasePage + Run[Run.Count - 1].BasePage : NumberOfPages;
+                return maxAddressablePageNumber;
+            } }
+        [ProtoMember(5)]
         public List<MemoryRun> Run;
 
         public MemoryDescriptor()

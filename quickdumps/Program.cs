@@ -81,7 +81,7 @@ namespace quickdumps
             var Filename = string.Empty;
             var SkipVMCS = false;
 
-            if (args.Length == 0 || args.Length > 2)
+            if (args.Length < 1)
             {
                 PrintHelp();
                 return;
@@ -141,7 +141,10 @@ namespace quickdumps
                     WriteLine("Found save state, (l)oad or (d)iscard?");
                     var todo = ReadKey();
                     if (todo.Key == ConsoleKey.L)
+                    {
                         vtero = Vtero.CheckpointRestoreState(saveStateFile);
+                        vtero.OverRidePhase = true;
+                    }
                     else
                         File.Delete(saveStateFile);
                 }
@@ -175,7 +178,7 @@ namespace quickdumps
                 ForegroundColor = ConsoleColor.Cyan;
                 if (procCount < 3)
                 {
-                    WriteLine("Seems like a fail. Try generic scanning or implment a state scan like LinuxS");
+                    WriteLine("Seems like a fail. Try generic scanning or implement a state scan like LinuxS");
                     return;
                 }
                 //BackgroundColor = ConsoleColor.White;
@@ -227,8 +230,11 @@ namespace quickdumps
                         WriteLine(saveStateFile);
                     }
 
-
+                    // Extract Address Spaces verifies the linkages between
+                    // process<->CR3<->EPTP(if there is one)
+                    // and that they are functional
                     vtero.ExtrtactAddressSpaces();
+
 
                     vtero.DumpASToFile();
 

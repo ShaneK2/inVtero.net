@@ -61,8 +61,6 @@ namespace inVtero.net.Specialties
             if (!File.Exists(DumpFile))
                 return rv;
 
-            var finfo = new FileInfo(DumpFile);
-
             using(var dstream = File.OpenRead(DumpFile))
             {
                 using (var dbin = new BinaryReader(dstream))

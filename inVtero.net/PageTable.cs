@@ -85,13 +85,15 @@ namespace inVtero.net
             // any output is error/warning output
 
             var cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
-            Debug.WriteLine($"extracted {cnt} PTE from process {dp.vmcs.EPTP:X16}:{dp.CR3Value:X16}");
-            if(cnt == 0)
+
+            if (cnt == 0)
             {
-                WriteLine($"BAD EPTP {dp.vmcs.EPTP:X16}, try a different candidate or this dump may lack a hypervisor. Attempting PT walk W/O SLAT");
-                dp.vmcs = null;
-                cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
-                WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");
+                if (dp.vmcs != null)
+                    WriteLine($"BAD EPTP/DirectoryTable Base {dp.vmcs.EPTP:X16}, try a different candidate or this dump may lack a hypervisor. Attempting PT walk W/O SLAT");
+                else
+                    WriteLine($"Decoding failed for {dp.CR3Value:X16}");
+                /*cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
+                WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");*/
             }
 
             dp.PT = rv;
@@ -284,7 +286,6 @@ namespace inVtero.net
                 PageTable.Add(VA, pfn);
                 entries++;
             }
-            WriteLine();
 
             // simulated top entry
             RootPageTable = new PFN(DP.TopPageTablePage[PageIndex], VA.Address, CR3, DP.vmcs == null ? 0 : DP.vmcs.EPTP)

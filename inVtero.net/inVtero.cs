@@ -108,16 +108,27 @@ namespace inVtero.net
 
         public Vtero(string MemoryDump) :this()
         {
-            MemFile = MemoryDump;
-            scan = new Scanner(MemFile);
-            FileSize = new FileInfo(MemFile).Length;
+            MemFile = MemoryDump.ToLower();
 
-            if (MemFile.ToLower().EndsWith(".dmp"))
+            if (MemFile.EndsWith(".dmp"))
             {
                 var dump = new CrashDump(MemFile);
                 if (dump.IsSupportedFormat())
                     DetectedDesc = dump.PhysMemDesc;
             }
+            else if(MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn"))
+            {
+                var dump = new VMWare(MemFile);
+                if (dump.IsSupportedFormat())
+                {
+                    DetectedDesc = dump.PhysMemDesc;
+
+                    MemFile = dump.MemFile;
+                }
+            }
+
+            scan = new Scanner(MemFile);
+            FileSize = new FileInfo(MemFile).Length;
 
         }
 
@@ -151,7 +162,7 @@ namespace inVtero.net
 
         public int ProcDetectScan(PTType Modes, int DetectOnly = 0)
         {
-            if (Phase > 1 && !OverRidePhase)
+            if (Phase >= 1 && OverRidePhase)
                 return Processes.Count();
 
             scan.ScanMode = Modes;
@@ -168,7 +179,7 @@ namespace inVtero.net
 
         public int VMCSScan()
         {
-            if (Phase > 2 && !OverRidePhase)
+            if (Phase >= 2 && OverRidePhase)
                 return VMCSs.Count();
 
 
@@ -201,7 +212,7 @@ namespace inVtero.net
         {
             var PT2Scan = pTypes == PTType.UNCONFIGURED ? PTType.ALL : pTypes;
 
-            if (Phase > 3 && !OverRidePhase)
+            if (Phase >=3 && OverRidePhase)
                 return;
 
             // To join an AS group we want to see > 50% corelation which is a lot considering were only interperating roughly 10-20 values (more like 12)
@@ -307,8 +318,8 @@ namespace inVtero.net
             var procList = Procs == null ? Processes : Procs;
             //var memSpace = MemSpace == null ? VMCSs.First() : MemSpace.First();
 
-            var memSpace = MemSpace == null ? VMCSs.GroupBy(x => x.EPTP).Select(xg => xg.First()) : MemSpace; //.Where(xw => xw.All(xz => xz.EPTP == 0x1138601E))
-
+            var memSpace = MemSpace == null ? VMCSs.GroupBy(x => x.EPTP).Select(xg => xg.First()) : MemSpace; 
+            
             var p = from proc in Processes
                     where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
                     orderby proc.CR3Value ascending
@@ -326,10 +337,15 @@ namespace inVtero.net
             Console.ForegroundColor = ConsoleColor.Yellow;
             WriteLine($"assessing {tot} address spaces");
             ProgressBarz.Progress = 0;
-            
+
+            var VMCSTriage = new Dictionary<VMCS, int>();
+
             //Parallel.ForEach(memSpace, (space) =>
             foreach (var space in memSpace)
             {
+                // we do it this way so that parallelized tasks do not interfere with each other 
+                // overall it may blow the cache hit ratio but will tune a single task to see the larger/better cache
+                // versus multicore, my suspicion is that multi-core is better
                 using (var memAxs = new Mem(MemFile, null, DetectedDesc))
                 {
                     var sx = 0;
@@ -342,11 +358,16 @@ namespace inVtero.net
                             var pt = PageTable.AddProcess(proc, memAxs, false);
                             if (pt != null && VerboseOutput)
                             {
-                                if (proc.vmcs != null)
+                                // If we used group detection correlation a valid EPTP should work for every process    
+
+                                if (proc.vmcs != null && proc.PT.RootPageTable.PFNCount > proc.TopPageTablePage.Count())
+                                {
                                     WriteLine($"Virtualized Process PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
+                                }
                                 else {
-                                    WriteLine($"Physical Process PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.CR3Value:X}]");
                                     WriteLine($"canceling evaluation of bad EPTP for this group");
+                                    foreach (var pxc in Processes)
+                                        pxc.vmcs = null;
                                     break;
                                 }
 
@@ -386,6 +407,21 @@ namespace inVtero.net
                 }
             }
             //});
+
+
+            using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            {
+                var nonVMCSprocs = from px in Processes
+                                   where px.vmcs == null
+                                   select px;
+
+                foreach (var pmetal in nonVMCSprocs)
+                {
+                    // this is a process on the bare metal
+                    var pt = PageTable.AddProcess(pmetal, memAxs, false);
+                     WriteLine($"Process {pmetal.CR3Value:X16} Physical walk w/o SLAT yielded {pmetal.PT.RootPageTable.PFNCount} entries");
+                }
+            }
         }
 
         public void DumpFailList()
@@ -415,25 +451,15 @@ namespace inVtero.net
             using (var memAxs = new Mem(MemFile, null, DetectedDesc))
             {
                 var tdp = (from p in Processes
-                                  where p.AddressSpaceID == 1 && p.vmcs != null
+                                  where p.AddressSpaceID == 1
                                   orderby p.CR3Value ascending
                                   select p);
 
-                //Parallel.ForEach(tdp, (x) =>
-                /*{
-                foreach (var x in tdp)
-                {
-                    PageTable.AddProcess(x, memAxs);
-                    WriteLine($"PID {x.CR3Value:X} cnt:{x.PT.RootPageTable.PFNCount}");
-                }
-                );
-                */
+                // as a test let's find the process with the most to dump
                 var largest = (from p in Processes
-                               where p.AddressSpaceID == 1 && p.vmcs != null
+                               where p.AddressSpaceID == 1
                                orderby p.PT.RootPageTable.PFNCount descending
                                select p).Take(1).First();
-
-                //PageTable.AddProcess(largest, memAxs);
 
 
                 var pml4 = largest.PT.RootPageTable;
@@ -444,7 +470,7 @@ namespace inVtero.net
 
                 WriteLine($"MemRanges = {MemRanges.Count()} available.");
                 foreach (var pte in MemRanges)
-                    WriteLine($"VA: {pte.Key:X16}  \t PFN: {pte.Value:X16}");
+                    WriteLine($"VA: {pte.Key:X16}  \t PFN: {pte.Value.PTE}");
             }
         }
     }
