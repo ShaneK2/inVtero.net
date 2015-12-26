@@ -20,6 +20,14 @@ using System.Collections.Generic;
 
 namespace inVtero.net
 {
+    public enum PFNType: int
+    {
+        UNSET   = 0,
+        Pointer = 1, // points to another entry
+        Data    = 2, // points to data
+    }
+
+
     /// <summary>
     /// Basis for PFFN DB, generated first time loading the memory dump
     /// </summary>
@@ -27,8 +35,7 @@ namespace inVtero.net
     public class PFN
     {
         [ProtoMember(1)]
-        public HARDWARE_ADDRESS_ENTRY PTE;  // Virtualized if we have SLATA or the real one for native
-        public long PageFrameNumber;
+        public HARDWARE_ADDRESS_ENTRY PTE;  // Virtualized if we have SLAT addr or the real one for native
         [ProtoMember(2)]
         public long VA;
         [ProtoMember(3)]
@@ -41,15 +48,24 @@ namespace inVtero.net
         public Dictionary<VIRTUAL_ADDRESS, PFN> SubTables;
         [ProtoMember(6)]
         public long hostPTE;  // if we have SLAT and had the chance to de-virtualize, place the translated entry here
+        [ProtoMember(6)]
+        public PFNType Type;
 
         public PFN() { PTE = long.MaxValue; }
+
+        /// <summary>
+        /// These properties combine together to formulate our database/cross reference between physical to virtual addresses 
+        /// </summary>
+        /// <param name="RawEntry">PTE</param>
+        /// <param name="va">Virtual Address</param>
+        /// <param name="pageTable">CR3 address</param>
+        /// <param name="sLAT">EPTP</param>
         public PFN(long RawEntry, long va, long pageTable, long sLAT)
         {
             PTE = new HARDWARE_ADDRESS_ENTRY(RawEntry);
 
             // this is the key into bitmap, since were never going to get past 32bit PFN
             // figures to make it only uint
-            PageFrameNumber = PTE.PFN;
             VA = va;
 
             PageTable.PTE = pageTable;

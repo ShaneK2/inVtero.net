@@ -131,7 +131,9 @@ namespace inVtero.net
                 // scan each page for the level 4 entry
                 var PTE = top_sub.Value.PTE;
 
-                var l3HW_Addr = PTE.NextTableAddress | top_sub.Key.PML4;
+                // we don't need to | in the PML4 AO (address offset) since were pulling down the whole page not just the one value
+                // and were going to brute force our way through the entire table so this was just confusing things.
+                var l3HW_Addr = PTE.NextTableAddress   ;// | top_sub.Key.PML4;
 
                 // if we have an EPTP use it and request resolution of the HW_Addr
                 if (SLAT != 0)
@@ -211,7 +213,7 @@ namespace inVtero.net
                             var l2PTE = new HARDWARE_ADDRESS_ENTRY(lvl2_page[i2]);
                             s2va.DirectoryOffset = i2;
 
-                            var l2PFN = new PFN(l2PTE, s2va.Address, CR3, SLAT);
+                            var l2PFN = new PFN(l2PTE, s2va.Address, CR3, SLAT) { Type = PFNType.Data };
                             l3PFN.SubTables.Add(s2va, l2PFN);
                             entries++;
 
@@ -248,7 +250,7 @@ namespace inVtero.net
                                     var l1PTE = new HARDWARE_ADDRESS_ENTRY(lvl1_page[i1]);
                                     s1va.TableOffset = i1;
 
-                                    var l1PFN = new PFN(l1PTE, s1va.Address, CR3, SLAT);
+                                    var l1PFN = new PFN(l1PTE, s1va.Address, CR3, SLAT) { Type = PFNType.Data };
                                     l2PFN.SubTables.Add(s1va, l1PFN);
                                     entries++;
                                 }

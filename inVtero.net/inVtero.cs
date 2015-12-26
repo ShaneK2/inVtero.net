@@ -24,6 +24,7 @@ using System.Threading.Tasks;
 using System.IO;
 using ProtoBuf;
 using inVtero.net.Specialties;
+using System.Runtime.InteropServices;
 using static System.Console;
 
 namespace inVtero.net
@@ -116,7 +117,7 @@ namespace inVtero.net
                 if (dump.IsSupportedFormat())
                     DetectedDesc = dump.PhysMemDesc;
             }
-            else if(MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn"))
+            else if(MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
             {
                 var dump = new VMWare(MemFile);
                 if (dump.IsSupportedFormat())
@@ -312,8 +313,10 @@ namespace inVtero.net
         /// <param name="MemSpace">The list of VMCS/EPTP configurations which will alter the page table use</param>
         /// <param name="Procs">Detected procs to query</param>
         /// <param name="pTypes">Type bitmas to interpreate</param>
-        public void ExtrtactAddressSpaces(IOrderedEnumerable<VMCS> MemSpace = null, ConcurrentBag<DetectedProc> Procs = null, PTType pTypes = PTType.UNCONFIGURED)
+        public List<DetectedProc> ExtrtactAddressSpaces(IOrderedEnumerable<VMCS> MemSpace = null, ConcurrentBag<DetectedProc> Procs = null, PTType pTypes = PTType.UNCONFIGURED)
         {
+            List<DetectedProc> rvList = new List<DetectedProc>();
+
             var PT2Scan = pTypes == PTType.UNCONFIGURED ? (PTType.Windows | PTType.HyperV | PTType.GENERIC) : pTypes;
             var procList = Procs == null ? Processes : Procs;
             //var memSpace = MemSpace == null ? VMCSs.First() : MemSpace.First();
@@ -349,12 +352,14 @@ namespace inVtero.net
                 using (var memAxs = new Mem(MemFile, null, DetectedDesc))
                 {
                     var sx = 0;
-                    foreach (var proc in p)
+                    foreach (var px in p)
                     //Parallel.ForEach(p, (proc) =>
                     {
                         try
                         {
+                            var proc = px.Clone<DetectedProc>();
                             proc.vmcs = space;
+
                             var pt = PageTable.AddProcess(proc, memAxs, false);
                             if (pt != null && VerboseOutput)
                             {
@@ -363,6 +368,7 @@ namespace inVtero.net
                                 if (proc.vmcs != null && proc.PT.RootPageTable.PFNCount > proc.TopPageTablePage.Count())
                                 {
                                     WriteLine($"Virtualized Process PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
+                                    rvList.Add(proc);
                                 }
                                 else {
                                     WriteLine($"canceling evaluation of bad EPTP for this group");
@@ -415,13 +421,18 @@ namespace inVtero.net
                                    where px.vmcs == null
                                    select px;
 
-                foreach (var pmetal in nonVMCSprocs)
+                foreach (var px in nonVMCSprocs)
                 {
+                    var pmetal = px.Clone<DetectedProc>();
+
                     // this is a process on the bare metal
                     var pt = PageTable.AddProcess(pmetal, memAxs, false);
-                     WriteLine($"Process {pmetal.CR3Value:X16} Physical walk w/o SLAT yielded {pmetal.PT.RootPageTable.PFNCount} entries");
+                    WriteLine($"Process {pmetal.CR3Value:X16} Physical walk w/o SLAT yielded {pmetal.PT.RootPageTable.PFNCount} entries");
+
+                    rvList.Add(pmetal);
                 }
             }
+            return rvList;
         }
 
         public void DumpFailList()
@@ -445,32 +456,77 @@ namespace inVtero.net
             //        WriteLine($"extracted {proc.PageTableType} PTE from process {proc.vmcs.EPTP:X16}:{proc.CR3Value:X16}, high phys address was {proc.PT.HighestFound}");
         }
 
-        public void DumpASToFile()
+        public void DumpASToFile(List<DetectedProc> ToDump)
         {
-            
             using (var memAxs = new Mem(MemFile, null, DetectedDesc))
             {
-                var tdp = (from p in Processes
-                                  where p.AddressSpaceID == 1
-                                  orderby p.CR3Value ascending
-                                  select p);
+                // in all likelyhood this is the kernel
+                var tdp = (from p in ToDump
+                           where p.AddressSpaceID == 1
+                           orderby p.CR3Value ascending
+                           select p).Take(1).First();
 
                 // as a test let's find the process with the most to dump
-                var largest = (from p in Processes
+                /*var tdp = (from p in ToDump
                                where p.AddressSpaceID == 1
                                orderby p.PT.RootPageTable.PFNCount descending
                                select p).Take(1).First();
+                               */
 
+                var pml4 = tdp.PT.RootPageTable;
 
-                var pml4 = largest.PT.RootPageTable;
+                WriteLine($"Test dumping {tdp}, {pml4.PFNCount} entries scanned.");
 
-                WriteLine($"Test dumping {largest}, {pml4.PFNCount} entries scanned.");
+                var MemRanges = pml4.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables);
 
-                var MemRanges = pml4.SubTables.SelectMany(x => x.Value.SubTables);
+    //            WriteLine($"MemRanges = {MemRanges.Count()} available.");
 
-                WriteLine($"MemRanges = {MemRanges.Count()} available.");
-                foreach (var pte in MemRanges)
-                    WriteLine($"VA: {pte.Key:X16}  \t PFN: {pte.Value.PTE}");
+                
+                var saveLoc = Path.Combine(Path.GetDirectoryName(MemFile), Path.GetFileName(MemFile) + ".");
+
+                long[] block = new long[0x200]; // 0x200 * 8 = 4k
+                byte[] bpage = new byte[0x1000];
+
+                unsafe
+                {
+                    fixed (void * lp = block, bp = bpage)
+                    {
+                        foreach (var pte in MemRanges)
+                        {
+                            if (VerboseOutput)
+                                WriteLine($"VA: {pte.Key:X16}  \t PFN: {pte.Value.PTE}");
+
+                            if (pte.Value.PTE.LargePage)
+                            {
+                                using (var lsavefile = File.OpenWrite(saveLoc + pte.Key.Address.ToString("X") + ".bin"))
+                                    // 0x200 * 4kb = 2MB
+                                    for (int i = 0; i < 0x200; i++)
+                                    {
+                                        try { memAxs.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
+                                        pte.Value.PTE.PTE += (i * 0x1000);
+                                        if (block == null)
+                                            continue;
+
+                                        Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                                        lsavefile.Write(bpage, 0, 4096);
+                                    }
+
+                            }
+                            else
+                            {
+                                try { memAxs.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
+                                if (block == null)
+                                    continue;
+
+                                using (var savefile = File.OpenWrite(saveLoc + pte.Key.Address.ToString("X") + ".bin"))
+                                {
+                                    Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                                    savefile.Write(bpage, 0, 4096);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

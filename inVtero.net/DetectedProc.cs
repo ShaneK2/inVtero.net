@@ -17,7 +17,10 @@
 
 
 using ProtoBuf;
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Runtime.Serialization;
 
 namespace inVtero.net
 {
@@ -52,6 +55,7 @@ namespace inVtero.net
         public int AddressSpaceID;
 
         public override string ToString() => $"Process CR3 [{CR3Value:X16}] File Offset [{FileOffset:X16}] Diff [{Diff:X16}] Type [{PageTableType}]";
+
     }
 
 
@@ -64,7 +68,7 @@ namespace inVtero.net
         }
 
         //[ProtoMember(1)]
-        // this is usully captured somewhere else also so
+        // this is usually captured somewhere else also so
         // avoid recursion
         public DetectedProc dp; // which proc this came from
         [ProtoMember(2)]
@@ -80,7 +84,7 @@ namespace inVtero.net
         [ProtoMember(7)]
         public long EPTP_off;
 
-        //[ProtoMember(8)] // not really that usefull
+        //[ProtoMember(8)] // not really that useful
         //public Dictionary<int, HARDWARE_ADDRESS_ENTRY> TopEPT;
 
         public override string ToString() => $"EPTP = [{new EPTP(this.EPTP)}]";

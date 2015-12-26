@@ -185,7 +185,7 @@ namespace quickdumps
                 #endregion
                 #region blighering
                 // second pass
-                // with the page tables we aquired, locate candidate VMCS pages in the format
+                // with the page tables we acquired, locate candidate VMCS pages in the format
                 // [31-bit revision id][abort indicator]
                 // the page must also have at least 1 64bit value which is all set (-1)
                 // Root-HOST CR3 will have uniform diff
@@ -233,12 +233,14 @@ namespace quickdumps
                     // Extract Address Spaces verifies the linkages between
                     // process<->CR3<->EPTP(if there is one)
                     // and that they are functional
-                    vtero.ExtrtactAddressSpaces();
+                    var vetted = vtero.ExtrtactAddressSpaces();
+                    
+                    // do a test dump
+                    // extract & dump could be done at the same time
+                    vtero.DumpASToFile(vetted);
 
-
-                    vtero.DumpASToFile();
-
-                    vtero.DumpFailList();
+                    if (Vtero.VerboseOutput)
+                        vtero.DumpFailList();
 
                     WriteLine($"Final analysis compleated, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
                 }

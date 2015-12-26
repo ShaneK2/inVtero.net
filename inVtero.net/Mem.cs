@@ -79,7 +79,7 @@ namespace inVtero.net
         string MemoryDump;
         long FileSize;
 
-        const int PAGE_SIZE = 0x1000;
+        const long PAGE_SIZE = 0x1000;
         static int mindex = 0;
 
         long MapWindowSize;
@@ -183,9 +183,8 @@ namespace inVtero.net
             if (FileOffset < NewMapViewBase)
                 throw new OverflowException("FileOffset must be >= than base");
 
-
-             var AbsOffset = FileOffset - NewMapViewBase;
-            var BlockOffset = AbsOffset & (PAGE_SIZE - 1);
+            var AbsOffset = FileOffset - NewMapViewBase;
+            var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
 
             try
             {
@@ -223,8 +222,8 @@ namespace inVtero.net
         }
 
         // Extract a single page of data from a physical address in source dump
-        // accout for memory gaps/run layout
-        // TODO: Add windowing currently uses naieve single-page-at-a-time view
+        // account for memory gaps/run layout
+        // TODO: Add windowing currently uses naive single-page-at-a-time view
         public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
         {
             // convert PAddr to PFN
@@ -233,7 +232,7 @@ namespace inVtero.net
             if (PageCache.ContainsKey(PFN))
             {
                 if (PageCache.TryGetValue(PAddr, out block))
-                    return block[PAddr & 0xfff];
+                    return block[PAddr & 0x1ff];
             }
 
             // record our access attempt to the pfnIndex

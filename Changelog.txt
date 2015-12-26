@@ -1,3 +1,16 @@
+-- Dec'26'15
+
+** Fixed a bug in Mem.cs in bit masking, caused all pages to resolve to the same address
+
+** Improved VMWare support, no need for vmss2core, tested for VMWare format 11/12
+
+** Doing a deep copy with DetectdProc need to see if there is some state issues or if we can recycle 
+
+** ExtractAS will reject an EPTP if a single grouped Process fails entirely (0 PTE entries able to be reconciled)
+**** Should add a force option to keep trying regardless, however this is likely/maybe a waste
+
+** DumpASToFile is a bit more functional now.
+
 -- Dec'15
 ** .NET 461
 ** PAGEDUMP64 file format support

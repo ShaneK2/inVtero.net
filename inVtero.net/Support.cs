@@ -18,6 +18,7 @@
 using ProtoBuf;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 
 namespace inVtero.net
@@ -45,7 +46,7 @@ namespace inVtero.net
     public struct VIRTUAL_ADDRESS
     {
         public override string ToString() => $"Addr: {Address:X16}, PML4E {PML4:X4}, DirectoryPointerOffset:{DirectoryPointerOffset:X4}, DirectoryOffset:{DirectoryOffset:X4}, TableOffset: {TableOffset:X4}, Offset: {Offset:X4}";
-
+        [ProtoMember(1)]
         public long Address;
         public VIRTUAL_ADDRESS(long VA) { Address = VA; }
         public long Offset { get { return Address & 0xfff; } set { Address = (value | (Address & ~0xfffu)); } }
