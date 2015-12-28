@@ -54,7 +54,7 @@ namespace inVtero.net
         [ProtoMember(10)]
         public int AddressSpaceID;
 
-        public override string ToString() => $"Process CR3 [{CR3Value:X16}] File Offset [{FileOffset:X16}] Diff [{Diff:X16}] Type [{PageTableType}]";
+        public override string ToString() => $"Process CR3 [{CR3Value:X16}] File Offset [{FileOffset:X16}] Diff [{Diff:X16}] Type [{PageTableType}] VMCS [{vmcs}]";
 
     }
 

@@ -320,22 +320,13 @@ namespace inVtero.net
             var PT2Scan = pTypes == PTType.UNCONFIGURED ? (PTType.Windows | PTType.HyperV | PTType.GENERIC) : pTypes;
             var procList = Procs == null ? Processes : Procs;
             //var memSpace = MemSpace == null ? VMCSs.First() : MemSpace.First();
-
-            var memSpace = MemSpace == null ? VMCSs.GroupBy(x => x.EPTP).Select(xg => xg.First()) : MemSpace; 
             
-            var p = from proc in Processes
-                    where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
-                    orderby proc.CR3Value ascending
-                    select proc;
+            var memSpace = MemSpace == null ? VMCSs.GroupBy(x => x.EPTP).Select(xg => xg.First()) : MemSpace;
 
             int pcnt = Processes.Count();
             int vmcnt = memSpace.Count();
             var tot = pcnt * vmcnt;
             var curr = 0;
-
-            var AlikelyKernelSet = from ptes in p.First().TopPageTablePage
-                                   where ptes.Key > 255 && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
-                                   select ptes.Value;
 
             Console.ForegroundColor = ConsoleColor.Yellow;
             WriteLine($"assessing {tot} address spaces");
@@ -352,7 +343,10 @@ namespace inVtero.net
                 using (var memAxs = new Mem(MemFile, null, DetectedDesc))
                 {
                     var sx = 0;
-                    foreach (var px in p)
+                    foreach (var px in from proc in Processes
+                                       where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
+                                       orderby proc.CR3Value ascending
+                                       select proc) 
                     //Parallel.ForEach(p, (proc) =>
                     {
                         try
@@ -364,7 +358,7 @@ namespace inVtero.net
                             if (pt != null && VerboseOutput)
                             {
                                 // If we used group detection correlation a valid EPTP should work for every process    
-
+                                // so if it's bad we skip the entire evaluation
                                 if (proc.vmcs != null && proc.PT.RootPageTable.PFNCount > proc.TopPageTablePage.Count())
                                 {
                                     WriteLine($"Virtualized Process PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
@@ -414,12 +408,14 @@ namespace inVtero.net
             }
             //});
 
-
+            // a backup to test a non-VMCS 
             using (var memAxs = new Mem(MemFile, null, DetectedDesc))
             {
-                var nonVMCSprocs = from px in Processes
-                                   where px.vmcs == null
-                                   select px;
+                var nonVMCSprocs = from proc in Processes
+                                   where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
+                                   where proc.vmcs == null
+                                   orderby proc.CR3Value ascending
+                                   select proc;
 
                 foreach (var px in nonVMCSprocs)
                 {
@@ -458,76 +454,204 @@ namespace inVtero.net
 
         public void DumpASToFile(List<DetectedProc> ToDump)
         {
+            List<KeyValuePair<VIRTUAL_ADDRESS, PFN>> MemRanges = null;
+            Stack<PFN> PFNStack = new Stack<PFN>();
+            // instance member
+            ContigSize = -1;
+
+            // sort for convince
+            ToDump.Sort((x,y) => { if (x.CR3Value < y.CR3Value) return -1; else if (x.CR3Value > y.CR3Value) return 1; else return 0; });
+
+            // prompt user
+            for (int i = 0; i < ToDump.Count; i++)
+            {
+                var vmcs = ToDump[i].vmcs == null ? 0 : ToDump[i].vmcs.EPTP;
+                WriteLine($"{i} Hypervisor:{vmcs} Process:{ToDump[i].CR3Value:X} entries {ToDump[i].PT.RootPageTable.PFNCount} type {ToDump[i].PageTableType} group {ToDump[i].Group}");
+            }
+            WriteLine("Select a process to dump: ");
+            var selection = ReadLine();
+            var procId = int.Parse(selection);
+            WriteLine($"Dumping details for process {procId} {ToDump[procId]}");
+
+
+            var tdp = ToDump[procId];
+            PFNStack.Push(tdp.PT.RootPageTable);
+
+            var saveLoc = Path.Combine(Path.GetDirectoryName(MemFile), Path.GetFileName(MemFile) + ".");
+
             using (var memAxs = new Mem(MemFile, null, DetectedDesc))
             {
-                // in all likelyhood this is the kernel
-                var tdp = (from p in ToDump
-                           where p.AddressSpaceID == 1
-                           orderby p.CR3Value ascending
-                           select p).Take(1).First();
+                var table = tdp.PT.RootPageTable;
 
-                // as a test let's find the process with the most to dump
-                /*var tdp = (from p in ToDump
-                               where p.AddressSpaceID == 1
-                               orderby p.PT.RootPageTable.PFNCount descending
-                               select p).Take(1).First();
-                               */
+                WriteLine($"Listing ranges for {tdp}, {table.PFNCount} entries scanned.");
 
-                var pml4 = tdp.PT.RootPageTable;
+                //MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
 
-                WriteLine($"Test dumping {tdp}, {pml4.PFNCount} entries scanned.");
+                int parse = -1, level = 4;
+                PFN next_table = new PFN();
 
-                var MemRanges = pml4.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables);
-
-    //            WriteLine($"MemRanges = {MemRanges.Count()} available.");
-
-                
-                var saveLoc = Path.Combine(Path.GetDirectoryName(MemFile), Path.GetFileName(MemFile) + ".");
-
-                long[] block = new long[0x200]; // 0x200 * 8 = 4k
-                byte[] bpage = new byte[0x1000];
-
-                unsafe
+                do
                 {
-                    fixed (void * lp = block, bp = bpage)
+                    var dict_keys = table.SubTables.Keys.ToArray();
+
+                    for (int r = 0; r < table.SubTables.Count(); r++)
                     {
-                        foreach (var pte in MemRanges)
+                        var dict_Val = table.SubTables[dict_keys[r]];
+
+                        WriteLine($"{r} VA: {dict_keys[r]} \t PhysicalAddr: {dict_Val}");
+                    }
+
+                    WriteLine("select a range to dump (enter for all, minus '-' go up a level):");
+                    var userSelect = ReadLine();
+                    if (string.IsNullOrWhiteSpace(userSelect))
+                        parse = -1;
+                    else if (userSelect.Equals("-"))
+                    {
+                        if (PFNStack.Count > 0)
                         {
-                            if (VerboseOutput)
-                                WriteLine($"VA: {pte.Key:X16}  \t PFN: {pte.Value.PTE}");
+                            level++;
+                            table = PFNStack.Pop();
+                        }
+                        else
+                            WriteLine("at the top level now");
 
-                            if (pte.Value.PTE.LargePage)
+                        continue;
+                    }
+                    else
+                        int.TryParse(userSelect, out parse);
+
+                    // extract the key that the user index is referring to and reassign table
+
+                    if (parse >= 0)
+                    {
+                        PFNStack.Push(table);
+                        next_table = table.SubTables[table.SubTables.Keys.ToArray()[parse]];
+                        table = next_table;
+                    }
+                    if (parse < 0)
+                        break;
+
+                    level--;
+
+                } while (level > 0);
+
+
+                WriteLine("Writing out data into the same folder as the input");
+
+
+                if (parse < 0)
+                {
+                    switch (level)
+                    {
+                        case 4:
+                            MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
+                            break;
+                        case 3:
+                            MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).ToList();
+                            break;
+                        case 2:
+                            MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).ToList();
+                            break;
+                        case 1:
+                        default:
+                            MemRanges = table.SubTables.ToList();
+                            break;
+                    }
+
+                    foreach (var mr in MemRanges)
+                        WriteRange(mr, saveLoc, memAxs);
+                }
+                else
+                {
+                    var a_range = new KeyValuePair<VIRTUAL_ADDRESS, PFN>(new VIRTUAL_ADDRESS(next_table.VA), next_table);
+                    WriteRange(a_range, saveLoc, memAxs);
+                }
+
+                WriteLine("All done.");
+            }
+        }
+
+
+        long ContigSize;
+
+        string WriteRange(KeyValuePair<VIRTUAL_ADDRESS, PFN> pte, string BaseFileName, Mem PhysMemReader)
+        {
+            bool canAppend = false;
+            var saveLoc = BaseFileName + pte.Key.Address.ToString("X") + ".bin";
+            var lastLoc = BaseFileName + (pte.Key.Address - ContigSize).ToString("X") + ".bin";
+
+            if (File.Exists(lastLoc))
+            {
+                canAppend = true;
+                ContigSize += 0x1000;
+            }
+            else
+                ContigSize = 0x1000;
+
+            long[] block = new long[0x200]; // 0x200 * 8 = 4k
+            byte[] bpage = new byte[0x1000];
+
+
+            unsafe
+            {
+                // block may be set to null by the GetPageForPhysAddr call, so we need to remake it every time through...
+                block = new long[0x200]; // 0x200 * 8 = 4k
+                bpage = new byte[0x1000];
+
+                fixed (void* lp = block, bp = bpage)
+                {
+
+                    if (DiagOutput)
+                    {
+                        if (!pte.Value.PTE.Valid)
+                            Console.ForegroundColor = ConsoleColor.Red;
+                        else
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+
+                        WriteLine($"VA: {pte.Key:X16}  \t PFN: {pte.Value.PTE}");
+
+                    }
+
+                    // if we have invalid (software managed) page table entries
+                    // the data may be present, or a prototype or actually in swap.
+                    // for the moment were only going to dump hardware managed data
+                    // or feel free to patch this up ;)
+                    if (!pte.Value.PTE.Valid)
+                        return string.Empty;
+
+                    if (pte.Value.PTE.LargePage)
+                    {
+                        using (var lsavefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
+                            // 0x200 * 4kb = 2MB
+                            // TODO: Large pages properly
+                            for (int i = 0; i < 0x200; i++)
                             {
-                                using (var lsavefile = File.OpenWrite(saveLoc + pte.Key.Address.ToString("X") + ".bin"))
-                                    // 0x200 * 4kb = 2MB
-                                    for (int i = 0; i < 0x200; i++)
-                                    {
-                                        try { memAxs.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
-                                        pte.Value.PTE.PTE += (i * 0x1000);
-                                        if (block == null)
-                                            continue;
-
-                                        Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                                        lsavefile.Write(bpage, 0, 4096);
-                                    }
-
-                            }
-                            else
-                            {
-                                try { memAxs.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
+                                try { PhysMemReader.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
+                                pte.Value.PTE.PTE += (i * 0x1000);
                                 if (block == null)
-                                    continue;
+                                    break;
 
-                                using (var savefile = File.OpenWrite(saveLoc + pte.Key.Address.ToString("X") + ".bin"))
-                                {
-                                    Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                                    savefile.Write(bpage, 0, 4096);
-                                }
+                                Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                                lsavefile.Write(bpage, 0, 4096);
                             }
+
+                    }
+                    else
+                    {
+                        try { PhysMemReader.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
+
+                        if (block != null)
+                        using (var savefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
+                            {
+                            Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                            savefile.Write(bpage, 0, 4096);
                         }
                     }
                 }
             }
+
+            return saveLoc;
         }
+
     }
 }

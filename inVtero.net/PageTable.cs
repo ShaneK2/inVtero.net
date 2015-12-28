@@ -118,8 +118,6 @@ namespace inVtero.net
             var entries = 0L;
 
             var VA = new VIRTUAL_ADDRESS(top.VA);
-            //WriteLine($"4: Scanning {top.PageTable:X16}");
-
             var hPA = HARDWARE_ADDRESS_ENTRY.MinAddr;
 
             var SLAT = top.SLAT;
@@ -128,12 +126,15 @@ namespace inVtero.net
             // pull level 4 entries attach level 3
             foreach (var top_sub in top.SubTables)
             {
+                //WriteLine($"4: Scanning {top_sub.Value.PTE:X16}");
+
+
                 // scan each page for the level 4 entry
                 var PTE = top_sub.Value.PTE;
 
                 // we don't need to | in the PML4 AO (address offset) since were pulling down the whole page not just the one value
                 // and were going to brute force our way through the entire table so this was just confusing things.
-                var l3HW_Addr = PTE.NextTableAddress   ;// | top_sub.Key.PML4;
+                var l3HW_Addr = PTE.NextTableAddress  | top_sub.Key.PML4;
 
                 // if we have an EPTP use it and request resolution of the HW_Addr
                 if (SLAT != 0)
@@ -149,7 +150,7 @@ namespace inVtero.net
 
                 // copy VA since were going to be making changes
                 var s3va = new VIRTUAL_ADDRESS(top_sub.Key.Address);
-                //WriteLine($"3: Scanning {s3va.Address:X16}");
+                
 
                 top_sub.Value.hostPTE = l3HW_Addr; // cache translated value
                 var lvl3_page = new long[512];
@@ -169,6 +170,8 @@ namespace inVtero.net
 
                     // adjust VA to match extracted page entries
                     s3va.DirectoryPointerOffset = i3;
+
+                    //WriteLine($"3: Scanning VA {s3va.Address:X16}");
 
                     // save 'PFN' entry into sub-table I should really revisit all these names
                     var l3PFN = new PFN(l3PTE, s3va.Address, CR3, SLAT);
@@ -202,7 +205,6 @@ namespace inVtero.net
 
                         // copy VA 
                         var s2va = new VIRTUAL_ADDRESS(s3va.Address);
-                        //WriteLine($"2: Scanning {s2va.Address:X16}");
 
                         // extract PTE's for each set entry
                         for (uint i2 = 0; i2 < 512; i2++)
@@ -212,6 +214,7 @@ namespace inVtero.net
 
                             var l2PTE = new HARDWARE_ADDRESS_ENTRY(lvl2_page[i2]);
                             s2va.DirectoryOffset = i2;
+                            ///WriteLine($"2: Scanning VA {s2va.Address:X16}");
 
                             var l2PFN = new PFN(l2PTE, s2va.Address, CR3, SLAT) { Type = PFNType.Data };
                             l3PFN.SubTables.Add(s2va, l2PFN);
@@ -240,7 +243,6 @@ namespace inVtero.net
                                     continue;
 
                                 var s1va = new VIRTUAL_ADDRESS(s2va.Address);
-                                //WriteLine($"1: Scanning {s1va.Address:X16}");
 
                                 for (uint i1 = 0; i1 < 512; i1++)
                                 {
@@ -249,6 +251,8 @@ namespace inVtero.net
 
                                     var l1PTE = new HARDWARE_ADDRESS_ENTRY(lvl1_page[i1]);
                                     s1va.TableOffset = i1;
+
+                                    //WriteLine($"1: Scanning VA {s1va.Address:X16}");
 
                                     var l1PFN = new PFN(l1PTE, s1va.Address, CR3, SLAT) { Type = PFNType.Data };
                                     l2PFN.SubTables.Add(s1va, l1PFN);

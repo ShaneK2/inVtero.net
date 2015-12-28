@@ -45,16 +45,19 @@ namespace inVtero.net
     [ProtoContract]
     public struct VIRTUAL_ADDRESS
     {
-        public override string ToString() => $"Addr: {Address:X16}, PML4E {PML4:X4}, DirectoryPointerOffset:{DirectoryPointerOffset:X4}, DirectoryOffset:{DirectoryOffset:X4}, TableOffset: {TableOffset:X4}, Offset: {Offset:X4}";
         [ProtoMember(1)]
         public long Address;
+
         public VIRTUAL_ADDRESS(long VA) { Address = VA; }
-        public long Offset { get { return Address & 0xfff; } set { Address = (value | (Address & ~0xfffu)); } }
-        public long TableOffset { get { return (Address & 0x1ff000) >> 12; } set { Address = ((value << 12) | (Address & ~0x1ff000u)); } }
-        public long DirectoryOffset { get { return (Address & 0x3fe00000) >> 21; }  set { Address = ((value << 21) | (Address & ~0x3FE00000u)); } }
-        public long DirectoryPointerOffset { get { return (Address & 0x7FC0000000) >> 30; } set { Address = ((value << 30) | (Address & ~0x7FC0000000));  } }
+
+        public override string ToString() => $"Addr: {(ulong)((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X16}, PML4E {PML4:X3}, DirectoryPointerOffset:{DirectoryPointerOffset:X3}, DirectoryOffset:{DirectoryOffset:X3}, TableOffset: {TableOffset:X3}, Offset: {Offset:X4}";
+
+        public long Offset { get { return Address & 0xfff; } set { Address &= ~0xfffu; Address |= value; } }
+        public long TableOffset { get { return (Address & 0x1ff000) >> 12; } set { Address &= ~0x1ff000; Address |= (value << 12); } }
+        public long DirectoryOffset { get { return (Address & 0x3fe00000) >> 21; } set { Address &= ~0x3FE00000; Address |= (value << 21); } }
+        public long DirectoryPointerOffset { get { return (Address & 0x7FC0000000) >> 30; } set { Address &= ~0x7FC0000000; Address |= (value << 30); } }
         // // only >> 36 since we & isolate the 9 bits we want and the lower 3 bits are not used to aquire PML4 page entry
-        public long PML4 { get { return (Address & 0xff8000000000) >> 39; } set { Address = ((value << 39) | (Address & ~0xFF8000000000));  } }   
+        public long PML4 { get { return (Address & 0xff8000000000) >> 39; } set { Address &= ~0xFF8000000000; Address |= (value << 39); } }
         public long SignExtend
         {
             get { return (((Address >> 48) & 0xfffu) != 0 ? 0xffffu : 0); }
@@ -64,9 +67,8 @@ namespace inVtero.net
                 return;
             }
         }
-    }
-    
 
+    }
     /// <summary>
     /// Maybe just use VIRTUAL_ADDRESS above, pretty much identical
     /// 
@@ -286,7 +288,7 @@ namespace inVtero.net
                 if (maxAddressablePageNumber != 0)
                     return maxAddressablePageNumber;
 
-                maxAddressablePageNumber = Run.Count > 0 ? Run[Run.Count - 1].BasePage + Run[Run.Count - 1].BasePage : NumberOfPages;
+                maxAddressablePageNumber = Run.Count > 0 ? Run[Run.Count - 1].BasePage + Run[Run.Count - 1].PageCount : NumberOfPages;
                 return maxAddressablePageNumber;
             } }
         [ProtoMember(5)]

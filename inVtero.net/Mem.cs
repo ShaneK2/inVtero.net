@@ -231,7 +231,7 @@ namespace inVtero.net
 
             if (PageCache.ContainsKey(PFN))
             {
-                if (PageCache.TryGetValue(PAddr, out block))
+                if (PageCache.TryGetValue(PFN, out block))
                     return block[PAddr & 0x1ff];
             }
 
@@ -538,7 +538,7 @@ namespace inVtero.net
     {
         public long PageRunNumber;
         public MemoryRunMismatchException()
-            : base("Examine Mem:MemoryDescriptor to determine why the requested PFN (page run number) was not present. Inaccurate gap list creation/walking is typiaclly to blame.")
+            : base("Examine Mem:MemoryDescriptor to determine why the requested PFN (page run number) was not present. Inaccurate gap list creation/walking is typically to blame.")
         { }
         public MemoryRunMismatchException(long pageRunNumber) : this()
         {
