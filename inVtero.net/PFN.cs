@@ -17,14 +17,24 @@
 
 using ProtoBuf;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace inVtero.net
 {
-    public enum PFNType: int
+    [ProtoContract]
+    public class PageTableRoot
     {
-        UNSET   = 0,
-        Pointer = 1, // points to another entry
-        Data    = 2, // points to data
+        [ProtoMember(1)]
+        public HARDWARE_ADDRESS_ENTRY CR3;
+        [ProtoMember(2)]
+        public HARDWARE_ADDRESS_ENTRY SLAT;
+
+        // not really a basic PFN but contains all of the 
+        // information that binds PFN<->PTE<->VA together
+        [ProtoMember(3)]
+        public PFN Entries;
+
+        public long Count;
     }
 
 
@@ -35,47 +45,17 @@ namespace inVtero.net
     public class PFN
     {
         [ProtoMember(1)]
-        public HARDWARE_ADDRESS_ENTRY PTE;  // Virtualized if we have SLAT addr or the real one for native
+        public HARDWARE_ADDRESS_ENTRY PTE;  // Virtualized if we have SLAT address or the real one for native
         [ProtoMember(2)]
-        public long VA;
+        public VIRTUAL_ADDRESS VA;
         [ProtoMember(3)]
-        public HARDWARE_ADDRESS_ENTRY PageTable;
-        [ProtoMember(4)]
-        public HARDWARE_ADDRESS_ENTRY SLAT;
-        [ProtoMember(6)]
-        public long PFNCount;
-        [ProtoMember(5)]
         public Dictionary<VIRTUAL_ADDRESS, PFN> SubTables;
-        [ProtoMember(6)]
-        public long hostPTE;  // if we have SLAT and had the chance to de-virtualize, place the translated entry here
-        [ProtoMember(6)]
-        public PFNType Type;
 
-        public PFN() { PTE = long.MaxValue; }
 
-        /// <summary>
-        /// These properties combine together to formulate our database/cross reference between physical to virtual addresses 
-        /// </summary>
-        /// <param name="RawEntry">PTE</param>
-        /// <param name="va">Virtual Address</param>
-        /// <param name="pageTable">CR3 address</param>
-        /// <param name="sLAT">EPTP</param>
-        public PFN(long RawEntry, long va, long pageTable, long sLAT)
-        {
-            PTE = new HARDWARE_ADDRESS_ENTRY(RawEntry);
-
-            // this is the key into bitmap, since were never going to get past 32bit PFN
-            // figures to make it only uint
-            VA = va;
-
-            PageTable.PTE = pageTable;
-            SLAT.PTE = sLAT;
-            SubTables = new Dictionary<VIRTUAL_ADDRESS, PFN>();
+        public long PFNCount {
+            get { return SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).LongCount(); }
         }
-        public PFN(long RawEntry, long va, long pageTable, long sLAT, long RAW_Translated)
-            : this(RawEntry, va, pageTable, sLAT)
-        {
-            hostPTE = RAW_Translated;
-        }
+
+        public PFN() { SubTables = new Dictionary<VIRTUAL_ADDRESS, PFN>(); }
     }
 }

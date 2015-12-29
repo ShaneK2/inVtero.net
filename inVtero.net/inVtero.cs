@@ -64,10 +64,7 @@ namespace inVtero.net
         public ConcurrentBag<DetectedProc> Processes;
         [ProtoMember(6)]
         // Each VMCS found
-        public ConcurrentBag<VMCS> VMCSs;
-        [ProtoMember(7)]
-        // every PFN at the highest layer (not nested) should be the super set
-        public ConcurrentBag<PFN> PFNs;
+        public ConcurrentDictionary<long, VMCS> VMCSs;
 
         //WAHBitArray PFNdb;
         [ProtoMember(8)]
@@ -88,8 +85,7 @@ namespace inVtero.net
         public Vtero()
         {
             Processes = new ConcurrentBag<DetectedProc>();
-            VMCSs = new ConcurrentBag<VMCS>();
-            PFNs = new ConcurrentBag<PFN>();
+            VMCSs = new ConcurrentDictionary<long, VMCS>();
 
             Phase = 1;
 
@@ -195,8 +191,10 @@ namespace inVtero.net
             var rv = scan.Analyze();
 
             foreach (var vm in scan.HVLayer)
-                VMCSs.Add(vm);
+                if(!VMCSs.ContainsKey(vm.EPTP))
+                    VMCSs.TryAdd(vm.EPTP, vm);
 
+            rv = VMCSs.Count();
             Phase = 3;
 
             return rv;
@@ -208,7 +206,7 @@ namespace inVtero.net
         /// We will assign an address space ID to each detected proc so we know what process belongs with who
         /// After AS grouping we will know what EPTP belongs to which AS since one of the DP's will have it's CR3 in the VMCS 
         /// </summary>
-        /// <param name="pTypes">Types to scan for, this is of the already detected processs list so it's already filtered really</param>
+        /// <param name="pTypes">Types to scan for, this is of the already detected processes list so it's already filtered really</param>
         public void GroupAS(PTType pTypes = PTType.UNCONFIGURED)
         {
             var PT2Scan = pTypes == PTType.UNCONFIGURED ? PTType.ALL : pTypes;
@@ -216,7 +214,7 @@ namespace inVtero.net
             if (Phase >=3 && OverRidePhase)
                 return;
 
-            // To join an AS group we want to see > 50% corelation which is a lot considering were only interperating roughly 10-20 values (more like 12)
+            // To join an AS group we want to see > 50% correlation which is a lot considering were only interoperating roughly 10-20 values (more like 12)
             var p = from proc in Processes
                     where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
                     orderby proc.CR3Value ascending
@@ -248,12 +246,12 @@ namespace inVtero.net
                                    select ptes.Value;
 
                     var interSection = currKern.Intersect(AlikelyKernelSet);
-                    var corralated = interSection.Count() * 1.00 / AlikelyKernelSet.Count();
+                    var correlated = interSection.Count() * 1.00 / AlikelyKernelSet.Count();
 
 
-                    if (corralated > 0.50 && !ASGroups[CurrASID].Contains(proc))
+                    if (correlated > 0.50 && !ASGroups[CurrASID].Contains(proc))
                     {
-                        WriteLine($"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{corralated:P3}] PID [{proc.CR3Value:X}]");
+                        WriteLine($"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{correlated:P3}] PID [{proc.CR3Value:X}]");
 
                         proc.AddressSpaceID = CurrASID;
                         ASGroups[CurrASID].Add(proc);
@@ -289,17 +287,17 @@ namespace inVtero.net
             Console.WriteLine($"Done All process groups.");
 
             // after grouping link VMCS back to the group who 'discovered' the VMCS in the first place!
-            var eptpz = VMCSs.GroupBy(eptz => eptz.EPTP).Select(ept => ept.First()).ToArray();
+            var eptpz = VMCSs.Values.GroupBy(eptz => eptz.EPTP).Select(ept => ept.First()).ToArray();
 
             // find groups dominated by each vmcs
-            var VMCSGroup = from aspace in ASGroups.Values.AsEnumerable()
+            var VMCSGroup = from aspace in ASGroups.AsEnumerable()
                             from ept in eptpz
-                            where aspace.Any(adpSpace => adpSpace == ept.dp)
+                            where aspace.Value.Any(adpSpace => adpSpace == ept.dp)
                             select new { AS = aspace, EPTctx = ept };
 
             // link the proc back into the eptp
             foreach (var ctx in VMCSGroup)
-                foreach (var dp in ctx.AS)
+                foreach (var dp in ctx.AS.Value)
                     dp.vmcs = ctx.EPTctx;
 
             Phase = 4;
@@ -312,21 +310,22 @@ namespace inVtero.net
         /// </summary>
         /// <param name="MemSpace">The list of VMCS/EPTP configurations which will alter the page table use</param>
         /// <param name="Procs">Detected procs to query</param>
-        /// <param name="pTypes">Type bitmas to interpreate</param>
+        /// <param name="pTypes">Type bitmask to interpret</param>
         public List<DetectedProc> ExtrtactAddressSpaces(IOrderedEnumerable<VMCS> MemSpace = null, ConcurrentBag<DetectedProc> Procs = null, PTType pTypes = PTType.UNCONFIGURED)
         {
             List<DetectedProc> rvList = new List<DetectedProc>();
 
-            var PT2Scan = pTypes == PTType.UNCONFIGURED ? (PTType.Windows | PTType.HyperV | PTType.GENERIC) : pTypes;
+            var PT2Scan = pTypes == PTType.UNCONFIGURED ? (PTType.Windows) : pTypes; //  | PTType.HyperV | PTType.GENERIC
             var procList = Procs == null ? Processes : Procs;
             //var memSpace = MemSpace == null ? VMCSs.First() : MemSpace.First();
             
-            var memSpace = MemSpace == null ? VMCSs.GroupBy(x => x.EPTP).Select(xg => xg.First()) : MemSpace;
+            var memSpace = MemSpace == null ? VMCSs.Values.GroupBy(x => x.EPTP).Select(xg => xg.First()) : MemSpace;
 
             int pcnt = Processes.Count();
             int vmcnt = memSpace.Count();
             var tot = pcnt * vmcnt;
             var curr = 0;
+            bool CollectKernelAS = true;
 
             Console.ForegroundColor = ConsoleColor.Yellow;
             WriteLine($"assessing {tot} address spaces");
@@ -342,8 +341,10 @@ namespace inVtero.net
                 // versus multicore, my suspicion is that multi-core is better
                 using (var memAxs = new Mem(MemFile, null, DetectedDesc))
                 {
+                    // only collect kernel VA one time
+                    CollectKernelAS = true;
                     var sx = 0;
-                    foreach (var px in from proc in Processes
+                    foreach (var proc in from proc in Processes
                                        where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
                                        orderby proc.CR3Value ascending
                                        select proc) 
@@ -351,23 +352,28 @@ namespace inVtero.net
                     {
                         try
                         {
-                            var proc = px.Clone<DetectedProc>();
+                            // this is killing memory, probably not needed
+                            //var proc = px.Clone<DetectedProc>();
                             proc.vmcs = space;
 
-                            var pt = PageTable.AddProcess(proc, memAxs, false);
+                            var pt = PageTable.AddProcess(proc, memAxs, CollectKernelAS);
+                            CollectKernelAS = false;
                             if (pt != null && VerboseOutput)
                             {
                                 // If we used group detection correlation a valid EPTP should work for every process    
                                 // so if it's bad we skip the entire evaluation
-                                if (proc.vmcs != null && proc.PT.RootPageTable.PFNCount > proc.TopPageTablePage.Count())
+                                if (proc.vmcs != null && proc.PT.Root.Count > proc.TopPageTablePage.Count())
                                 {
-                                    WriteLine($"Virtualized Process PT Entries [{proc.PT.RootPageTable.PFNCount}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
+                                    WriteLine($"Virtualized Process PT Entries [{proc.PT.Root.Count}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
                                     rvList.Add(proc);
                                 }
                                 else {
                                     WriteLine($"canceling evaluation of bad EPTP for this group");
                                     foreach (var pxc in Processes)
+                                    {
                                         pxc.vmcs = null;
+                                        pxc.PT = null;
+                                    }
                                     break;
                                 }
 
@@ -401,13 +407,14 @@ namespace inVtero.net
 
                             memAxs.DumpPFNIndex();
                         }
-                        WriteLine($"{sx} VMCS dominated process address spaces and were decoded succsessfully.");
+                        WriteLine($"{sx} VMCS dominated process address spaces and were decoded successfully.");
                     //});
                     }
                 }
             }
             //});
 
+            CollectKernelAS = true;
             // a backup to test a non-VMCS 
             using (var memAxs = new Mem(MemFile, null, DetectedDesc))
             {
@@ -422,8 +429,9 @@ namespace inVtero.net
                     var pmetal = px.Clone<DetectedProc>();
 
                     // this is a process on the bare metal
-                    var pt = PageTable.AddProcess(pmetal, memAxs, false);
-                    WriteLine($"Process {pmetal.CR3Value:X16} Physical walk w/o SLAT yielded {pmetal.PT.RootPageTable.PFNCount} entries");
+                    var pt = PageTable.AddProcess(pmetal, memAxs, CollectKernelAS);
+                    CollectKernelAS = false;
+                    WriteLine($"Process {pmetal.CR3Value:X16} Physical walk w/o SLAT yielded {pmetal.PT.Root.Count} entries");
 
                     rvList.Add(pmetal);
                 }
@@ -460,13 +468,13 @@ namespace inVtero.net
             ContigSize = -1;
 
             // sort for convince
-            ToDump.Sort((x,y) => { if (x.CR3Value < y.CR3Value) return -1; else if (x.CR3Value > y.CR3Value) return 1; else return 0; });
+            ToDump.Sort((x, y) => { if (x.CR3Value < y.CR3Value) return -1; else if (x.CR3Value > y.CR3Value) return 1; else return 0; });
 
             // prompt user
             for (int i = 0; i < ToDump.Count; i++)
             {
                 var vmcs = ToDump[i].vmcs == null ? 0 : ToDump[i].vmcs.EPTP;
-                WriteLine($"{i} Hypervisor:{vmcs} Process:{ToDump[i].CR3Value:X} entries {ToDump[i].PT.RootPageTable.PFNCount} type {ToDump[i].PageTableType} group {ToDump[i].Group}");
+                WriteLine($"{i} Hypervisor:{vmcs} Process:{ToDump[i].CR3Value:X} entries {ToDump[i].PT.Root.Count} type {ToDump[i].PageTableType} group {ToDump[i].Group}");
             }
             WriteLine("Select a process to dump: ");
             var selection = ReadLine();
@@ -475,99 +483,114 @@ namespace inVtero.net
 
 
             var tdp = ToDump[procId];
-            PFNStack.Push(tdp.PT.RootPageTable);
+            PFNStack.Push(tdp.PT.Root.Entries);
 
             var saveLoc = Path.Combine(Path.GetDirectoryName(MemFile), Path.GetFileName(MemFile) + ".");
 
+            string LastDumped = string.Empty;
+            bool fKeepGoing = true;
+            int cntDumped = 0;
+
+
             using (var memAxs = new Mem(MemFile, null, DetectedDesc))
             {
-                var table = tdp.PT.RootPageTable;
+                var table = tdp.PT.Root.Entries;
 
-                WriteLine($"Listing ranges for {tdp}, {table.PFNCount} entries scanned.");
-
-                //MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
-
-                int parse = -1, level = 4;
-                PFN next_table = new PFN();
-
-                do
+                while (fKeepGoing)
                 {
-                    var dict_keys = table.SubTables.Keys.ToArray();
+                    WriteLine($"{Environment.NewLine}Listing ranges for {tdp}, {table.PFNCount} entries scanned.");
 
-                    for (int r = 0; r < table.SubTables.Count(); r++)
+                    //MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
+
+                    int parse = -1, level = 4;
+                    PFN next_table = new PFN();
+
+                    do
                     {
-                        var dict_Val = table.SubTables[dict_keys[r]];
+                        var dict_keys = table.SubTables.Keys.ToArray();
 
-                        WriteLine($"{r} VA: {dict_keys[r]} \t PhysicalAddr: {dict_Val}");
-                    }
-
-                    WriteLine("select a range to dump (enter for all, minus '-' go up a level):");
-                    var userSelect = ReadLine();
-                    if (string.IsNullOrWhiteSpace(userSelect))
-                        parse = -1;
-                    else if (userSelect.Equals("-"))
-                    {
-                        if (PFNStack.Count > 0)
+                        for (int r = 0; r < table.SubTables.Count(); r++)
                         {
-                            level++;
-                            table = PFNStack.Pop();
+                            var dict_Val = table.SubTables[dict_keys[r]];
+
+                            WriteLine($"{r} VA: {dict_keys[r]} \t PhysicalAddr: {dict_Val}");
+                        }
+
+                        WriteLine("select a range to dump (enter for all, minus '-' go up a level):");
+                        var userSelect = ReadLine();
+                        if (string.IsNullOrWhiteSpace(userSelect))
+                            parse = -1;
+                        else if (userSelect.Equals("-"))
+                        {
+                            if (PFNStack.Count > 0)
+                            {
+                                level++;
+                                table = PFNStack.Pop();
+                            }
+                            else
+                                WriteLine("at the top level now");
+
+                            continue;
                         }
                         else
-                            WriteLine("at the top level now");
+                            int.TryParse(userSelect, out parse);
 
-                        continue;
+                        // extract the key that the user index is referring to and reassign table
+
+                        if (parse >= 0)
+                        {
+                            PFNStack.Push(table);
+                            next_table = table.SubTables[table.SubTables.Keys.ToArray()[parse]];
+                            table = next_table;
+                        }
+                        if (parse < 0)
+                            break;
+
+                        level--;
+
+                    } while (level > 0);
+
+
+                    WriteLine("Writing out data into the same folder as the input");
+
+
+                    if (parse < 0)
+                    {
+                        switch (level)
+                        {
+                            case 4:
+                                MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
+                                break;
+                            case 3:
+                                MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).ToList();
+                                break;
+                            case 2:
+                                MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).ToList();
+                                break;
+                            case 1:
+                            default:
+                                MemRanges = table.SubTables.ToList();
+                                break;
+                        }
+
+                        foreach (var mr in MemRanges)
+                        {
+                            LastDumped = WriteRange(mr, saveLoc, memAxs);
+                            cntDumped++;
+                        }
                     }
                     else
-                        int.TryParse(userSelect, out parse);
-
-                    // extract the key that the user index is referring to and reassign table
-
-                    if (parse >= 0)
                     {
-                        PFNStack.Push(table);
-                        next_table = table.SubTables[table.SubTables.Keys.ToArray()[parse]];
-                        table = next_table;
-                    }
-                    if (parse < 0)
-                        break;
-
-                    level--;
-
-                } while (level > 0);
-
-
-                WriteLine("Writing out data into the same folder as the input");
-
-
-                if (parse < 0)
-                {
-                    switch (level)
-                    {
-                        case 4:
-                            MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
-                            break;
-                        case 3:
-                            MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).ToList();
-                            break;
-                        case 2:
-                            MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).ToList();
-                            break;
-                        case 1:
-                        default:
-                            MemRanges = table.SubTables.ToList();
-                            break;
+                        var a_range = new KeyValuePair<VIRTUAL_ADDRESS, PFN>(next_table.VA, next_table);
+                        LastDumped = WriteRange(a_range, saveLoc, memAxs);
+                        cntDumped++;
                     }
 
-                    foreach (var mr in MemRanges)
-                        WriteRange(mr, saveLoc, memAxs);
+                    Write($"All done, last written file {LastDumped} of {cntDumped} so far.  KeepGoing? ((y)es (n)o) ");
+                    var answer = ReadKey();
+                    if (answer.Key != ConsoleKey.Y)
+                        fKeepGoing = false;
                 }
-                else
-                {
-                    var a_range = new KeyValuePair<VIRTUAL_ADDRESS, PFN>(new VIRTUAL_ADDRESS(next_table.VA), next_table);
-                    WriteRange(a_range, saveLoc, memAxs);
-                }
-
-                WriteLine("All done.");
             }
         }
 

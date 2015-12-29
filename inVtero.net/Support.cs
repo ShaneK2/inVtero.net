@@ -35,6 +35,7 @@ namespace inVtero.net
 
         public static long MinEPTPAddr = 0x32; // there is no rule about this but even if just not the zero page would cut the false positives down a lot
                                                // if you miss the EPTP reduce this to 0 or 1 ;)
+                                               // I could/should probably write a EPTP detection similar to the Linux one 
     }
 
 

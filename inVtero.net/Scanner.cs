@@ -31,7 +31,7 @@ using static System.Console;
 namespace inVtero.net
 {
     /// <summary>
-    /// Scanner is the initial entrypoint into inVtero, the most basic and primary functonality
+    /// Scanner is the initial entry point into inVtero, the most basic and primary functionality
     /// 
     /// </summary>
     public class Scanner
@@ -165,7 +165,7 @@ namespace inVtero.net
                         if (Vtero.VerboseOutput)
                         {
                             sb = new StringBuilder();
-                            // reverse endianess for easy reading in hex dumps/editors
+                            // reverse endianness for easy reading in hex dumps/editors
                             shorted = BitConverter.GetBytes(block[check]);
                             Array.Reverse(shorted, 0, 8);
                             var Converted = BitConverter.ToUInt64(shorted, 0);
@@ -423,7 +423,7 @@ namespace inVtero.net
         }
         /// <summary>
         /// Naturally the Generic checker is fairly chatty but at least you can use it
-        /// to find unknowns, we could use some more tuneables here to help select the
+        /// to find unknowns, we could use some more tunable values here to help select the
         /// best match, I currently use the value with the lowest diff, which can be correct
         /// </summary>
         /// <param name="offset"></param>

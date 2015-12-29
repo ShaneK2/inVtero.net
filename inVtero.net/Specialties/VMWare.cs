@@ -82,10 +82,7 @@ namespace inVtero.net.Specialties
                 } while (!Found);
 
                 if (Found)
-                {
-                    Console.WriteLine($"Found it at 0x{i:X}");
                     break;
-                }
             }
 
             long TotalPages = 0;

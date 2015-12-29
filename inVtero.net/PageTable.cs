@@ -55,36 +55,29 @@ namespace inVtero.net
         public HARDWARE_ADDRESS_ENTRY HighestFound;
 
         [ProtoMember(4)]
-        public PFN RootPageTable;
+        public PageTableRoot Root;
 
         DetectedProc DP;
         Mem mem;
-        
-        public static PageTable AddProcess(DetectedProc dp, Mem mem, bool OnlyUserSpace = false)
-        {
-            long Address = 0;
-            int AddressIndex = 0;
+        bool KernelSpace;
 
-            // dump Page table high to low
-            var va = new VIRTUAL_ADDRESS(long.MaxValue - 0xfff);
+
+        public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true)
+        {
+            if(Vtero.VerboseOutput)
+                WriteLine($"PT analysis of {dp}");
 
             var rv = new PageTable
             {
+                Root = new PageTableRoot() { SLAT = dp.vmcs != null ? dp.vmcs.EPTP : 0, CR3 = dp.CR3Value, Entries = new PFN() },
                 Failed = new List<HARDWARE_ADDRESS_ENTRY>(),
                 DP = dp,
                 mem = mem
             };
 
-            // TODO: encode VA's for self/recursive physical addr's
-            if (dp.PageTableType == PTType.Windows)
-            {
-                Address = MagicNumbers.Windows_SelfAsVA;
-                AddressIndex = MagicNumbers.Windows_SelfPtr;
-            }
-
             // any output is error/warning output
 
-            var cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
+            var cnt = rv.FillTable(RedundantKernelEntries);
 
             if (cnt == 0)
             {
@@ -110,18 +103,20 @@ namespace inVtero.net
         /// <param name="top"></param>
         /// <param name="Level"></param>
         /// <returns></returns>
-        long InlineExtract(PFN top, int Level)
+        /// 
+
+        // TODO: RE-RE-Write this into an on-demand evaluated set of delegates to ease memory load
+        // some testing on Windows 10: Virtualized Process PT Entries [1625181] Type [Windows] PID [97C0301E:1AB000]
+        // that's over _1.6 Million_ page table entries, wow!!!
+        long InlineExtract(PageTableRoot Root)
         {
-            if (Level == 0)
-                return 0;
+            VIRTUAL_ADDRESS VAddr;
 
             var entries = 0L;
 
-            var VA = new VIRTUAL_ADDRESS(top.VA);
-            var hPA = HARDWARE_ADDRESS_ENTRY.MinAddr;
-
-            var SLAT = top.SLAT;
-            var CR3 = top.PageTable;
+            var SLAT = Root.SLAT;
+            var CR3 = Root.CR3;
+            var top = Root.Entries;
 
             // pull level 4 entries attach level 3
             foreach (var top_sub in top.SubTables)
@@ -134,7 +129,7 @@ namespace inVtero.net
 
                 // we don't need to | in the PML4 AO (address offset) since were pulling down the whole page not just the one value
                 // and were going to brute force our way through the entire table so this was just confusing things.
-                var l3HW_Addr = PTE.NextTableAddress  | top_sub.Key.PML4;
+                var l3HW_Addr = PTE.NextTableAddress;
 
                 // if we have an EPTP use it and request resolution of the HW_Addr
                 if (SLAT != 0)
@@ -150,9 +145,7 @@ namespace inVtero.net
 
                 // copy VA since were going to be making changes
                 var s3va = new VIRTUAL_ADDRESS(top_sub.Key.Address);
-                
 
-                top_sub.Value.hostPTE = l3HW_Addr; // cache translated value
                 var lvl3_page = new long[512];
 
                 // extract the l3 page for each PTEEntry we had in l4
@@ -174,8 +167,11 @@ namespace inVtero.net
                     //WriteLine($"3: Scanning VA {s3va.Address:X16}");
 
                     // save 'PFN' entry into sub-table I should really revisit all these names
-                    var l3PFN = new PFN(l3PTE, s3va.Address, CR3, SLAT);
+                    VAddr = new VIRTUAL_ADDRESS(s3va.Address);
+                    var l3PFN = new PFN() { PTE = l3PTE, VA = VAddr };
+
                     top_sub.Value.SubTables.Add(s3va, l3PFN);
+
                     entries++;
 
                     /// TODO: Double check if this is a real bit... 
@@ -195,7 +191,6 @@ namespace inVtero.net
                         if (l2HW_Addr == HARDWARE_ADDRESS_ENTRY.MaxAddr)
                             continue;
 
-                        l3PFN.hostPTE = l2HW_Addr;
                         var lvl2_page = new long[512];
 
                         try { mem.GetPageForPhysAddr(l2HW_Addr, ref lvl2_page); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"level2: Failed lookup {l2HW_Addr:X16}"); }
@@ -215,12 +210,14 @@ namespace inVtero.net
                             var l2PTE = new HARDWARE_ADDRESS_ENTRY(lvl2_page[i2]);
                             s2va.DirectoryOffset = i2;
                             ///WriteLine($"2: Scanning VA {s2va.Address:X16}");
+                            VAddr = new VIRTUAL_ADDRESS(s2va.Address);
+                            var l2PFN = new PFN() { PTE = l2PTE, VA = VAddr };
 
-                            var l2PFN = new PFN(l2PTE, s2va.Address, CR3, SLAT) { Type = PFNType.Data };
                             l3PFN.SubTables.Add(s2va, l2PFN);
                             entries++;
 
-                            if (!l2PTE.LargePage)
+
+                            if (!l2PTE.LargePage && !KernelSpace)
                             {
                                 var l1HW_Addr = l2PTE.NextTableAddress;
                                 if (SLAT != 0)
@@ -232,8 +229,6 @@ namespace inVtero.net
                                 }
                                 if (l1HW_Addr == HARDWARE_ADDRESS_ENTRY.MaxAddr)
                                     continue;
-
-                                l2PFN.hostPTE = l1HW_Addr;
 
                                 var lvl1_page = new long[512];
 
@@ -253,8 +248,10 @@ namespace inVtero.net
                                     s1va.TableOffset = i1;
 
                                     //WriteLine($"1: Scanning VA {s1va.Address:X16}");
+                                    // copy this since were in a loop scanning and it (VA) changes every time
+                                    VAddr = new VIRTUAL_ADDRESS(s1va.Address);
+                                    var l1PFN = new PFN() { PTE = l1PTE, VA = VAddr };
 
-                                    var l1PFN = new PFN(l1PTE, s1va.Address, CR3, SLAT) { Type = PFNType.Data };
                                     l2PFN.SubTables.Add(s1va, l1PFN);
                                     entries++;
                                 }
@@ -267,47 +264,50 @@ namespace inVtero.net
             return entries;
         }
 
-        long FillTable(VIRTUAL_ADDRESS VA, int PageIndex, long CR3, bool OnlyUserSpace = false)
+        
+        long FillTable(bool RedundantKernelSpaces)
         {
             var entries = 0L;
-            var PageTable = new Dictionary<VIRTUAL_ADDRESS, PFN>();
+            var PageTables = new Dictionary<VIRTUAL_ADDRESS, PFN>();
             // We can just pick up the top level page to speed things up 
             // we've already visited this page so were not going to waste time looking up the VA->PA
             //var page = new long[512];
             //mem.GetPageFromFileOffset(FileOffset, ref page);
 
+
+            KernelSpace = RedundantKernelSpaces;
             // clear out the VA for the other indexes since were looking at the top level
+            VIRTUAL_ADDRESS VA;
             VA.Address = 0;
 
             foreach (var kvp in DP.TopPageTablePage)
             {
                 // Only extract user portion, kernel will be mostly redundant
-                if(OnlyUserSpace && kvp.Key >= 256)
+                if(!RedundantKernelSpaces && kvp.Key >= 256)
                     continue;
 
                 // were at the top level (4th)
                 VA.PML4 = kvp.Key;
 
-                var pfn = new PFN(kvp.Value, VA.Address, CR3, DP.vmcs == null ? 0 : DP.vmcs.EPTP);
-                PageTable.Add(VA, pfn);
+                var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4) };
+                PageTables.Add(VA, pfn);
                 entries++;
             }
 
-            // simulated top entry
-            RootPageTable = new PFN(DP.TopPageTablePage[PageIndex], VA.Address, CR3, DP.vmcs == null ? 0 : DP.vmcs.EPTP)
+            Root.Entries = new PFN()
             {
-                SubTables = PageTable
+                SubTables = PageTables
             };
 
-            // descend the remaining levels
+            // descend the remaining levelsPageTableEntries
             // if we find nothing, we can be sure the value were using for EPTP or CR3 is bogus
-            var new_entries = InlineExtract(RootPageTable, 3);
+            var new_entries = InlineExtract(Root);
             if (new_entries == 0)
                 return 0;
 
             entries += new_entries;
             // a hint for the full count of entries extracted
-            RootPageTable.PFNCount = entries;
+            Root.Count = entries;
             
             return entries;
         }

@@ -71,7 +71,7 @@ namespace quickdumps
             WriteLine("inVtero FileName [win|lin|fbsd|obsd|nbsd|gen|-vmcs|!]");
             WriteLine("\"inVtero FileName winfbsd\"  (will run FreeBSD and Windows together)");
             WriteLine("\"inVtero FileName !-obsd-nbsd\" (will run all scanners except for OpenBSD and NetBSD)");
-            WriteLine("Using -* should disbale that scanner, you can not enable only a VMCS scan since VMCS EPTP detection requires a prior scan.");
+            WriteLine("Using -* should disable that scanner, you can not enable only a VMCS scan since VMCS EPTP detection requires a prior scan.");
         }
 
         public static void Main(string[] args)
@@ -101,6 +101,8 @@ namespace quickdumps
 
                     if (spec.Contains("win"))
                         Version |= PTType.Windows;
+                    if (spec.Contains("hv"))
+                        Version |= PTType.HyperV;
                     if (spec.Contains("lin"))
                         Version |= PTType.LinuxS;
                     if (spec.Contains("fbsd"))
@@ -126,6 +128,8 @@ namespace quickdumps
                         Version = Version & ~PTType.FreeBSD;
                     if (spec.Contains("-lin"))
                         Version = Version & ~PTType.LinuxS;
+                    if (spec.Contains("-hv"))
+                        Version = Version & ~PTType.HyperV;
                     if (spec.Contains("-win"))
                         Version = Version & ~PTType.Windows;
                 }
@@ -169,7 +173,7 @@ namespace quickdumps
                 ForegroundColor = ConsoleColor.Blue;
                 BackgroundColor = ConsoleColor.Yellow;
 
-                var msg = $"{procCount} candiate process page tables. Time so far: {Timer.Elapsed}, second pass starting.";
+                var msg = $"{procCount} candidate process page tables. Time so far: {Timer.Elapsed}, second pass starting.";
 
                 Write(msg);
 
@@ -208,7 +212,7 @@ namespace quickdumps
                     BackgroundColor = ConsoleColor.Yellow;
 
 
-                    WriteLine($"{VMCSCount} candiate VMCS pages. Time to process: {Timer.Elapsed}");
+                    WriteLine($"{VMCSCount} candidate VMCS pages. Time to process: {Timer.Elapsed}");
                     Write($"Data scanned: {vtero.FileSize:N}");
 
                     // second time 
@@ -242,7 +246,7 @@ namespace quickdumps
                     if (Vtero.VerboseOutput)
                         vtero.DumpFailList();
 
-                    WriteLine($"Final analysis compleated, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
+                    WriteLine($"Final analysis completed, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
                 }
                 #endregion
                 #endregion
@@ -272,7 +276,7 @@ namespace quickdumps
             var rv = string.Empty;
             if (t.Seconds > 0)
             {
-                var cnt = siz * 1.00 / t.Seconds;
+                var cnt = siz * 1.00 / t.TotalSeconds;
 
                 if (cnt > 1024 * 1024)
                     rv = $" rate: {(cnt / (1024 * 1024)):F3} MB/s";

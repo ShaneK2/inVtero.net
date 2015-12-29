@@ -32,7 +32,7 @@ namespace inVtero.net
             TopPageTablePage = new Dictionary<int, long>();
         }
         [ProtoMember(1)]
-        public int Group;
+        public int Group;       // linux only 
         [ProtoMember(2)]
         public VMCS vmcs;       // vmcs if available
         [ProtoMember(3)]
@@ -51,6 +51,7 @@ namespace inVtero.net
         [ProtoMember(9)]
         public Dictionary<int, long> TopPageTablePage;
 
+        // the high bit signals if we collected a kernel address space for this AS group
         [ProtoMember(10)]
         public int AddressSpaceID;
 
