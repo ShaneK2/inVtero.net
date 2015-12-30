@@ -27,6 +27,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using static inVtero.net.UnsafeHelp;
 using static System.Console;
+using ProtoBuf;
 
 namespace inVtero.net
 {
@@ -34,23 +35,27 @@ namespace inVtero.net
     /// Scanner is the initial entry point into inVtero, the most basic and primary functionality
     /// 
     /// </summary>
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Scanner
     {
         // for diagnostic printf's
         const int MAX_LINE_WIDTH = 120;
 
         // using bag since it has the same collection interface as List
+        [ProtoIgnore]
         public ConcurrentDictionary<long, DetectedProc> DetectedProcesses;
+        [ProtoIgnore]
         public DetectedProc[] VMCSScanSet;
 
         #region class instance variables
         public string Filename;
         public long FileSize;
+        [ProtoIgnore]
         public List<VMCS> HVLayer;
         public bool DumpVMCSPage;
 
         List<MemoryRun> Gaps;
-
+        [ProtoIgnore]
         List<Func<long, bool>> CheckMethods;
         PTType scanMode;
         public PTType ScanMode
@@ -91,14 +96,18 @@ namespace inVtero.net
 
         #endregion
 
-        public Scanner(string InputFile)
+        Scanner()
         {
             DetectedProcesses = new ConcurrentDictionary<long, DetectedProc>();
             HVLayer = new List<VMCS>();
-            Filename = InputFile;
             FileSize = 0;
             Gaps = new List<MemoryRun>();
             CheckMethods = new List<Func<long, bool>>();
+        }
+
+        public Scanner(string InputFile): this()
+        {
+            Filename = InputFile;
         }
 
         /// <summary>
