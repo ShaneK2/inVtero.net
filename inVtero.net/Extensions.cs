@@ -16,7 +16,6 @@
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 
-using ProtoBuf;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -34,6 +33,9 @@ namespace inVtero.net
             return temp;
         }
 
+        /*  Sort of a waste of memory anyhow, reworked algorithm so this is not needed.
+
+
         public static T Clone<T>(this T source)
         {
             if (Attribute.GetCustomAttribute(typeof(T), typeof(ProtoBuf.ProtoContractAttribute))
@@ -46,8 +48,8 @@ namespace inVtero.net
             {
                 return default(T);
             }
-
-            IFormatter formatter = ProtoBuf.Serializer.CreateFormatter<T>();
+            //NetSerializer.Serializer
+            //IFormatter formatter = ProtoBuf.Serializer.CreateFormatter<T>();
             using (Stream stream = new MemoryStream())
             {
                 formatter.Serialize(stream, source);
@@ -56,17 +58,6 @@ namespace inVtero.net
             }
         }
 
-        public static T DeepCopy<T>(T objectCopy) where T : new()
-        {
-            using (var stream = new MemoryStream())
-            {
-                T rv = new T();
-                Serializer.Serialize(stream, rv);
-                stream.Position = 0;
-                rv = Serializer.Deserialize<T>(stream);
-                return rv;
-            }
-
-        }
+        */
     }
 }

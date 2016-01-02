@@ -15,11 +15,11 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-using ProtoBuf;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using ProtoBuf;
 
 namespace inVtero.net
 {
@@ -43,10 +43,9 @@ namespace inVtero.net
     /// <summary>
     /// Using long for Virtual addresses
     /// </summary>
-    [ProtoContract]
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public struct VIRTUAL_ADDRESS
     {
-        [ProtoMember(1)]
         public long Address;
 
         public VIRTUAL_ADDRESS(long VA) { Address = VA; }
@@ -89,10 +88,9 @@ namespace inVtero.net
         public long PML4E { get { return (GPA >> 39) & 0x1ff; } }
     }
 
-    [ProtoContract]
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public struct HARDWARE_ADDRESS_ENTRY : IComparable
     {
-        [ProtoMember(1)]
         public long PTE; // should really be called 'value' or something
 
         public static readonly HARDWARE_ADDRESS_ENTRY MinAddr = new HARDWARE_ADDRESS_ENTRY(long.MinValue);
@@ -180,6 +178,7 @@ namespace inVtero.net
     /// 64-ia-32-architectures-software-developer-system-programming-manual-325384.pdf
     /// Section 24.6.11
     /// </summary>
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public struct EPTP
     {
         public long aEPTP;
@@ -252,16 +251,13 @@ namespace inVtero.net
     #endregion
     #region Memory gap structs
     /// <summary>
-    /// Run's allow for gaps in address space
+    /// Runs allow for gaps in address space
     /// </summary>
-    [ProtoContract]
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class MemoryRun
     {
-        [ProtoMember(1)] // 
         public long BasePage;
-        [ProtoMember(2)]
         public long PageCount;
-        [ProtoMember(3)] // physical page number
         public long regionPPN;
 
         public override string ToString()
@@ -272,17 +268,13 @@ namespace inVtero.net
     /// <summary>
     /// Setup one default memory run for the entire range
     /// </summary>
-    [ProtoContract]
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class MemoryDescriptor
     {
-        [ProtoMember(1)]
         public long StartOfMemmory; // this object does not have to be a 1:1 to the native type
-        [ProtoMember(2)]
         public long NumberOfRuns;
-        [ProtoMember(3)]
         public long NumberOfPages;
 
-        [ProtoMember(4)]
         long maxAddressablePageNumber;
         public long MaxAddressablePageNumber { get {
 
@@ -292,7 +284,6 @@ namespace inVtero.net
                 maxAddressablePageNumber = Run.Count > 0 ? Run[Run.Count - 1].BasePage + Run[Run.Count - 1].PageCount : NumberOfPages;
                 return maxAddressablePageNumber;
             } }
-        [ProtoMember(5)]
         public List<MemoryRun> Run;
 
         public MemoryDescriptor()
@@ -314,7 +305,7 @@ namespace inVtero.net
     #endregion
     #region Flags and Enum
     // 0 Is really what we expect
-    // This may be different for virtualized implmentations
+    // This may be different for virtualized implementations
     public enum VMCS_ABORT
     {
         NO_ABORT = 0,
@@ -325,7 +316,7 @@ namespace inVtero.net
 
     // From ReKall.  This is only for informational purposes
     // REVISION_ID is not used for any detection or matching
-    public enum REVISION_ID : uint // Should corospond to VMX_BASIC_MSR
+    public enum REVISION_ID : uint // Should correspond to VMX_BASIC_MSR
     {
         VMWARE_NESTED = 1,
         // KVM
@@ -349,7 +340,7 @@ namespace inVtero.net
         OpenBSD = 4,
         NetBSD = 8,
         HyperV = 0x10,
-        LinuxS = 0x10000000,    // Jumping fo Linux since this is now a state saving check
+        LinuxS = 0x10000000,    // Jumping for Linux since this is now a state saving check
                                 // LinuxS is still a single pass
         GENERIC = 0x40000000,   // Generic stateless
         ALL = int.MaxValue,

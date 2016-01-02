@@ -34,9 +34,9 @@
 //              - Isolate known code from unknown/untrusted code in memory. e.g. 99%+ of resident code can be securely identified (based on cryptographic secure hashes 192bit+)
 //              - (If your not verifying the code in your memory dumps, you really don't know what's in them do you? -- that string that says ntdll.dll cant lie right!! :)
 //              - Delocate memory based on hosted .reloc files (don't you want to memory dumps that match disk files?!?!)
-//              - Match dumped binaries to known secure hashes (who wants to dissassemble/analyze ntdll when you dont have too!)
+//              - Match dumped binaries to known secure hashes (who wants to disassemble/analyze ntdll when you dont have too!)
 //              
-//          ~~* Test/Support open .net runtime Roselin and such on other platforms (done see Reloc)~~
+//          ~~* Test/Support open .net runtime Roselyn and such on other platforms (done see Reloc)~~
 //              ~~- Now that WCF is open, it's a cinch to connect to our web services~~
 //
 //          * Memory run detection
@@ -53,6 +53,7 @@
 //          + Group by permission's and contiguous regions
 //
 
+using ProtoBuf;
 using inVtero.net;
 using System;
 using System.IO;
@@ -136,7 +137,7 @@ namespace quickdumps
                 else
                     Version = PTType.ALL;
 
-                Vtero vtero = null;
+                Vtero vtero = new Vtero();
 
                 var saveStateFile = $"{Filename}.inVtero.net";
 
@@ -146,14 +147,14 @@ namespace quickdumps
                     var todo = ReadKey();
                     if (todo.Key == ConsoleKey.L)
                     {
-                        vtero = Vtero.CheckpointRestoreState(saveStateFile);
+                        vtero = vtero.CheckpointRestoreState(saveStateFile);
                         vtero.OverRidePhase = true;
                     }
                     else
                         File.Delete(saveStateFile);
                 }
 
-                if(vtero == null)
+                if(vtero.Phase < 2)
                     vtero = new Vtero(Filename);
 
                 Vtero.VerboseOutput = true;
@@ -237,16 +238,17 @@ namespace quickdumps
                     // Extract Address Spaces verifies the linkages between
                     // process<->CR3<->EPTP(if there is one)
                     // and that they are functional
-                    var vetted = vtero.ExtrtactAddressSpaces();
-                    
+                    var vetted = vtero.ExtrtactAddressSpaces(null, null, Version);
+
+                    ForegroundColor = ConsoleColor.Green;
+                    WriteLine($"{Environment.NewLine}Final analysis completed, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
+
                     // do a test dump
                     // extract & dump could be done at the same time
                     vtero.DumpASToFile(vetted);
 
                     if (Vtero.VerboseOutput)
                         vtero.DumpFailList();
-
-                    WriteLine($"Final analysis completed, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
                 }
                 #endregion
                 #endregion

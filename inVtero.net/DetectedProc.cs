@@ -24,35 +24,25 @@ using System.Runtime.Serialization;
 
 namespace inVtero.net
 {
-    [ProtoContract]
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class DetectedProc
     {
         public DetectedProc()
         {
             TopPageTablePage = new Dictionary<int, long>();
         }
-        [ProtoMember(1)]
         public int Group;       // linux only 
-        [ProtoMember(2)]
         public VMCS vmcs;       // vmcs if available
-        [ProtoMember(3)]
         public PageTable PT;    // extracted page table
-        [ProtoMember(4)]
         public long CR3Value;
-        [ProtoMember(5)]
         public long FileOffset;
-        [ProtoMember(6)]
         public long Diff;
-        [ProtoMember(7)]
         public int Mode; // 1 or 2
-        [ProtoMember(8)]
         public PTType PageTableType;
 
-        [ProtoMember(9)]
         public Dictionary<int, long> TopPageTablePage;
 
         // the high bit signals if we collected a kernel address space for this AS group
-        [ProtoMember(10)]
         public int AddressSpaceID;
 
         public override string ToString() => $"Process CR3 [{CR3Value:X16}] File Offset [{FileOffset:X16}] Diff [{Diff:X16}] Type [{PageTableType}] VMCS [{vmcs}]";
@@ -60,33 +50,22 @@ namespace inVtero.net
     }
 
 
-    [ProtoContract]
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class VMCS
     {
         public VMCS()
         {
-            //TopEPT = new Dictionary<int, HARDWARE_ADDRESS_ENTRY>();
         }
 
-        //[ProtoMember(1)]
-        // this is usually captured somewhere else also so
-        // avoid recursion
-        public DetectedProc dp; // which proc this came from
-        [ProtoMember(2)]
-        public long gCR3_off;
-        [ProtoMember(3)]
-        public long gCR3;
-        [ProtoMember(4)]
-        public long hCR3_off;
-        [ProtoMember(5)]
-        public long hCR3;
-        [ProtoMember(6)]
-        public long EPTP;
-        [ProtoMember(7)]
-        public long EPTP_off;
 
-        //[ProtoMember(8)] // not really that useful
-        //public Dictionary<int, HARDWARE_ADDRESS_ENTRY> TopEPT;
+        [ProtoIgnore]
+        public DetectedProc dp; // which proc this came from
+        public long gCR3_off;
+        public long gCR3;
+        public long hCR3_off;
+        public long hCR3;
+        public long EPTP;
+        public long EPTP_off;
 
         public override string ToString() => $"EPTP = [{new EPTP(this.EPTP)}]";
     }

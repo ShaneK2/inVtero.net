@@ -15,11 +15,11 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-using ProtoBuf;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using static System.Console;
+using ProtoBuf;
 
 namespace inVtero.net
 {
@@ -34,30 +34,27 @@ namespace inVtero.net
     /// 
     /// TODO: Convert all of the names into tee http://www.pagetable.com/?p=308 convention :)
     /// </summary>
-    [ProtoContract]
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class PageTable
     {
         // failed List is the list of entries which were not able to load
         // this is usually the result of a miscalculated memory run configuration
-        [ProtoMember(1)]
         public List<HARDWARE_ADDRESS_ENTRY> Failed;
 
         // The present invalid list is the list of 'invalid' as far as the hardware goes
         // This is usually due to software paging, prototype or some alternative PTE state
         // It may be better to say 'Present' here but over all an invalid state just means that 
         // the OS/MM is handling the state of the page and not the hardware.  (swap etc..)
-        [ProtoMember(2)]
         public List<HARDWARE_ADDRESS_ENTRY> PresentInvalid;
 
         // HighestFound is a hint to the extent of the highest PFN which was able to load a page
         // This helps determine the extent of a memory run.
-        [ProtoMember(3)]
         public HARDWARE_ADDRESS_ENTRY HighestFound;
 
-        [ProtoMember(4)]
         public PageTableRoot Root;
-
+        [ProtoIgnore]
         DetectedProc DP;
+        [ProtoIgnore]
         Mem mem;
         bool KernelSpace;
 
@@ -108,7 +105,7 @@ namespace inVtero.net
         // TODO: RE-RE-Write this into an on-demand evaluated set of delegates to ease memory load
         // some testing on Windows 10: Virtualized Process PT Entries [1625181] Type [Windows] PID [97C0301E:1AB000]
         // that's over _1.6 Million_ page table entries, wow!!!
-        long InlineExtract(PageTableRoot Root)
+        long InlineExtract(PageTableRoot Root, int Depth = 4)
         {
             VIRTUAL_ADDRESS VAddr;
 
@@ -122,8 +119,6 @@ namespace inVtero.net
             foreach (var top_sub in top.SubTables)
             {
                 //WriteLine($"4: Scanning {top_sub.Value.PTE:X16}");
-
-
                 // scan each page for the level 4 entry
                 var PTE = top_sub.Value.PTE;
 
@@ -264,22 +259,100 @@ namespace inVtero.net
             return entries;
         }
 
-        
-        long FillTable(bool RedundantKernelSpaces)
+        IEnumerable<PFN> ExtractNextLevel(PFN PageContext, bool RedundantKernelSpaces, int Level = 4)
+        {
+            if (PageContext == null) yield break;
+
+            RedundantKernelSpaces = true;
+
+            var SLAT = Root.SLAT;
+            var CR3 = Root.CR3;
+            var top = Root.Entries;
+
+            VIRTUAL_ADDRESS SubVA = PageContext.VA;
+            HARDWARE_ADDRESS_ENTRY PA = PageContext.PTE;
+
+            if (!PA.LargePage)
+            {
+                // get the page that the current PFN describes
+                var HW_Addr = PA.NextTableAddress;
+                if (SLAT != 0)
+                {
+                    var hHW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
+                    try { hHW_Addr = mem.VirtualToPhysical(SLAT, HW_Addr); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"level{Level}: Unable to V2P {HW_Addr}"); }
+                    HW_Addr = hHW_Addr;
+
+                    if (HW_Addr == long.MaxValue || HW_Addr == long.MaxValue - 1)
+                        yield break;
+                }
+
+                long[] page = new long[512];  
+
+                // copy VA since were going to be making changes
+
+                try { mem.GetPageForPhysAddr(HW_Addr, ref page); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"Physical Address can not find {HW_Addr:X16}"); }
+
+                if (page == null)
+                    yield break;
+
+                var dupVA = new VIRTUAL_ADDRESS(SubVA.Address);
+
+                for (int i = 0; i < 512; i++)
+                {
+                    if (!RedundantKernelSpaces && i >= 256)
+                        continue;
+
+                    if (page[i] == 0)
+                        continue;
+
+                    switch (Level)
+                    {
+                        case 4:
+                            dupVA.PML4 = i;
+                            break;
+                        case 3:
+                            dupVA.DirectoryPointerOffset = i;
+                            break;
+                        case 2:
+                            dupVA.DirectoryOffset = i;
+                            break;
+                        case 1:
+                            dupVA.TableOffset = i;
+                            break;
+                        default:
+                            break;
+                    }
+
+                    var pfn = new PFN
+                    {
+                        VA = new VIRTUAL_ADDRESS(dupVA.Address),
+                        PTE = new HARDWARE_ADDRESS_ENTRY(page[i])
+                    };
+                    
+                    PageContext.SubTables.Add(
+                            pfn.VA,
+                            pfn);   
+
+                    yield return pfn;
+                }
+            }
+            yield break;
+        }
+
+
+
+        long FillTable(bool RedundantKernelSpaces, int depth = 4)
         {
             var entries = 0L;
             var PageTables = new Dictionary<VIRTUAL_ADDRESS, PFN>();
-            // We can just pick up the top level page to speed things up 
-            // we've already visited this page so were not going to waste time looking up the VA->PA
-            //var page = new long[512];
-            //mem.GetPageFromFileOffset(FileOffset, ref page);
-
 
             KernelSpace = RedundantKernelSpaces;
             // clear out the VA for the other indexes since were looking at the top level
             VIRTUAL_ADDRESS VA;
             VA.Address = 0;
 
+
+            int level = 3;
             foreach (var kvp in DP.TopPageTablePage)
             {
                 // Only extract user portion, kernel will be mostly redundant
@@ -289,8 +362,24 @@ namespace inVtero.net
                 // were at the top level (4th)
                 VA.PML4 = kvp.Key;
 
-                var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4) };
+                var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4 << 39) };
                 PageTables.Add(VA, pfn);
+                foreach(var DirectoryPointerOffset in ExtractNextLevel(pfn, KernelSpace, level))
+                {
+                    if (DirectoryPointerOffset == null) continue;
+
+                    foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level-1))
+                    {
+                        if (DirectoryOffset == null) continue;
+                        foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
+                        {
+                            if (TableOffset == null) continue;
+                            entries++;
+                        }
+                        entries++;
+                    }
+                    entries++;
+                }
                 entries++;
             }
 
@@ -299,6 +388,11 @@ namespace inVtero.net
                 SubTables = PageTables
             };
 
+            // InlineExtract may be faster but it's memory requirement is higher which was a problem
+            // when analyzing 64GB+ dumps (yes InVtero.net handles very big memory)++
+#if FALSE
+            
+
             // descend the remaining levelsPageTableEntries
             // if we find nothing, we can be sure the value were using for EPTP or CR3 is bogus
             var new_entries = InlineExtract(Root);
@@ -306,6 +400,7 @@ namespace inVtero.net
                 return 0;
 
             entries += new_entries;
+#endif
             // a hint for the full count of entries extracted
             Root.Count = entries;
             
