@@ -220,6 +220,7 @@ namespace inVtero.net
                             WriteLine(sb.ToString());
                         }
 
+
                         VMCS vmcsFound = null;
                         // most VMWare I've scanned comes are using this layout
                         if (RevID == REVISION_ID.VMWARE_NESTED && OutputList.Contains(block[14]))

@@ -15,7 +15,7 @@
 ** .NET 461
 ** PAGEDUMP64 file format support
 ** VMWare support workaround (convert or use memory run data from vmss2core)
-** Fixes for non-hypervisor based process idnetification
+** Fixes for non-hypervisor based process identification
 ** Big perf boost with page cache over mapped files
 ** Fixes to InlineExtract
 
