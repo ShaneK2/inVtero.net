@@ -47,6 +47,15 @@ namespace inVtero.net
         [ProtoIgnore]
         public DetectedProc[] VMCSScanSet;
 
+        [ProtoIgnore]
+        public uint HexScanDword;
+        [ProtoIgnore]
+        public ulong HexScanUlong;
+        [ProtoIgnore]
+        public bool Scan64;
+        [ProtoIgnore]
+        public List<long> FoundValueOffsets;
+
         #region class instance variables
         public string Filename;
         public long FileSize;
@@ -75,7 +84,7 @@ namespace inVtero.net
 
                 if ((value & PTType.HyperV) == PTType.HyperV)
                     CheckMethods.Add(HV);
-        
+
                 if ((value & PTType.FreeBSD) == PTType.FreeBSD)
                     CheckMethods.Add(FreeBSD);
 
@@ -85,6 +94,10 @@ namespace inVtero.net
                 if ((value & PTType.NetBSD) == PTType.NetBSD)
                     CheckMethods.Add(NetBSD);
 
+#if TESTING
+                if ((value & PTType.VALUE) == PTType.VALUE)
+                    CheckMethods = null;
+#endif
 
                 if ((value & PTType.LinuxS) == PTType.LinuxS)
                     CheckMethods.Add(LinuxS);
@@ -94,7 +107,7 @@ namespace inVtero.net
             }
         }
 
-        #endregion
+#endregion
 
         Scanner()
         {
@@ -103,12 +116,53 @@ namespace inVtero.net
             FileSize = 0;
             Gaps = new List<MemoryRun>();
             CheckMethods = new List<Func<long, bool>>();
+            FoundValueOffsets = new List<long>();
         }
 
-        public Scanner(string InputFile): this()
+        public Scanner(string InputFile) : this()
         {
             Filename = InputFile;
         }
+
+        public bool HexScan(long offset, long[] ValueBlock, int ValueReadCount)
+        {
+            if (Scan64)
+                for (int i = 0; i < ValueReadCount; i++)
+                {
+                    if ((ulong)ValueBlock[i] == HexScanUlong)
+                    {
+                        long xoff = offset + (i * 8);
+                        WriteLine($"Found Hex data @{offset} + {i * 8}");
+                        FoundValueOffsets.Add(xoff);
+                        return true;
+                    }
+                }
+            else
+                for (int i = 0; i < ValueReadCount; i++)
+                {
+                    if ((uint)(ValueBlock[i] & 0xffffffff) == HexScanDword)
+                    {
+                        long xoff = offset + (i * 8);
+
+                        WriteLine($"Found Hex ({HexScanDword:x8}) data OFFSET {offset:X16} + {(i * 8):X} @{(offset + (i * 8)):X} i={i}");
+                        WriteLine($"{ValueBlock[i]:X16} : {ValueBlock[i + 1]:X16} : {ValueBlock[i + 2]:X16} : {ValueBlock[i + 3]:X16}");
+                        WriteLine($"{ValueBlock[i + 4]:X16} : {ValueBlock[i + 5]:X16} : {ValueBlock[i + 6]:X16} : {ValueBlock[i + 7]:X16}");
+                        FoundValueOffsets.Add(xoff);
+                        return true;
+                    }
+                    else if ((uint)(ValueBlock[i] >> 32) == HexScanDword)
+                    {
+                        long xoff = offset + (i * 8) + 4;
+                        WriteLine($"Found Hex ({HexScanDword:x8}) data OFFSET {offset:X16} + {(i * 8):X} @{(offset + (i * 8)):X}");
+                        WriteLine($"{ValueBlock[i]:X16} : {ValueBlock[i + 1]:X16} : {ValueBlock[i + 2]:X16} : {ValueBlock[i + 3]:X16}");
+                        WriteLine($"{ValueBlock[i + 4]:X16} : {ValueBlock[i + 5]:X16} : {ValueBlock[i + 6]:X16} : {ValueBlock[i + 7]:X16}");
+                        FoundValueOffsets.Add(xoff);
+                        return true;
+                    }
+                }
+            return false;
+        }
+
 
         /// <summary>
         /// The VMCS scan is based on the LINK pointer, abort code and CR3 register
@@ -127,8 +181,8 @@ namespace inVtero.net
             var LinkCount = 0;
             var Neg1 = -1;
 
-            if(VMCSScanSet == null)
-                throw new NullReferenceException("Entered VMCS callback w/o having found any VMCS, this is a second pass Func") ;
+            if (VMCSScanSet == null)
+                throw new NullReferenceException("Entered VMCS callback w/o having found any VMCS, this is a second pass Func");
 
             // this might be a bit micro-opt-pointless ;)
             //Parallel.Invoke(() =>
@@ -261,22 +315,22 @@ namespace inVtero.net
             // memcmp 0 ranges 8-7f0, 800-880, 888-c88, c98-e88, e90-ea0, ea8-ff0
             // after first (likely kernel) page table found, use it's lower 1/2 to validate other detected page tables
             // Linux was found (so far) to have a consistent kernel view.
-            var kern319 = new Dictionary<int,bool> { [0x7f8] = false, [0x880] = true, [0xc90] = true, [0xe88] = true, [0xea0] = true, [0xff0] = true, [0xff8] = true };
+            var kern319 = new Dictionary<int, bool> { [0x7f8] = false, [0x880] = true, [0xc90] = true, [0xe88] = true, [0xea0] = true, [0xff0] = true, [0xff8] = true };
 
             var Profiles = new List<Dictionary<int, bool>>();
 
-           if(((block[0xFF]  & 0xfff) == 0x067) &&
-              ((block[0x110] & 0xfff) == 0x067) &&
-              ((block[0x192] & 0xfff) == 0x067) &&
-              ((block[0x1d1] & 0xfff) == 0x067) &&
-              ((block[0x1d4] & 0xfff) == 0x067) &&
-              ((block[0x1fe] & 0xfff) == 0x067) &&
-              ((block[0x1ff] & 0xfff) == 0x067) &&
-              
-              // this is the largest block of 0's 
-              // just do this one to qualify
-              IsZero(block, 8, 0xe0)
-              )
+            if (((block[0xFF] & 0xfff) == 0x067) &&
+               ((block[0x110] & 0xfff) == 0x067) &&
+               ((block[0x192] & 0xfff) == 0x067) &&
+               ((block[0x1d1] & 0xfff) == 0x067) &&
+               ((block[0x1d4] & 0xfff) == 0x067) &&
+               ((block[0x1fe] & 0xfff) == 0x067) &&
+               ((block[0x1ff] & 0xfff) == 0x067) &&
+
+               // this is the largest block of 0's 
+               // just do this one to qualify
+               IsZero(block, 8, 0xe0)
+               )
 
             /*
             if (IsZero(block, 8,     0xE0) &&
@@ -299,7 +353,7 @@ namespace inVtero.net
                     LinuxSFirstPages.Add(block);
                     group = 0;
                 }
-                
+
                 // load DP 
                 var dp = new DetectedProc { CR3Value = offset, FileOffset = offset, Diff = 0, Mode = 2, Group = group, PageTableType = PTType.LinuxS };
                 for (int p = 0; p < 0x200; p++)
@@ -344,7 +398,7 @@ namespace inVtero.net
                         }
 
                         DetectedProcesses.TryAdd(offset, dp);
-                        if(Vtero.VerboseOutput)
+                        if (Vtero.VerboseOutput)
                             WriteLine(dp.ToString());
                         Candidate = true;
                     }
@@ -354,10 +408,10 @@ namespace inVtero.net
         }
 
         /*   OpenBSD /src/sys/arch/amd64/include/pmap.h
-            #define L4_SLOT_PTE		255
-            #define L4_SLOT_KERN		256
-            #define L4_SLOT_KERNBASE	511
-            #define L4_SLOT_DIRECT		510
+#define L4_SLOT_PTE		255
+#define L4_SLOT_KERN		256
+#define L4_SLOT_KERNBASE	511
+#define L4_SLOT_DIRECT		510
         */
         /// <summary>
         /// Slightly better check then NetBSD so I guess consider it beta!
@@ -490,7 +544,7 @@ namespace inVtero.net
                 i--;
                 // maybe some kernels keep more than 1/2 system memory 
                 // wouldn't that be a bit greedy though!?
-            } while (i > 0xFF); 
+            } while (i > 0xFF);
             return Candidate;
         }
 
@@ -514,7 +568,7 @@ namespace inVtero.net
                 // we disqualify entries that have these bits configured
                 // 111 1111 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 1000 0000
                 // 
-                if (((ulong) block[0x1fe] & 0xFFFF000000000480) == 0)
+                if (((ulong)block[0x1fe] & 0xFFFF000000000480) == 0)
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
@@ -581,7 +635,7 @@ namespace inVtero.net
             }
             // mode 1 is implemented to hit on very few supported bits
             // developing a version close to this that will work for Linux
-            #region MODE 1 IS PRETTY LOOSE
+#region MODE 1 IS PRETTY LOOSE
 #if MODE_1
             else
                 /// detect MODE 1, we can probably get away with even just testing & 1, the valid bit
@@ -625,7 +679,7 @@ namespace inVtero.net
                 }
             }
 #endif
-            #endregion
+#endregion
             return Candidate;
         }
 
@@ -684,16 +738,18 @@ namespace inVtero.net
 
 #pragma warning disable HeapAnalyzerImplicitParamsRule // Array allocation for params parameter
                                     Parallel.Invoke(() =>
-                                    Parallel.ForEach<Func<long, bool>>(CheckMethods, (check) => {
+                                    Parallel.ForEach<Func<long, bool>>(CheckMethods, (check) =>
+                                    {
 
                                         check(offset);
 
-                                    }), () => {
+                                    }), () =>
+                                    {
                                         if (CurrMapBase < mapSize)
                                             UnsafeHelp.ReadBytes(reader, CurrMapBase, ref buffers[filled]);
                                     }
                                     );
-                                    if (ExitAfter > 0 && ExitAfter == DetectedProcesses.Count())
+                                    if (ExitAfter > 0 && (ExitAfter == DetectedProcesses.Count() || FoundValueOffsets.Count() >= ExitAfter))
                                         return DetectedProcesses.Count();
 
                                     var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
@@ -712,6 +768,96 @@ namespace inVtero.net
             } // close stream
             return DetectedProcesses.Count();
         }
-       
+
+        static IEnumerable<long> MapScanFile(String File, long From, int ScanData, int Count)
+        {
+            List<long> rv = new List<long>();
+
+            using (var fs = new FileStream(File, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                var mapName = Path.GetFileNameWithoutExtension(File) + From.ToString("X16");
+                using (var mmap =
+                    MemoryMappedFile.CreateFromFile(fs, mapName, 0, MemoryMappedFileAccess.Read,
+                    null, HandleInheritability.Inheritable, false))
+                {
+                    using (var reader = mmap.CreateViewAccessor(From, Count * 4, MemoryMappedFileAccess.Read))
+                    {
+                        var LocatedScanTarget = UnsafeHelp.ScanBytes(reader, ScanData, Count);
+                        if (LocatedScanTarget.Count() > 0)
+                        {
+                            foreach (var ioff in LocatedScanTarget)
+                            {
+                                var target = From + ioff;
+
+                                WriteLine($"Found input @ {(target):X}");
+                                rv.Add(target);
+                                yield return target;
+                            }
+                        }
+                    }
+
+                }
+            }
+            yield break;
+        }
+
+
+        public IEnumerable<long> BackwardsValueScan(int ExitAfter = 0)
+        {
+            if (FileSize == 0)
+                FileSize = (long)(ulong)new FileInfo(Filename).Length;
+
+            // each processor will ValueReadCount
+            long ReadSize = 1024 * 1024 * 8;
+            var ValueReadCount = (int)ReadSize / 4;
+            var RevMapSize = ReadSize * Environment.ProcessorCount;
+
+            var ShortFirstChunkSize = (int)(FileSize & (ReadSize - 1));
+            var ShortFirstChunkBase = (long)(ulong)(FileSize - ShortFirstChunkSize);
+
+            var found = MapScanFile(Filename, ShortFirstChunkBase, (int) HexScanDword, ShortFirstChunkSize / 4);
+
+            var RevCurrWindowBase = FileSize - ShortFirstChunkSize;
+
+            RevCurrWindowBase -= RevMapSize;
+            var ChunkCount = (FileSize / RevMapSize) + 1;
+
+            bool StopRunning = false;
+
+
+            for (long i = ChunkCount; i > 0; i--)
+            {
+                for (int j = 0; j < 8; j++)
+                {
+                    //if (!StopRunning)
+                    //{
+                    var localOffset = RevCurrWindowBase + (j * ReadSize);
+
+                    WriteLine($"Scanning From {localOffset:X} To {(localOffset + ReadSize):X} bytes");
+                    var results = MapScanFile(Filename, localOffset, (int)HexScanDword, ValueReadCount);
+
+                    foreach (var offset in results)
+                        yield return offset;
+
+                    if (ExitAfter > 0 && FoundValueOffsets.Count() >= ExitAfter)
+                        StopRunning = true;
+
+                    var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
+                    if (progress != ProgressBarz.Progress)
+                        ProgressBarz.RenderConsoleProgress(progress);
+
+                    //}
+
+                    RevCurrWindowBase -= RevMapSize;
+                    if (RevCurrWindowBase < 0 && !StopRunning)
+                    {
+                        RevCurrWindowBase = 0;
+                        StopRunning = true;
+                    }
+                }
+            }
+            yield break;
+        }
+
     }
 }

@@ -17,6 +17,7 @@
 
 
 using System;
+using System.Collections.Generic;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using System.Security;
@@ -25,7 +26,7 @@ namespace inVtero.net
 {
     public class UnsafeHelp
     {
-        public static unsafe void ReadBytes(MemoryMappedViewAccessor view, long offset, ref long[] arr)
+        public static unsafe void ReadBytes(MemoryMappedViewAccessor view, long offset, ref long[] arr, int Count = 512)
         {
             //byte[] arr = new byte[num];
             var ptr = (byte*)0;
@@ -35,8 +36,26 @@ namespace inVtero.net
             var iplong = ip.ToInt64() + offset;
             var ptr_off = new IntPtr(iplong);
 
-            Marshal.Copy(ptr_off, arr, 0, 512);
+            Marshal.Copy(ptr_off, arr, 0, Count);
             view.SafeMemoryMappedViewHandle.ReleasePointer();
+        }
+
+        public static unsafe List<long> ScanBytes(MemoryMappedViewAccessor view, int ScanFor, int Count = 512)
+        {
+            var rv = new List<long>();
+            var ptr = (byte*)0;
+
+            view.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+
+            var iptr = (int*)ptr;
+
+            for (long i = 0; i < Count; i++)
+                if (iptr[i] == ScanFor)
+                    rv.Add(i*4);
+
+            view.SafeMemoryMappedViewHandle.ReleasePointer();
+
+            return rv;
         }
 
         [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
@@ -112,5 +131,6 @@ namespace inVtero.net
                 return true;
             }
         }
+
     }
 }

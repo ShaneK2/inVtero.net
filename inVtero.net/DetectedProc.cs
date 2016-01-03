@@ -45,7 +45,7 @@ namespace inVtero.net
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
-        public override string ToString() => $"Process CR3 [{CR3Value:X16}] File Offset [{FileOffset:X16}] Diff [{Diff:X16}] Type [{PageTableType}] VMCS [{vmcs}]";
+        public override string ToString() => $"Process CR3 [{CR3Value:X12}] File Offset [{FileOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
 
     }
 
@@ -67,7 +67,7 @@ namespace inVtero.net
         public long EPTP;
         public long EPTP_off;
 
-        public override string ToString() => $"EPTP = [{new EPTP(this.EPTP)}]";
+        public override string ToString() => $"EPTP:[{new EPTP(this.EPTP):X12}]";
     }
 
 }

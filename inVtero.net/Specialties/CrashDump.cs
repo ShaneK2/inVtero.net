@@ -21,6 +21,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static System.Console;
 
 /// <summary>
 /// Adding some specialties for practical purposes.
@@ -54,8 +55,64 @@ namespace inVtero.net.Specialties
     {
         public MemoryDescriptor PhysMemDesc;
         string DumpFile;
+        uint StartOfMem;
+        public bool GoodDesc;
+        long MemSize;
 
-        public bool IsSupportedFormat()
+        public MemoryDescriptor ExtractMemDesc(Vtero vtero)
+        {
+            MemoryDescriptor MemRunDescriptor = null;
+            var off = vtero.ScanValue(false, 0x6c4d6d4d, 4);
+
+            using (var dstream = File.OpenRead(vtero.MemFile))
+            {
+                using (var dbin = new BinaryReader(dstream))
+                {
+                    foreach (var xoff in off)
+                    {
+                        WriteLine($"Checking Memory Descriptor @{(xoff + 28):X}");
+                        if (xoff > vtero.FileSize)
+                        {
+                            WriteLine($"offset {xoff:X} > FileSize {vtero.FileSize:X}");
+                            continue;
+                        }
+
+                        dstream.Position = xoff + 28;
+                        MemRunDescriptor = new MemoryDescriptor();
+                        MemRunDescriptor.NumberOfRuns = dbin.ReadInt64();
+                        MemRunDescriptor.NumberOfPages = dbin.ReadInt64();
+
+                        Console.WriteLine($"Runs: {MemRunDescriptor.NumberOfRuns}, Pages: {MemRunDescriptor.NumberOfPages} ");
+
+                        if (MemRunDescriptor.NumberOfRuns > 0 && MemRunDescriptor.NumberOfRuns < 32
+                            &&
+                            // this means the descriptor covers our input
+                            (((MemSize - StartOfMem) / 0x1000) & 0xffffff00) == (MemRunDescriptor.NumberOfPages & 0xffffff00))
+                            GoodDesc = true;
+
+                        for (int i = 0; i < MemRunDescriptor.NumberOfRuns; i++)
+                        {
+                            var basePage = dbin.ReadInt64();
+                            var pageCount = dbin.ReadInt64();
+
+                            MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
+                        }
+                        WriteLine($"MemoryDescriptor {MemRunDescriptor}");
+
+
+                        if (GoodDesc)
+                            return MemRunDescriptor;
+
+                    }
+                }
+            }
+            WriteLine("Finished VALUE scan.");
+            return MemRunDescriptor;
+        }
+
+
+
+        public bool IsSupportedFormat(Vtero vtero)
         {
             bool rv = false;
             if (!File.Exists(DumpFile))
@@ -63,6 +120,8 @@ namespace inVtero.net.Specialties
 
             using(var dstream = File.OpenRead(DumpFile))
             {
+                MemSize = dstream.Length;
+
                 using (var dbin = new BinaryReader(dstream))
                 {
                     // start with a easy to handle format of DMP
@@ -70,7 +129,7 @@ namespace inVtero.net.Specialties
                         return rv;
 
                     dbin.BaseStream.Position = 0x2020;
-                    var StartOfMem = dbin.ReadUInt32();
+                    StartOfMem = dbin.ReadUInt32();
 
                     // Find the RUN info
                     dbin.BaseStream.Position = 0x88;
@@ -84,6 +143,14 @@ namespace inVtero.net.Specialties
                     if (MemRunDescriptor.NumberOfRuns > 32 || MemRunDescriptor.NumberOfRuns < 0)
                     {
                         // TODO: in this case we have to de-patchguard the KDDEBUGGER_DATA block
+                        // before resulting to that... implemented a memory scanning mode to extract the runs out via struct detection
+                        PhysMemDesc = ExtractMemDesc(vtero);
+                        if (PhysMemDesc != null)
+                        {
+                            rv = true;
+                            GoodDesc = true;
+                            PhysMemDesc.StartOfMemmory = StartOfMem;
+                        }
                     }
                     else
                     {

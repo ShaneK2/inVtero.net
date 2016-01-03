@@ -59,9 +59,9 @@ namespace inVtero.net
         bool KernelSpace;
 
 
-        public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true)
+        public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true, int DepthToGo = 4)
         {
-            if(Vtero.VerboseOutput)
+            if(Vtero.DiagOutput)
                 WriteLine($"PT analysis of {dp}");
 
             var rv = new PageTable
@@ -74,14 +74,14 @@ namespace inVtero.net
 
             // any output is error/warning output
 
-            var cnt = rv.FillTable(RedundantKernelEntries);
+            var cnt = rv.FillTable(RedundantKernelEntries, DepthToGo);
 
             if (cnt == 0)
             {
                 if (dp.vmcs != null)
-                    WriteLine($"BAD EPTP/DirectoryTable Base {dp.vmcs.EPTP:X16}, try a different candidate or this dump may lack a hypervisor. Attempting PT walk W/O SLAT");
+                    WriteLine($"BAD EPTP/DirectoryTable Base {dp.vmcs.EPTP:X12}, try a different candidate or this dump may lack a hypervisor. Attempting PT walk W/O SLAT");
                 else
-                    WriteLine($"Decoding failed for {dp.CR3Value:X16}");
+                    WriteLine($"Decoding failed for {dp.CR3Value:X12}");
                 /*cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
                 WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");*/
             }
@@ -101,7 +101,6 @@ namespace inVtero.net
         /// <param name="Level"></param>
         /// <returns></returns>
         /// 
-
         // TODO: RE-RE-Write this into an on-demand evaluated set of delegates to ease memory load
         // some testing on Windows 10: Virtualized Process PT Entries [1625181] Type [Windows] PID [97C0301E:1AB000]
         // that's over _1.6 Million_ page table entries, wow!!!
@@ -259,7 +258,7 @@ namespace inVtero.net
             return entries;
         }
 
-        IEnumerable<PFN> ExtractNextLevel(PFN PageContext, bool RedundantKernelSpaces, int Level = 4)
+        public IEnumerable<PFN> ExtractNextLevel(PFN PageContext, bool RedundantKernelSpaces, int Level = 4)
         {
             if (PageContext == null) yield break;
 
@@ -341,7 +340,7 @@ namespace inVtero.net
 
 
 
-        long FillTable(bool RedundantKernelSpaces, int depth = 4)
+        public long FillTable(bool RedundantKernelSpaces, int depth = 4)
         {
             var entries = 0L;
             var PageTables = new Dictionary<VIRTUAL_ADDRESS, PFN>();
@@ -363,14 +362,21 @@ namespace inVtero.net
                 VA.PML4 = kvp.Key;
 
                 var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4 << 39) };
+
+                // Top level for page table
                 PageTables.Add(VA, pfn);
+
+                // We will only do one level if were not buffering
+                if(depth > 1)
                 foreach(var DirectoryPointerOffset in ExtractNextLevel(pfn, KernelSpace, level))
                 {
-                    if (DirectoryPointerOffset == null) continue;
-
+                    if (DirectoryPointerOffset == null || !mem.BufferLoadInput) continue;
+                    if(depth > 2)
                     foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level-1))
                     {
-                        if (DirectoryOffset == null) continue;
+                        if (DirectoryOffset == null || !mem.BufferLoadInput) continue;
+
+                        if(depth > 3)
                         foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
                         {
                             if (TableOffset == null) continue;

@@ -67,7 +67,8 @@ namespace inVtero.net
 
         public int Phase;
 
-        MemoryDescriptor DetectedDesc;
+        [ProtoMember(100)]
+        static MemoryDescriptor DetectedDesc;
 
         /// <summary>
         /// Set OverRidePhase to force a re-run of a stage
@@ -102,11 +103,15 @@ namespace inVtero.net
         {
             MemFile = MemoryDump.ToLower();
 
+            scan = new Scanner(MemFile);
+            FileSize = new FileInfo(MemFile).Length;
+
             if (MemFile.EndsWith(".dmp"))
             {
                 var dump = new CrashDump(MemFile);
-                if (dump.IsSupportedFormat())
+                if (dump.IsSupportedFormat(this))
                     DetectedDesc = dump.PhysMemDesc;
+
             }
             else if(MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
             {
@@ -117,11 +122,7 @@ namespace inVtero.net
 
                     MemFile = dump.MemFile;
                 }
-            }
-
-            scan = new Scanner(MemFile);
-            FileSize = new FileInfo(MemFile).Length;
-
+            }                       
         }
 
         public Vtero(string MemoryDump, MemoryDescriptor MD) : this(MemoryDump)
@@ -150,6 +151,16 @@ namespace inVtero.net
                 ThisInstance = Serializer.Deserialize<inVtero.net.Vtero>(SerData);
 
             return ThisInstance;
+        }
+
+        public IEnumerable<long> ScanValue(bool Is64, ulong Value, int ScanOnlyFor = 0)
+        {
+            scan.Scan64 = Is64;
+            scan.HexScanDword = (uint) Value;
+            scan.HexScanUlong = Value;
+            scan.ScanMode = PTType.VALUE;
+
+            return scan.BackwardsValueScan(ScanOnlyFor);
         }
 
         public int ProcDetectScan(PTType Modes, int DetectOnly = 0)
@@ -206,8 +217,8 @@ namespace inVtero.net
         {
             var PT2Scan = pTypes == PTType.UNCONFIGURED ? PTType.ALL : pTypes;
 
-            if (Phase >=3 && OverRidePhase)
-                return;
+            //if (Phase >=3 && OverRidePhase)
+            //    return;
 
             // To join an AS group we want to see > 50% correlation which is a lot considering were only interoperating roughly 10-20 values (more like 12)
             var p = from proc in Processes
@@ -276,16 +287,22 @@ namespace inVtero.net
                         var pz = from px in Processes
                                 where px.AddressSpaceID == 0
                                 select px;
-
-                        foreach(var px in pz)
+                        
+                        // just add the ungrouped processes as a single each bare metal
+                        foreach (var px in pz)
+                        {
                             WriteLine(px);
+                            CurrASID++;
+                            px.AddressSpaceID = CurrASID;
+                            ASGroups[CurrASID] = new ConcurrentBag<DetectedProc>() { px };
+                        }
 
                         ForegroundColor = ConsoleColor.Yellow;
                         break;
                     }
 
 
-                        CurrASID++;
+                    CurrASID++;
                     ASGroups[CurrASID] = new ConcurrentBag<DetectedProc>();
                     WriteLine($"grouped count ({totGrouped}) is less than total process count ({totUngrouped}, rescanning...)");
                     LastGroupTotal = totGrouped;
@@ -354,8 +371,8 @@ namespace inVtero.net
 
             var VMCSTriage = new Dictionary<VMCS, int>();
 
-            Parallel.ForEach(memSpace, (space) =>
-            //foreach (var space in memSpace)
+            //Parallel.ForEach(memSpace, (space) =>
+            foreach (var space in memSpace)
             {
                 // we do it this way so that parallelized tasks do not interfere with each other 
                 // overall it may blow the cache hit ratio but will tune a single task to see the larger/better cache
@@ -371,15 +388,20 @@ namespace inVtero.net
 
                         // if the group is configured fully, then we know we were successful
                         // since we null out the list if we fail, so skip to next one
-                        if ((rvList.ContainsKey(grp.Key) && rvList[grp.Key] != null) || grp.Value == null)
-                            continue;
+                        //if ((rvList.ContainsKey(grp.Key) && rvList[grp.Key] != null) || grp.Value == null)
+                        //    continue;
 
                         rvList[grp.Key] = new List<DetectedProc>();
+                        var orderedGroup = from px in grp.Value
+                                           where ((px.PageTableType & PT2Scan) == px.PageTableType) && px.AddressSpaceID == grp.Key
+                                           orderby px.CR3Value ascending
+                                           select procList;
 
-                        foreach (var proc in from proc in grp.Value
-                                             where (((proc.PageTableType & PT2Scan) == proc.PageTableType)) && (proc.AddressSpaceID == grp.Key)
-                                             orderby proc.CR3Value ascending
-                                             select proc)
+                        //foreach (var proc in from proc in grp.Value
+                        //                     where (((proc.PageTableType & PT2Scan) == proc.PageTableType)) && (proc.AddressSpaceID == grp.Key)
+                         //                    orderby proc.CR3Value ascending
+                          //                   select proc)
+                        foreach(var proc in orderedGroup.SelectMany(x => x))
                         //Parallel.ForEach(p, (proc) =>
                         {
                             try
@@ -387,6 +409,8 @@ namespace inVtero.net
                                     // this is killing memory, probably not needed
                                 //var proc = px.Clone<DetectedProc>();
                                 proc.vmcs = space;
+                                if (VerboseOutput)
+                                    WriteLine($"Scanning PT from Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}] ID{proc.AddressSpaceID} Key{grp.Key}"); 
 
                                 var pt = PageTable.AddProcess(proc, memAxs, CollectKernelAS);
                                 CollectKernelAS = false;
@@ -440,7 +464,7 @@ namespace inVtero.net
                             }
                             catch (MemoryRunMismatchException mrun)
                             {
-                                WriteLine($"Error in accessing memory for PFN {mrun.PageRunNumber:X16}");
+                                WriteLine($"Error in accessing memory for PFN {mrun.PageRunNumber:X12}");
 
                                 memAxs.DumpPFNIndex();
                             }
@@ -461,8 +485,8 @@ namespace inVtero.net
                         }
                     }
                 }
-            //}
-            });
+            }
+            //});
 
             CollectKernelAS = true;
             // a backup to test a non-VMCS 
@@ -487,7 +511,7 @@ namespace inVtero.net
                     // this is a process on the bare metal
                     var pt = PageTable.AddProcess(pmetal, memAxs, CollectKernelAS);
                     CollectKernelAS = false;
-                    WriteLine($"Process {pmetal.CR3Value:X16} Physical walk w/o SLAT yielded {pmetal.PT.Root.Count} entries, bare metal group is {pmetal.AddressSpaceID}");
+                    WriteLine($"Process {pmetal.CR3Value:X12} Physical walk w/o SLAT yielded {pmetal.PT.Root.Count} entries, bare metal group is {pmetal.AddressSpaceID}");
 
                     if (rvList.ContainsKey(pmetal.AddressSpaceID) && rvList[pmetal.AddressSpaceID] == null)
                         rvList[pmetal.AddressSpaceID] = new List<DetectedProc>();
@@ -511,7 +535,7 @@ namespace inVtero.net
 
             if (totFails.Distinct().Count() > 0)
             {
-                WriteLine($"{Environment.NewLine}Failed list {totFails.Distinct().Count()};");
+                WriteLine($"{Environment.NewLine}Failed Translations list {totFails.Distinct().Count()};");
                 var i = 0;
 
                 foreach (var fail in totFails.Distinct())
@@ -524,168 +548,331 @@ namespace inVtero.net
             //        WriteLine($"extracted {proc.PageTableType} PTE from process {proc.vmcs.EPTP:X16}:{proc.CR3Value:X16}, high phys address was {proc.PT.HighestFound}");
         }
 
-        public void DumpASToFile(Dictionary<int, List<DetectedProc>> AS_ToDump)
+        public void DumpASToFile(IDictionary<int, List<DetectedProc>> AS_ToDump = null)
         {
-            List<KeyValuePair<VIRTUAL_ADDRESS, PFN>> MemRanges = null;
+            var DumpList = AS_ToDump;
+            if(DumpList == null)
+            {
+                DumpList = new Dictionary<int, List <DetectedProc>> ();
+                foreach(var g in ASGroups)
+                {
+                    DumpList[g.Key] = new List<DetectedProc>();
+
+                    var p = from px in g.Value
+                            orderby px.CR3Value
+                            select px;
+
+                    foreach (var pp in p)
+                        DumpList[pp.AddressSpaceID].Add(pp);
+                }
+            }
+
+            List <KeyValuePair <VIRTUAL_ADDRESS, PFN>> MemRanges = null;
+            List<string> DumpedToDisk = new List<string>();
             Stack<PFN> PFNStack = new Stack<PFN>();
             // instance member
             ContigSize = -1;
 
-            var CurrColor = ForegroundColor;
-            ForegroundColor = ConsoleColor.White;
+            ForegroundColor = ConsoleColor.Gray;
 
+            string LastDumped = string.Empty;
+            int cntDumped = 0;
             WriteLine($"{Environment.NewLine} Address spaces resolved.  Dump method starting. {Environment.NewLine}");
-                
-            int asID=0;
-            foreach(var AS in AS_ToDump)
-                if(AS_ToDump[AS.Key] != null && AS_ToDump[AS.Key].Count() > 0)
-                    WriteLine($"[{AS.Key}] Contains {AS_ToDump[AS.Key].Count()} entries EPTP/Kernels shared {AS_ToDump[AS.Key][0]}");
+            using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            {
+                memAxs.OverrideBufferLoadInput = true;
 
-            bool validInput = false;
+TripleBreak:
+
+                int asID=0;
+                foreach(var AS in DumpList)
+                if(DumpList[AS.Key] != null && DumpList[AS.Key].Count() > 0)
+                    if(DumpList[AS.Key].Count() > 1)
+                        WriteColor(ConsoleColor.Green, $"[{AS.Key}] Contains {DumpList[AS.Key].Count()} entries EPTP/Kernels shared {DumpList[AS.Key][0]}");
+                    else
+                        WriteColor(ConsoleColor.Yellow, $"[{AS.Key}] Contains {DumpList[AS.Key].Count()} entries EPTP/Kernels shared {DumpList[AS.Key][0]}");
+
+                bool validInput = false;
+                do
+                {
+                    ForegroundColor = ConsoleColor.White;
+                    Write("Select an address space: ");
+                    var ASselect = ReadLine();
+                    validInput = int.TryParse(ASselect, out asID);
+                    if (!validInput)
+                        WriteLine("just enter the number 0 or 1 or 2 or ... that coincides with the address space you want to investigate.");
+
+                } while (!validInput);
+
+                WriteColor(ConsoleColor.Green, $"Loading address space entries based on {DumpList[asID][0]}");
+
+                var ToDump = DumpList[asID];
+
+                // sort for convince
+                ToDump.Sort((x, y) => { if (x.CR3Value < y.CR3Value) return -1; else if (x.CR3Value > y.CR3Value) return 1; else return 0; });
+
+
+                while (true)
+                {
+DoubleBreak:
+                    // prompt user
+                    for (int i = 0; i < ToDump.Count; i++)
+                    {
+                        var vmcs = ToDump[i].vmcs == null ? 0 : ToDump[i].vmcs.EPTP;
+
+                        if (ToDump[i].PT == null)
+                            PageTable.AddProcess(ToDump[i], memAxs, true, 1);
+
+                        WriteColor(ConsoleColor.Magenta, $"{i} VMCS:{vmcs:X} Process:{ToDump[i].CR3Value:X} (top level) {ToDump[i].PT.Root.Count} type {ToDump[i].PageTableType} group {ToDump[i].Group}");
+                    }
+
+                    validInput = false;
+                    int procId = 0;
+                    do
+                    {
+                        ForegroundColor = ConsoleColor.White;
+                        Write("Select a process to dump: ");
+                        var selection = ReadLine();
+                        validInput = int.TryParse(selection, out procId);
+                        if (!validInput)
+                            WriteLine("just enter the number 0 or 1 or 2 or ... that coincides with the process you want to investigate.");
+
+                    } while (!validInput);
+
+                    WriteColor(ConsoleColor.Gray, $"Selected process {procId} {ToDump[procId]}");
+                    var tdp = ToDump[procId];
+
+                    var saveLoc = Path.Combine(Path.GetDirectoryName(MemFile), Path.GetFileName(MemFile) + ".");
+                    var table = tdp.PT.Root.Entries;
+                    bool fKeepGoing = true;
+
+                    while (fKeepGoing)
+                    {
+                        WriteColor(ConsoleColor.Gray, $"{Environment.NewLine}Listing ranges for {tdp}, {table.PFNCount} entries scanned.");
+
+                        int parse = -1, level = 4;
+                        PFN next_table = new PFN();
+                        Dictionary<VIRTUAL_ADDRESS, PFN> TableEntries;
+                        Dictionary<VIRTUAL_ADDRESS, PFN> LastTableEntries = null;
+                        do
+                        {
+                            TableEntries = table.SubTables;
+                            // If we have 0 entries, ensure there really are none and we did
+                            // not optimize out pre-buffering everything
+                            if (TableEntries.Count() == 0)
+                                foreach (var pfn in tdp.PT.ExtractNextLevel(table, true, level)) ;
+
+                            if (TableEntries.Count() == 0)
+                            {
+                                WriteColor(ConsoleColor.Yellow, $"Entry {parse}:{table.VA}{table.PTE} contains no in-memory pages addressable to this process.");
+
+                                if(LastTableEntries != null)
+                                    TableEntries = LastTableEntries;
+                                if (level < 4)
+                                    level++;
+
+                                if (PFNStack.Count() > 0)
+                                    table = PFNStack.Pop();
+                                else
+                                {
+                                    table = tdp.PT.Root.Entries;
+                                    level = 4;
+                                    TableEntries = table.SubTables;
+                                }
+                            }
+
+                            var dict_keys = TableEntries.Keys.ToArray();
+                            for (int r = 0; r < TableEntries.Count(); r++)
+                            {
+                                var dict_Val = TableEntries[dict_keys[r]];
+                                
+                                WriteColor((level & 1) == 1 ? ConsoleColor.Cyan : ConsoleColor.Green, $"{r} Virtual: {dict_keys[r]} \t Physical: {dict_Val.PTE}");
+                            }
+
+                            ForegroundColor = ConsoleColor.White;
+                            Write($"command ({level}): ");
+                            var userSelect = ReadLine().ToLower();
+
+                            if (string.IsNullOrWhiteSpace(userSelect))
+                                parse = -1;
+                            else if(char.IsLetter(userSelect[0]))
+                                switch(userSelect)
+                                {
+                                    case "u":
+                                        if (PFNStack.Count() > 0)
+                                        {
+                                            table = PFNStack.Pop();
+                                            level++;
+                                        }
+                                        else {
+                                            WriteColor(ConsoleColor.Yellow, "Can not go any higher");
+                                            table = tdp.PT.Root.Entries;
+                                            level = 4;
+                                        }
+                                        continue;
+                                    case "l":
+                                        PrintLastDumped(DumpedToDisk);
+                                        continue;
+                                    case "x":
+                                        Environment.Exit(0);
+                                        break;
+                                    case "p":
+                                        goto DoubleBreak;
+                                    case "s":
+                                        goto TripleBreak;
+                                    case "h":
+                                    case "r":
+                                        ReScanNextLevel(tdp);
+                                        break;
+                                    case "d":
+                                        ReScanNextLevel(tdp, true);
+                                        break;
+                                    case "a":
+                                        AddProcessPageTable(tdp, memAxs);
+                                        break;
+                                    default:
+                                        REPLhelp();
+                                        continue;
+                                } 
+                            else
+                                int.TryParse(userSelect, out parse);
+
+                            // extract the key that the user index is referring to and reassign table
+
+                            if (parse >= 0)
+                            {
+                                PFNStack.Push(table);
+                                try
+                                {
+                                    next_table = TableEntries[TableEntries.Keys.ToArray()[parse]];
+                                }
+                                catch (Exception ex) { WriteColor(ConsoleColor.Red, $"Exception accessing page table, try again... {ex.ToString()}"); continue; }
+                                table = next_table;
+                            }
+                            if (parse < 0)
+                                break;
+
+                            level--;
+                            LastTableEntries = TableEntries;
+                        } while (level > 0);
+
+
+                        WriteColor(ConsoleColor.Gray, $"Writing out data into the same folder as the input: {Path.GetDirectoryName(MemFile)}");
+
+
+                        if (parse < 0)
+                        {
+                            switch (level)
+                            {
+                                case 4:
+                                    MemRanges = TableEntries.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
+                                    break;
+                                case 3:
+                                    MemRanges = TableEntries.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).ToList();
+                                    break;
+                                case 2:
+                                    MemRanges = TableEntries.SelectMany(x => x.Value.SubTables).ToList();
+                                    break;
+                                case 1:
+                                default:
+                                    MemRanges = TableEntries.ToList();
+                                    break;
+                            }
+
+                            foreach (var mr in MemRanges)
+                            {
+                                LastDumped = WriteRange(mr, saveLoc, memAxs);
+                                DumpedToDisk.Add(LastDumped);
+                                cntDumped++;
+                            }
+                        }
+                        else
+                        {
+                            var a_range = new KeyValuePair<VIRTUAL_ADDRESS, PFN>(next_table.VA, next_table);
+                            LastDumped = WriteRange(a_range, saveLoc, memAxs);
+                            DumpedToDisk.Add(LastDumped);
+                            cntDumped++;
+                        }
+
+                        Write($"All done, last written file {LastDumped} of {cntDumped} so far.  KeepGoing? (y)");
+                        var answer = ReadKey();
+                        if (answer.Key == ConsoleKey.N)
+                            fKeepGoing = false;
+                    }
+                }
+            }
+        }
+
+        void AddProcessPageTable(DetectedProc tdp, Mem memAxs)
+        {
+            PageTable.AddProcess(tdp, memAxs, true);
+        }
+
+        void ReScanNextLevel(DetectedProc tdp, bool DisplayOutput = false)
+        {
+            bool validInput, ignoreSlat;
+            int levels;
             do
             {
-                Write("Select an address space: ");
-                var ASselect = ReadLine();
-                validInput = int.TryParse(ASselect, out asID);
+                WriteColor(ConsoleColor.White, "How many levels to process? (1-4)");
+                var selection = ReadLine();
+                validInput = int.TryParse(selection, out levels);
                 if (!validInput)
-                    WriteLine("just enter the number 0 or 1 or 2 or ... that coincides with the address space you want to investigate.");
+                    WriteLine("invalid response.");
 
             } while (!validInput);
 
-            WriteLine($"Loading address space entries based on {AS_ToDump[asID][0]}");
-
-            var ToDump = AS_ToDump[asID];
-
-            // sort for convince
-            ToDump.Sort((x, y) => { if (x.CR3Value < y.CR3Value) return -1; else if (x.CR3Value > y.CR3Value) return 1; else return 0; });
-
-            ForegroundColor = ConsoleColor.Green;
-
-            // prompt user
-            for (int i = 0; i < ToDump.Count; i++)
+            do
             {
-                var vmcs = ToDump[i].vmcs == null ? 0 : ToDump[i].vmcs.EPTP;
-                WriteLine($"{i} Hypervisor:{vmcs:X} Process:{ToDump[i].CR3Value:X} entries {ToDump[i].PT.Root.Count} type {ToDump[i].PageTableType} group {ToDump[i].Group}");
-            }
-            Write("Select a process to dump: ");
-            var selection = ReadLine();
-            var procId = int.Parse(selection);
-            WriteLine($"Dumping details for process {procId} {ToDump[procId]}");
+                WriteColor(ConsoleColor.White, "Ignore SLAT? (True|False)");
+                var selection = ReadLine();
+                validInput = bool.TryParse(selection, out ignoreSlat);
+                if (!validInput)
+                    WriteLine("invalid response.");
 
+            } while (!validInput);
 
-            var tdp = ToDump[procId];
-            PFNStack.Push(tdp.PT.Root.Entries);
-
-            var saveLoc = Path.Combine(Path.GetDirectoryName(MemFile), Path.GetFileName(MemFile) + ".");
-
-            string LastDumped = string.Empty;
-            bool fKeepGoing = true;
-            int cntDumped = 0;
-
-            ForegroundColor = ConsoleColor.White;
-
-            using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            if (ignoreSlat)
             {
-                var table = tdp.PT.Root.Entries;
-
-                while (fKeepGoing)
-                {
-                    WriteLine($"{Environment.NewLine}Listing ranges for {tdp}, {table.PFNCount} entries scanned.");
-
-                    //MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
-
-                    int parse = -1, level = 4;
-                    PFN next_table = new PFN();
-
-                    do
-                    {
-                        var dict_keys = table.SubTables.Keys.ToArray();
-
-                        for (int r = 0; r < table.SubTables.Count(); r++)
-                        {
-                            var dict_Val = table.SubTables[dict_keys[r]];
-
-                            WriteLine($"{r} Virtual: {dict_keys[r]} \t Physical: {dict_Val.PTE}");
-                        }
-
-                        Write("select a range to dump (enter for all, minus '-' go up a level):");
-                        var userSelect = ReadLine();
-                        if (string.IsNullOrWhiteSpace(userSelect))
-                            parse = -1;
-                        else if (userSelect.Equals("-"))
-                        {
-                            if (PFNStack.Count > 0)
-                            {
-                                level++;
-                                table = PFNStack.Pop();
-                            }
-                            else
-                                WriteLine("at the top level now");
-
-                            continue;
-                        }
-                        else
-                            int.TryParse(userSelect, out parse);
-
-                        // extract the key that the user index is referring to and reassign table
-
-                        if (parse >= 0)
-                        {
-                            PFNStack.Push(table);
-                            try {
-                                next_table = table.SubTables[table.SubTables.Keys.ToArray()[parse]];
-                            } catch (Exception ex) { WriteLine($"Exception accessing page table, try again... {ex.ToString()}"); continue; }
-                            table = next_table;
-                        }
-                        if (parse < 0)
-                            break;
-
-                        level--;
-
-                    } while (level > 0);
-
-
-                    WriteLine("Writing out data into the same folder as the input");
-
-
-                    if (parse < 0)
-                    {
-                        switch (level)
-                        {
-                            case 4:
-                                MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
-                                break;
-                            case 3:
-                                MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).ToList();
-                                break;
-                            case 2:
-                                MemRanges = table.SubTables.SelectMany(x => x.Value.SubTables).ToList();
-                                break;
-                            case 1:
-                            default:
-                                MemRanges = table.SubTables.ToList();
-                                break;
-                        }
-
-                        foreach (var mr in MemRanges)
-                        {
-                            LastDumped = WriteRange(mr, saveLoc, memAxs);
-                            cntDumped++;
-                        }
-                    }
-                    else
-                    {
-                        var a_range = new KeyValuePair<VIRTUAL_ADDRESS, PFN>(next_table.VA, next_table);
-                        LastDumped = WriteRange(a_range, saveLoc, memAxs);
-                        cntDumped++;
-                    }
-
-                    Write($"All done, last written file {LastDumped} of {cntDumped} so far.  KeepGoing? ((y)es (n)o) ");
-                    var answer = ReadKey();
-                    if (answer.Key != ConsoleKey.Y)
-                        fKeepGoing = false;
-                }
+                tdp.vmcs = null;
+                tdp.PT.Root.SLAT = 0;
             }
+
+            tdp.PT.FillTable(true, levels);
+            if(DisplayOutput)
+            {
+                var MemRanges = tdp.PT.Root.Entries.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
+                foreach (var mr in MemRanges)
+                    WriteColor(ConsoleColor.Cyan, $" {mr.Key} {mr.Value.PTE}");
+            }
+        }
+
+        void WriteColor(ConsoleColor ForeGround, string var)
+        {
+            ForegroundColor = ForeGround;
+            WriteLine(var);
+        }
+        void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
+        {
+            BackgroundColor = BackGround;
+            ForegroundColor = ForeGround;
+            WriteLine(var);
+        }
+
+        void PrintLastDumped(List<string> LastList)
+        {
+            foreach(var s in LastList)
+                WriteColor(ConsoleColor.DarkCyan, ConsoleColor.Gray, $"Dumped {s} {new FileInfo(s).Length}");
+        }
+
+        static void REPLhelp()
+        {
+            WriteLine("Select by index number the region to expand into (e.g. 1 or 5)");
+            WriteLine("u \t Go back up a level");
+            WriteLine("p \t Select a different process");
+            WriteLine("a \t Select a different Address Space");
+            WriteLine("x \t quit");
+            WriteLine("l \t list files dumped already");
         }
 
 
@@ -725,7 +912,7 @@ namespace inVtero.net
                         else
                             Console.ForegroundColor = ConsoleColor.Cyan;
 
-                        WriteLine($"VA: {pte.Key:X16}  \t PFN: {pte.Value.PTE}");
+                        WriteLine($"VA: {pte.Key:X12}  \t PFN: {pte.Value.PTE}");
 
                     }
 

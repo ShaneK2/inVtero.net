@@ -50,13 +50,13 @@ namespace inVtero.net
 
         public VIRTUAL_ADDRESS(long VA) { Address = VA; }
 
-        public override string ToString() => $"Addr: {(ulong)((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X16}, PML4E {PML4:X3}, DirectoryPointerOffset:{DirectoryPointerOffset:X3}, DirectoryOffset:{DirectoryOffset:X3}, TableOffset: {TableOffset:X3}, Offset: {Offset:X4}";
+        public override string ToString() => $"VA: {((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X12}, PML4E {PML4:X3}, DPO:{DirectoryPointerOffset:X3}, DO:{DirectoryOffset:X3}, TO: {TableOffset:X3}, O: {Offset:X4}";
 
         public long Offset { get { return Address & 0xfff; } set { Address &= ~0xfffu; Address |= value; } }
         public long TableOffset { get { return (Address & 0x1ff000) >> 12; } set { Address &= ~0x1ff000; Address |= (value << 12); } }
         public long DirectoryOffset { get { return (Address & 0x3fe00000) >> 21; } set { Address &= ~0x3FE00000; Address |= (value << 21); } }
         public long DirectoryPointerOffset { get { return (Address & 0x7FC0000000) >> 30; } set { Address &= ~0x7FC0000000; Address |= (value << 30); } }
-        // // only >> 36 since we & isolate the 9 bits we want and the lower 3 bits are not used to aquire PML4 page entry
+        // // only >> 36 since we & isolate the 9 bits we want and the lower 3 bits are not used to acquire PML4 page entry
         public long PML4 { get { return (Address & 0xff8000000000) >> 39; } set { Address &= ~0xFF8000000000; Address |= (value << 39); } }
         public long SignExtend
         {
@@ -112,7 +112,7 @@ namespace inVtero.net
         }
         public override string ToString()
         {
-            var sb = new StringBuilder($"Addr:{PTE:X16} PFN:{PFN:X12} AO:{AddressOffset:X3} WS:{SoftwareWsIndex:X4} NX:{NoExecute} W:{Write} UN:{Unused} COW:{CopyOnWrite} G:{Global} LP:{LargePage} D:{Dirty} A:{Accessed} CD:{CacheDisable} WT:{WriteThrough} S/O{Owner} D1:{Dirty1} V:{Valid}");
+            var sb = $"VA:{PTE:X16} PFN:{PFN:X12} AO:{AddressOffset:X3} WS:{SoftwareWsIndex:X4} NX:{NoExecute} W:{Write} UN:{Unused} COW:{CopyOnWrite} G:{Global} LP:{LargePage} D:{Dirty} A:{Accessed} CD:{CacheDisable} WT:{WriteThrough} S|O{Owner} D1:{Dirty1} V:{Valid}";
 
             // I wish bool had a format specifier!
             var replacements = new List<Tuple<string, string>>() { Tuple.Create<string, string>("True", "+"), Tuple.Create<string, string>("False", "-") };
@@ -142,7 +142,7 @@ namespace inVtero.net
         public long SoftwareWsIndex { get { return (PTE >> 52) & 0x7ff; } }
         public bool NoExecute { get { return ((ulong) PTE & 0x8000000000000000) != 0; } }
         // NEXT is PFN << 12 since were adjusting back to phys address
-        public long NextTableAddress {  get { return PTE & 0xFFFFFFFFFF000; } } // 40 bit address + Offset 12 bits = 52 phys linerar address
+        public long NextTableAddress {  get { return PTE & 0xFFFFFFFFFF000; } } // 40 bit address + Offset 12 bits = 52 phys linear address
         // Full 48 bit size
         public long NextTable_PFN { get { return (PTE >> 12) & 0xFFFFFFFFFF; } }
         // 2MB entries, should be very typical
@@ -245,7 +245,7 @@ namespace inVtero.net
             return true;
         }
 
-        public override string ToString() => $"Address:{PML4_PFN_Address:X16}, Type:{Type}, WalkLen:{PageWalkLen}, Valid:{IsValid(aEPTP)}, Valid2:{IsValid2(aEPTP)}, ValidEntry:{IsValidEntry(aEPTP)}, LargePDP:{IsLargePDPTE(aEPTP)}, LargePDE:{IsLargePDE(aEPTP)}";
+        public override string ToString() => $"Address:{PML4_PFN_Address:X12}, Type:{Type}, WalkLen:{PageWalkLen}, Valid:{IsValid(aEPTP)}, Valid2:{IsValid2(aEPTP)}, ValidEntry:{IsValidEntry(aEPTP)}, LargePDP:{IsLargePDPTE(aEPTP)}, LargePDE:{IsLargePDE(aEPTP)}";
 
     }
     #endregion
@@ -262,7 +262,7 @@ namespace inVtero.net
 
         public override string ToString()
         {
-            return $"BasePage: {BasePage:X16} PageCount: {PageCount:X16} PhysicalPageNumber {regionPPN:X16}";
+            return $"BasePage: {BasePage:X12} PageCount: {PageCount:X12} PhysicalPageNumber {regionPPN:X12}";
         }
     }
     /// <summary>
@@ -297,6 +297,16 @@ namespace inVtero.net
             NumberOfRuns = 1;
 
             Run.Add(new MemoryRun { BasePage = 0, PageCount = NumberOfPages });
+        }
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Number of Runs: 0x{NumberOfRuns:X} \t Pages: 0x{NumberOfPages:X}");
+            for(int i=0; i < NumberOfRuns; i++)
+                sb.AppendLine($"BasePage 0x{Run[i].BasePage:X} \t PageCount: 0x{Run[i].PageCount:X} ");
+
+            return sb.ToString();
         }
     }
     #endregion
@@ -342,6 +352,7 @@ namespace inVtero.net
         HyperV = 0x10,
         LinuxS = 0x10000000,    // Jumping for Linux since this is now a state saving check
                                 // LinuxS is still a single pass
+        VALUE   = 0x20000000,   // Value Scan (i.e. scan for a dword or ulong)
         GENERIC = 0x40000000,   // Generic stateless
         ALL = int.MaxValue,
         VMCS = 0x80000000,      // VMCS uses state also and also 2 pass

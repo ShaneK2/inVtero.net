@@ -57,6 +57,9 @@ namespace inVtero.net
         /// DetectedDescriptor is meant for the user to assign when they have an override
         /// </summary>
         public MemoryDescriptor DetectedDescriptor { get { return ddes; } set { ddes = value; MD = value; } }
+        public bool BufferLoadInput { get { return OverrideBufferLoadInput ? true : FileSize < BufferLoadMax; } }
+
+        public bool OverrideBufferLoadInput { get; set; }
 
         /// <summary>
         /// MD actually gets used for extracting memory
@@ -67,6 +70,7 @@ namespace inVtero.net
         public long StartOfMemory; // adjust for .DMP headers or something
         public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
+        const long BufferLoadMax = 20L * 1024 * 1024 * 1024; // If the input is larger than 20GB were not going to buffer load it 
         const int PageCacheMax = 100000;
         static ConcurrentDictionary<long, long[]> PageCache;
 
@@ -98,7 +102,7 @@ namespace inVtero.net
             Console.WriteLine("Dumping PFN index");
             foreach (var pfn in idx)
             {
-                Console.Write("{pfn:X8} ");
+                Console.Write($"{pfn:X8} ");
                 i += 8;
                 if (i >= Console.WindowWidth - 7)
                     Console.Write(Environment.NewLine);
@@ -223,7 +227,7 @@ namespace inVtero.net
 
         // Extract a single page of data from a physical address in source dump
         // account for memory gaps/run layout
-        // TODO: Add windowing currently uses naive single-page-at-a-time view
+        // TODO: Add windowing currently uses naïve single-page-at-a-time view
         public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
         {
             // convert PAddr to PFN
