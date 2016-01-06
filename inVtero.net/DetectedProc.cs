@@ -45,6 +45,9 @@ namespace inVtero.net
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
+        [ProtoIgnore]
+        public Mem MemAccess { get; private set; }
+
         public override string ToString() => $"Process CR3 [{CR3Value:X12}] File Offset [{FileOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
 
     }

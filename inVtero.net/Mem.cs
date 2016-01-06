@@ -82,6 +82,7 @@ namespace inVtero.net
 
         string MemoryDump;
         long FileSize;
+        public long Length { get { return FileSize; } }
 
         const long PAGE_SIZE = 0x1000;
         static int mindex = 0;
@@ -109,19 +110,62 @@ namespace inVtero.net
             }
         }
 
-        public Mem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null)
+        Mem()
         {
-            GapScanSize = 0x10000000;
-            StartOfMemory = Override != null ? Override.StartOfMemmory : 0;
-
-            MapViewBase = 0;                                      
-            MapViewSize = MapWindowSize = (0x1000 * 0x1000 * 4); // Due to the physical page allocation algorithm a modest window is probably fine 
-
             // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
             // PageCache may be better off than a huge window...
             if (PageCache == null)
-                PageCache = new ConcurrentDictionary<long, long[]>(8, PageCacheMax); 
+                PageCache = new ConcurrentDictionary<long, long[]>(8, PageCacheMax);
 
+            // not really used right now
+            GapScanSize = 0x10000000;
+
+            // common init
+            MapViewBase = 0;
+            MapViewSize = MapWindowSize = (0x1000 * 0x1000 * 4);
+
+            DiscoveredGaps = new Dictionary<long, long>();
+        }
+
+        void SetupStreams()
+        {
+            var lmindex = Interlocked.Increment(ref mindex);
+            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString();
+
+            mapStream = new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            mappedFile = MemoryMappedFile.CreateFromFile(mapStream,
+                    mapName,
+                    0,
+                    MemoryMappedFileAccess.Read,
+                    null,
+                    HandleInheritability.Inheritable,
+                    false);
+
+            mappedAccess = mappedFile.CreateViewAccessor(
+                MapViewBase,
+                MapViewSize,
+                MemoryMappedFileAccess.Read);
+        }
+
+
+
+        public Mem(Mem parent) : this()
+        {
+            MD = parent.MD;
+            DetectedDescriptor = parent.DetectedDescriptor;
+
+            StartOfMemory = parent.StartOfMemory;
+            MemoryDump = parent.MemoryDump;
+            FileSize = parent.FileSize;
+
+            SetupStreams();
+        }
+
+        public Mem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null) : this()
+        {
+            StartOfMemory = Override != null ? Override.StartOfMemmory : 0;
+
+            // maybe their's a bit map we can use from a DMP file
             if (BitmapArray != null)
                 pfnTableIdx = new WAHBitArray(WAHBitArray.TYPE.Bitarray, BitmapArray);
             else
@@ -130,9 +174,9 @@ namespace inVtero.net
             // 32bit's of pages should be plenty?
             pfnTableIdx.Length = (int) (MapViewSize / 0x1000);
 
+
             if (File.Exists(mFile))
             {
-
                 MemoryDump = mFile;
                 FileSize = new FileInfo(MemoryDump).Length;
 
@@ -143,39 +187,21 @@ namespace inVtero.net
                     if (DetectedDescriptor != null)
                         MD = DetectedDescriptor;
                 }
-                MapViewSize = FileSize < MapWindowSize ? FileSize : MapWindowSize;
-
-                var lmindex = Interlocked.Increment(ref mindex);
-
-                var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString();
-
-                mapStream = new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                mappedFile = MemoryMappedFile.CreateFromFile(mapStream,
-                        mapName,
-                        0,
-                        MemoryMappedFileAccess.Read,
-                        null,
-                        HandleInheritability.Inheritable,
-                        false);
-
-                mappedAccess = mappedFile.CreateViewAccessor(
-                    MapViewBase,
-                    MapViewSize,
-                    MemoryMappedFileAccess.Read);
-
-                DiscoveredGaps = new Dictionary<long, long>();
-
             }
+
+            SetupStreams();
         }
 
         public static ulong cntInAccessor = 0;
         public static ulong cntOutAccsor = 0;
 
-        public long GetPageFromFileOffset(long FileOffset, ref long[] block)
+        public long GetPageFromFileOffset(long FileOffset, ref long[] block, ref bool DataRead)
         {
             var rv = 0L;
             var NewMapViewBase = MapViewBase;
             var NewMapViewSize = MapViewSize;
+            DataRead = false;
+
 
             var CheckBase = FileOffset / MapViewSize;
             if (MapViewBase != CheckBase * MapViewSize)
@@ -216,22 +242,21 @@ namespace inVtero.net
                     UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block);
 
                 rv = mappedAccess.ReadInt64(AbsOffset);
+                DataRead = true;
+
             }
             catch (Exception ex)
             {
-                block = null;
-                throw new MemoryMapWindowFailedException("Unable to map or read into", ex);
+                throw new MemoryMapWindowFailedException("Unable to map or read memory offset", ex);
             }
             return rv;
         }
 
-        // Extract a single page of data from a physical address in source dump
-        // account for memory gaps/run layout
-        // TODO: Add windowing currently uses naïve single-page-at-a-time view
-        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
+        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData)
         {
             // convert PAddr to PFN
             var PFN = PAddr.NextTable_PFN;
+            GotData = false;
 
             if (PageCache.ContainsKey(PFN))
             {
@@ -267,19 +292,34 @@ namespace inVtero.net
             var FileOffset = StartOfMemory + (IndexedPFN * PAGE_SIZE);
 
             // add back in the file offset for possible exact byte lookup
-            var rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block);
+            var rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
 
-            if(block != null)
+            if (GotData)
                 PageCache.TryAdd(PFN, block);
+            else
+                rv = MagicNumbers.BAD_VALUE_READ;
 
             return rv;
+
+        }
+
+        // Extract a single page of data from a physical address in source dump
+        // account for memory gaps/run layout
+        // TODO: Add windowing currently uses naïve single-page-at-a-time view
+        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
+        {
+            bool GoodRead = false;
+            return GetPageForPhysAddr(PAddr, ref block, ref GoodRead);
         }
 
 
         public long GetValueAtPhysicalAddr(HARDWARE_ADDRESS_ENTRY PAddr)
         {
-            long[] block = null;
-            return GetPageForPhysAddr(PAddr, ref block);
+
+            bool Ignored = false;
+            long[] block = new long[512];
+
+            return GetPageForPhysAddr(PAddr, ref block, ref Ignored);
 
             //return pageData[PAddr.AddressOffset >> 3];
         }

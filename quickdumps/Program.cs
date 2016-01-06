@@ -60,6 +60,8 @@ using System.IO;
 using System.Diagnostics;
 using static System.Console;
 using System.Globalization;
+using System.Linq;
+
 namespace quickdumps
 {
     // demo of inVtero !!!
@@ -268,8 +270,8 @@ namespace quickdumps
                     return;
                 }
                 //BackgroundColor = ConsoleColor.White;
-#endregion
-#region blighering
+                #endregion
+                #region blighering
                 // second pass
                 // with the page tables we acquired, locate candidate VMCS pages in the format
                 // [31-bit revision id][abort indicator]
@@ -281,7 +283,7 @@ namespace quickdumps
                 // sometimes CR3 will be found in multiple page tables, e.g. system process or SMP 
                 // if I have more than 1 CR3 from different file_offset, just trim them out for now
                 // future may have a reason to isolate based on original locationAG
-#endregion
+                #endregion
 
                 if (!SkipVMCS)
                 {
@@ -289,7 +291,7 @@ namespace quickdumps
 
                     //Timer.Stop();
 
-#region VMCS page detection
+                    #region VMCS page detection
                     ForegroundColor = ConsoleColor.Blue;
                     BackgroundColor = ConsoleColor.Yellow;
 
@@ -301,11 +303,12 @@ namespace quickdumps
                     WriteLine($"Second pass done. {FormatRate(vtero.FileSize * 2, Timer.Elapsed)}");
                     BackgroundColor = ConsoleColor.Black;
                     ForegroundColor = ConsoleColor.Cyan;
-                    
-#region TEST
+
+                    #region TEST
                     // each of these depends on a VMCS scan/pass having been done at the moment
                     WriteLine("grouping and joining all memory");
 
+                    // After this point were fairly functional
                     vtero.GroupAS();
 
                     // sync-save state so restarting is faster
@@ -315,6 +318,22 @@ namespace quickdumps
                         saveStateFile = vtero.CheckpointSaveState();
                         WriteLine(saveStateFile);
                     }
+
+
+                    int i = 1;
+                    DetectedProc dp = null;
+                    while(dp == null)
+                        dp = vtero.GetKernelRangeFromGroup(i++);
+
+
+                    // Scan for kernel 
+                    // NT kernel may be in 0xFFFFF80000000 to 0xFFFFF8800000 range
+                    long KernVAStart = 0xF80000000000;
+                    long KernVAEnd = KernVAStart + 0x8000000000;
+
+
+                    var modules_in_range = vtero.ModuleScan(dp, null, KernVAStart, KernVAEnd);
+
 
                     // Extract Address Spaces verifies the linkages between
                     // process<->CR3<->EPTP(if there is one)

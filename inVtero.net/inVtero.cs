@@ -206,6 +206,60 @@ namespace inVtero.net
             return rv;
         }
 
+        public DetectedProc GetKernelRangeFromGroup(int GroupID)
+        {
+            var mem = new Mem(MemFile) { OverrideBufferLoadInput = true };
+            DetectedProc Proc = null;
+            foreach (var Procz in ASGroups[GroupID])
+            {
+                Proc = Procz;
+
+                if (Proc.PT == null)
+                    PageTable.AddProcess(Proc, mem, true, 4);
+
+                if (Proc.PT.EntriesParsed < 512)
+                    continue;
+                else
+                    break;
+            }
+
+            if (Proc.PT.EntriesParsed < 512)
+            {
+                WriteLine("did not figure out a page table properly, bailing out");
+                return null;
+            }
+            return Proc;
+        }
+
+        public ConcurrentDictionary<long, VAScanType> ModuleScan(DetectedProc dp, Mem mem, long Start, long End)
+        {
+            Mem localMem = null;
+
+            /// TODO: uhhhhh move mem up into DP
+            if (mem != null)
+                localMem = mem;
+            else if (dp.PT.mem == null)
+                localMem = dp.PT.mem;
+            else if (dp.MemAccess != null)
+                localMem = dp.MemAccess;
+            else
+                localMem = new Mem(MemFile);
+
+            VirtualScanner VS = new VirtualScanner(dp, localMem);
+
+            VS.ScanMode = VAScanType.PE_FAST;
+
+            ConcurrentDictionary<long, VAScanType> rv = new ConcurrentDictionary<long, VAScanType>();
+
+            foreach (var range in dp.PT.EnumerateVA(Start, End))
+            {
+                VS.Run(range.Key.Address, range.Key.Address + (range.Value.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
+                foreach (var item in VS.DetectedFragments)
+                    rv.TryAdd(item.Key, item.Value);
+            }
+            return rv;
+        }
+
         /// <summary>
         /// Group address spaces into related buckets
         /// 
@@ -335,6 +389,17 @@ namespace inVtero.net
             foreach (var ctx in VMCSGroup)
                 foreach (var dp in ctx.AS.Value)
                     dp.vmcs = ctx.EPTctx;
+
+            // resort by CR3
+            foreach (var ctx in  ASGroups)
+            {
+                var dpz = from d in ctx.Value
+                          orderby d.CR3Value ascending
+                          select d;
+
+                ASGroups[ctx.Key] = new ConcurrentBag<DetectedProc>(dpz);
+             
+            }
 
             Phase = 4;
             // were good, all Processes should have a VMCS if applicable and be identifiable by AS ID
@@ -548,6 +613,14 @@ namespace inVtero.net
             //        WriteLine($"extracted {proc.PageTableType} PTE from process {proc.vmcs.EPTP:X16}:{proc.CR3Value:X16}, high phys address was {proc.PT.HighestFound}");
         }
 
+        #region Dumper
+
+        // TODO: Move this to Dumper.cs
+
+        /// <summary>
+        /// Memory Dump routines
+        /// </summary>
+        /// <param name="AS_ToDump"></param>
         public void DumpASToFile(IDictionary<int, List<DetectedProc>> AS_ToDump = null)
         {
             var DumpList = AS_ToDump;
@@ -952,9 +1025,10 @@ DoubleBreak:
                     }
                 }
             }
-
             return saveLoc;
         }
+        #endregion
+
 
     }
 }

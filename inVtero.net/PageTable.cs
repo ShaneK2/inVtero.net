@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using static System.Console;
 using ProtoBuf;
+using System.Linq;
 
 namespace inVtero.net
 {
@@ -55,8 +56,11 @@ namespace inVtero.net
         [ProtoIgnore]
         DetectedProc DP;
         [ProtoIgnore]
-        Mem mem;
+        public Mem mem { get; private set; }
         bool KernelSpace;
+        public int DepthParsed;
+        public long EntriesParsed;
+
 
 
         public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true, int DepthToGo = 4)
@@ -75,11 +79,12 @@ namespace inVtero.net
             // any output is error/warning output
 
             var cnt = rv.FillTable(RedundantKernelEntries, DepthToGo);
+            rv.EntriesParsed += cnt;
 
             if (cnt == 0)
             {
                 if (dp.vmcs != null)
-                    WriteLine($"BAD EPTP/DirectoryTable Base {dp.vmcs.EPTP:X12}, try a different candidate or this dump may lack a hypervisor. Attempting PT walk W/O SLAT");
+                    WriteLine($"BAD EPTP/DirectoryTable Base {dp.vmcs.EPTP:X12}, try a different candidate or this dump may lack a hypervisor. Recommend attempt PT walk W/O SLAT");
                 else
                     WriteLine($"Decoding failed for {dp.CR3Value:X12}");
                 /*cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
@@ -330,14 +335,29 @@ namespace inVtero.net
                     
                     PageContext.SubTables.Add(
                             pfn.VA,
-                            pfn);   
+                            pfn);
 
+                    EntriesParsed++;
                     yield return pfn;
                 }
             }
             yield break;
         }
 
+
+        public IEnumerable<KeyValuePair<VIRTUAL_ADDRESS, PFN>> EnumerateVA(long StartingVA = 0, long EndingVA = 0xFFFFFFFFF000)
+        {
+            // if we haven't done any PageTabling or have been relatively shallow
+            if (DepthParsed == 0 || DepthParsed <= 2)
+            {
+                FillTable(KernelSpace, 4);
+                DepthParsed = 4;
+            }
+
+            return Root.Entries.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).Where(kvp => kvp.Key.Address >= StartingVA && kvp.Key.Address <= EndingVA);
+
+
+        }
 
 
         public long FillTable(bool RedundantKernelSpaces, int depth = 4)
@@ -407,6 +427,9 @@ namespace inVtero.net
 
             entries += new_entries;
 #endif
+
+            EntriesParsed += entries;
+            DepthParsed = depth;
             // a hint for the full count of entries extracted
             Root.Count = entries;
             

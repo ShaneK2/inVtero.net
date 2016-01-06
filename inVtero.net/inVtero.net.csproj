@@ -99,6 +99,7 @@
     <Compile Include="Mem.cs" />
     <Compile Include="PageTable.cs" />
     <Compile Include="PFN.cs" />
+    <Compile Include="PhysicalMemoryStream.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Scanner.cs" />
     <Compile Include="Specialties\CrashDump.cs" />
@@ -107,6 +108,7 @@
     <Compile Include="Support\ProgressBar.cs" />
     <Compile Include="Support\WAHBitarray2.cs" />
     <Compile Include="UnsafeHelp.cs" />
+    <Compile Include="VirtualScanner.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config">
@@ -126,7 +128,12 @@
       <Install>false</Install>
     </BootstrapperPackage>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\gh-pages\inVtero.net\Reloc.net\Reloc.net\Reloc.net.csproj">
+      <Project>{bc7bd165-a290-419c-9be3-27ee2562dab9}</Project>
+      <Name>Reloc.net</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

@@ -25,6 +25,8 @@ namespace inVtero.net
 {
     public static class MagicNumbers
     {
+        public const long BAD_VALUE_READ = 0x7bafcafe000f00d0;
+
         public static int[] Each { get { return new int[] { Windows_SelfPtr, FreeBSD_RecursiveEntry, OpenBSD_RecursiveEntry }; } }
 
         public static long Windows_SelfAsVA = 0xFFFF6FB7DBEDF68;
@@ -341,6 +343,10 @@ namespace inVtero.net
         HASWELL = 0x12,
         UNKNOWN_REVISION = 0xffffffff
     }
+
+    /// <summary>
+    /// PTType configures the Scanner methods by setting ScanMode
+    /// </summary>
     [Flags]
     public enum PTType : uint
     {
@@ -357,6 +363,15 @@ namespace inVtero.net
         ALL = int.MaxValue,
         VMCS = 0x80000000,      // VMCS uses state also and also 2 pass
     }
+
+    [Flags]
+    public enum VAScanType : uint
+    {
+        UNDETERMINED    = 0,
+        PE_FAST         = 1
+    }
+
+
     [Flags]
     public enum EPT_MemType
     {

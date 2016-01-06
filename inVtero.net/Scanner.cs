@@ -34,6 +34,7 @@ namespace inVtero.net
     /// <summary>
     /// Scanner is the initial entry point into inVtero, the most basic and primary functionality
     /// 
+    /// Scanner is a file based scanning class
     /// </summary>
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Scanner
@@ -325,11 +326,11 @@ namespace inVtero.net
                ((block[0x1d1] & 0xfff) == 0x067) &&
                ((block[0x1d4] & 0xfff) == 0x067) &&
                ((block[0x1fe] & 0xfff) == 0x067) &&
-               ((block[0x1ff] & 0xfff) == 0x067) &&
+               ((block[0x1ff] & 0xfff) == 0x067) 
 
                // this is the largest block of 0's 
                // just do this one to qualify
-               IsZero(block, 8, 0xe0)
+               //IsZero(block, 8, 0xe0)
                )
 
             /*
@@ -773,6 +774,8 @@ namespace inVtero.net
         {
             List<long> rv = new List<long>();
 
+            // TODO: These streams should be persistent across these calls right?
+            // TODO: This path is only 1 time and pretty infrequent so far though 
             using (var fs = new FileStream(File, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
                 var mapName = Path.GetFileNameWithoutExtension(File) + From.ToString("X16");
@@ -789,7 +792,7 @@ namespace inVtero.net
                             {
                                 var target = From + ioff;
 
-                                WriteLine($"Found input @ {(target):X}");
+                                //WriteLine($"Found input @ {(target):X}");
                                 rv.Add(target);
                                 yield return target;
                             }
@@ -805,7 +808,7 @@ namespace inVtero.net
         public IEnumerable<long> BackwardsValueScan(int ExitAfter = 0)
         {
             if (FileSize == 0)
-                FileSize = (long)(ulong)new FileInfo(Filename).Length;
+                FileSize = new FileInfo(Filename).Length;
 
             // each processor will ValueReadCount
             long ReadSize = 1024 * 1024 * 8;
@@ -813,7 +816,7 @@ namespace inVtero.net
             var RevMapSize = ReadSize * Environment.ProcessorCount;
 
             var ShortFirstChunkSize = (int)(FileSize & (ReadSize - 1));
-            var ShortFirstChunkBase = (long)(ulong)(FileSize - ShortFirstChunkSize);
+            var ShortFirstChunkBase = FileSize - ShortFirstChunkSize;
 
             var found = MapScanFile(Filename, ShortFirstChunkBase, (int) HexScanDword, ShortFirstChunkSize / 4);
 
@@ -824,10 +827,10 @@ namespace inVtero.net
 
             bool StopRunning = false;
 
-
             for (long i = ChunkCount; i > 0; i--)
             {
-                for (int j = 0; j < 8; j++)
+                // testing if to For.Parallel this inner loop
+                for (int j = 0; j < Environment.ProcessorCount; j++)
                 {
                     //if (!StopRunning)
                     //{
