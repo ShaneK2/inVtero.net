@@ -260,13 +260,13 @@ namespace inVtero.net
             return rv;
         }
 
-        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData)
+        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = false)
         {
             // convert PAddr to PFN
             var PFN = PAddr.NextTable_PFN;
             GotData = false;
 
-            if (PageCache.ContainsKey(PFN))
+            if (!NoCache && PageCache.ContainsKey(PFN))
             {
                 do
                     PageCache.TryGetValue(PFN, out block);
@@ -307,13 +307,11 @@ namespace inVtero.net
             var rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
 
 
-            if(!GotData)
-                rv = MagicNumbers.BAD_VALUE_READ;
-
-            // be a bit paranoid
-            else  if(block != null)
+            if(!NoCache && GotData)
                 PageCache.TryAdd(PFN, block);
 
+            else if (!GotData)
+                rv = MagicNumbers.BAD_VALUE_READ;
 
             return rv;
 

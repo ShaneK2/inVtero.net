@@ -51,10 +51,13 @@ namespace inVtero.net.Support
         /// Specialized Add for PFN cache
         /// </summary>
         /// <param name="Key">Must be pre-shifted, upper 16 bits are used for ref counting</param>
-        /// <param name="Value"></param>
+        /// <param name="Value">YOU MAY NOT ENTER FREEKING NULL PAGES INTO THE CACHE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!</param>
         /// <returns></returns>
         public static new bool TryAdd(long Key, long[] Value) 
         {
+            if (Value == null)
+                return false;
+
             // leave some wiggle room for other threads so maybe we don't block too much
             if ((Global.Count + RemovalRateBar) >= Capacity)
             {
@@ -66,6 +69,10 @@ namespace inVtero.net.Support
                 // but this whole thing should be relatively short lived I don't foresee a huge population of max-aged items
 
             }
+
+            if (UnsafeHelp.IsZero(Value))
+                return false;
+
             return Global.TryAdd(Key, Value);
         }
 

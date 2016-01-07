@@ -60,8 +60,10 @@ using System.IO;
 using System.Diagnostics;
 using static System.Console;
 using System.Globalization;
+using System.Collections.Generic;
 using System.Linq;
 using System.Collections.Concurrent;
+using Reloc;
 
 namespace quickdumps
 {
@@ -351,7 +353,8 @@ namespace quickdumps
                     long KernVAStart = 0xF80000000000;
                     long KernVAEnd = KernVAStart + (0x8000000000 - 0x1000);
                     string input = string.Empty;
-                    ConcurrentDictionary<long, VAScanType> Detections = null;
+                    var Detections = new Dictionary<long, Extract>();
+                    DetectedProc LikelyKernel = null;
                     // were doing this in nested loops to brute force our way past any errors
                     // but only need the first set of detections per group
                     foreach (var grpz in vtero.ASGroups)
@@ -360,23 +363,39 @@ namespace quickdumps
                         foreach (var p in grpz.Value)
                         {
                             WriteLine($"Proc: {p.CR3Value:X}");
-                            Detections = vtero.ModuleScan(p, null, KernVAStart, KernVAEnd);
-                            if (Detections != null && Detections.Count() > 0)
+                            Detections = Detections.Concat(vtero.ModuleScan(p, null, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
+                                .ToDictionary(x => x.Key, x => x.Value);
+
+                            if (Detections.Count() > 0)
+                            {
+                                LikelyKernel = p;
+
+                                // scan for kernel
+                                foreach (var detected in Detections)
+                                {
+                                    ForegroundColor = ConsoleColor.Green;
+                                    WriteLine($"Attempting to parse module loaded @ {detected.Key:X}");
+                                    ForegroundColor = ConsoleColor.Cyan;
+                                    WriteLine(detected.Value);
+                                    ForegroundColor = ConsoleColor.White;
+                                    //var cvGUID = vtero.ExtractCVDebug(LikelyKernel, detected.Key + detected.Value);
+                                    //WriteLine($"Extracted info: {cvGUID}");
+
+                                    if (detected.Value.ToString().Contains("POOLCODE"))
+                                    {
+                                        WriteLine("Likely Kernel analyzing for CV data");
+                                        vtero.ExtractCVDebug(LikelyKernel, detected.Value, detected.Key);
+                                    }
+
+                                    // de-patch-guard it
+                                }
+                            }
+                            WriteLine("KeepScanning? yes/(n)o");
+                            var key = ReadKey();
+                            if (key.Key != ConsoleKey.Y)
                                 break;
                         }
-                        if (Detections != null && Detections.Count() > 0)
-                            break;
                     }
-
-                    // extract/detect kernel CV/GUID
-                    if (Detections != null && Detections.Count() > 0)
-                    {
-                        // scan for kernel
-                        // de-patch-guard it
-                        // 
-                    }
-
-
 #endif
                     ForegroundColor = ConsoleColor.Green;
                     WriteLine($"{Environment.NewLine}Final analysis completed, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");

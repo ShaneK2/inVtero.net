@@ -77,6 +77,9 @@ namespace inVtero.net
                 mem = mem
             };
 
+            if (dp.MemAccess == null)
+                dp.MemAccess = mem;
+
 
             // any output is error/warning output
 

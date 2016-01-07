@@ -27,6 +27,7 @@ using System.Runtime.InteropServices;
 using static System.Console;
 using ProtoBuf;
 using System.Text;
+using Reloc;
     
 namespace inVtero.net
 {
@@ -231,7 +232,56 @@ namespace inVtero.net
             return Proc;
         }
 
-        public ConcurrentDictionary<long, VAScanType> ModuleScan(DetectedProc dp, Mem mem, long Start, long End)
+        public CODEVIEW_HEADER ExtractCVDebug(DetectedProc dp, Extract Ext, long VA)
+        {
+            var _va = VA + Ext.DebugDirPos;
+
+            var block = dp.VGetBlock(_va);
+
+            var TimeDate2 = BitConverter.ToUInt32(block, ((int) Ext.DebugDirPos & 0xfff) + 4);
+
+            if(TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
+            {
+                Console.WriteLine("Unable to lock on to CV data.");
+                return null; 
+            }
+
+            if(Vtero.VerboseOutput)
+                Console.WriteLine($"Locked on to CV Debug info.  Time2 = {TimeDate2:X} Time1 = {Ext.TimeStamp:X}");
+
+            var SizeData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 16);
+            var RawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 20);
+            var PointerToRawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 24);
+
+            _va = VA + RawData;
+
+            var byte_guid = new byte[16];
+
+            block = dp.VGetBlock(_va);
+
+            // first 4 bytes
+            var sig = block[((int)_va & 0xfff)];
+            
+            Array.ConstrainedCopy(block, (((int) _va & 0xfff) + 4), byte_guid, 0, 16);
+            var gid = new Guid(byte_guid);
+
+
+            // after GUID
+            var age = block[((int)_va & 0xfff) + 20];
+
+            // char* at end
+            var str = System.Text.Encoding.Default.GetString(block, (((int)_va & 0xfff) + 24), 32).Trim();
+
+            if (Vtero.VerboseOutput)
+            {
+                Console.WriteLine($"Size = {SizeData} \t Raw = {RawData} \t Pointer {PointerToRawData}");
+                Console.WriteLine($"Str {str} : GUID : {gid}");
+            }
+
+            return new CODEVIEW_HEADER { Age = age, aGuid = gid, Sig = sig, PdbName = str };
+        }
+
+        public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, Mem mem, long Start, long End)
         {
             Mem localMem = null;
 
@@ -260,7 +310,8 @@ namespace inVtero.net
                 foreach (var item in VS.DetectedFragments)
                     rv.TryAdd(item.Key, item.Value);
             }
-            return rv;
+
+            return VS.Artifacts;
         }
 
         /// <summary>

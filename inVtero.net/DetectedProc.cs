@@ -39,14 +39,39 @@ namespace inVtero.net
         public long Diff;
         public int Mode; // 1 or 2
         public PTType PageTableType;
-
+        public CODEVIEW_HEADER DebugData;
         public Dictionary<int, long> TopPageTablePage;
 
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
+        public byte[] VGetBlock(long VA)
+        {
+            bool GotData = false;
+            long[] rv = new long[512];
+            byte[] buffer = new byte[4096];
+
+            var _va = VA & ~0xfff;
+
+            HARDWARE_ADDRESS_ENTRY hw;
+            if (vmcs == null)
+                hw = MemAccess.VirtualToPhysical(CR3Value, _va);
+            else
+                hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
+            
+            unsafe
+            {
+                fixed (void* lp = rv, bp = buffer)
+                {
+                    MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData, true);
+                    Buffer.MemoryCopy((byte*)lp, (byte*)bp, 4096, 4096);
+                }
+            }
+            return buffer;
+        }
+
         [ProtoIgnore]
-        public Mem MemAccess { get; private set; }
+        public Mem MemAccess { get; set; }
 
         public override string ToString() => $"Process CR3 [{CR3Value:X12}] File Offset [{FileOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
 
@@ -71,6 +96,15 @@ namespace inVtero.net
         public long EPTP_off;
 
         public override string ToString() => $"EPTP:[{new EPTP(this.EPTP):X12}]";
+    }
+
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
+    public class CODEVIEW_HEADER
+    {
+        public uint Sig;
+        public Guid aGuid;
+        public uint Age;
+        public string PdbName;
     }
 
 }

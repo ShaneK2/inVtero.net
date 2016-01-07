@@ -17,6 +17,7 @@ namespace inVtero.net
     {
         Mem BackingBlocks;
         ConcurrentDictionary<int, Mem> MemoryBank;
+        public ConcurrentDictionary<long, Extract> Artifacts;
         PhysicalMemoryStream BackingStream;
 
         /// <summary>
@@ -54,6 +55,8 @@ namespace inVtero.net
         public VirtualScanner()
         {
             DetectedFragments = new ConcurrentDictionary<long, VAScanType>();
+            Artifacts = new ConcurrentDictionary<long, Extract>();
+
             CheckMethods = new List<Func<long, byte[], VAScanType>>();
             ScanList = new WAHBitArray(); 
         }
@@ -71,13 +74,18 @@ namespace inVtero.net
 
         public VAScanType FastPE(long VA, byte[] Block)
         {
-            bool rv = false;
-
-            return (Block[0] == 'M' && Block[1] == 'Z') ? VAScanType.PE_FAST : VAScanType.UNDETERMINED;
-
-            // TODO: improve/fix check
-            //var extracted = Extract.IsBlockaPE(Block);
-            //return (extracted != null ? VAScanType.PE_FAST : VAScanType.UNDETERMINED);
+            // magic check
+            if((Block[0] == 'M' && Block[1] == 'Z'))
+            {
+                // TODO: improve/fix check
+                var extracted = Extract.IsBlockaPE(Block);
+                if (extracted != null)
+                {
+                    Artifacts.TryAdd(VA, extracted);
+                    return VAScanType.PE_FAST;
+                }
+            }
+            return VAScanType.UNDETERMINED;
         }
 
         public ConcurrentDictionary<long, VAScanType> DetectedFragments;
@@ -95,7 +103,7 @@ namespace inVtero.net
 
             do
             {
-                Parallel.For(0, Environment.ProcessorCount-1, (j) =>
+                Parallel.For(0, Environment.ProcessorCount, (j) =>
                 //for (int j = 0; j < 1; j++)
                 {
                     // convert index to an address 
