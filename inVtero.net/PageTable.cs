@@ -68,6 +68,7 @@ namespace inVtero.net
             if(Vtero.DiagOutput)
                 WriteLine($"PT analysis of {dp}");
 
+            dp.vmcs = null;
             var rv = new PageTable
             {
                 Root = new PageTableRoot() { SLAT = dp.vmcs != null ? dp.vmcs.EPTP : 0, CR3 = dp.CR3Value, Entries = new PFN() },
@@ -75,6 +76,7 @@ namespace inVtero.net
                 DP = dp,
                 mem = mem
             };
+
 
             // any output is error/warning output
 
@@ -276,70 +278,75 @@ namespace inVtero.net
             VIRTUAL_ADDRESS SubVA = PageContext.VA;
             HARDWARE_ADDRESS_ENTRY PA = PageContext.PTE;
 
-            if (!PA.LargePage)
+            // get the page that the current PFN describes
+            var HW_Addr = PA.NextTableAddress;
+            if (SLAT != 0)
             {
-                // get the page that the current PFN describes
-                var HW_Addr = PA.NextTableAddress;
-                if (SLAT != 0)
-                {
-                    var hHW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
-                    try { hHW_Addr = mem.VirtualToPhysical(SLAT, HW_Addr); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"level{Level}: Unable to V2P {HW_Addr}"); }
-                    HW_Addr = hHW_Addr;
+                var hHW_Addr = HARDWARE_ADDRESS_ENTRY.MaxAddr;
+                try { hHW_Addr = mem.VirtualToPhysical(SLAT, HW_Addr); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"level{Level}: Unable to V2P {HW_Addr}"); }
+                HW_Addr = hHW_Addr;
 
-                    if (HW_Addr == long.MaxValue || HW_Addr == long.MaxValue - 1)
-                        yield break;
-                }
-
-                long[] page = new long[512];  
-
-                // copy VA since were going to be making changes
-
-                try { mem.GetPageForPhysAddr(HW_Addr, ref page); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"Physical Address can not find {HW_Addr:X16}"); }
-
-                if (page == null)
+                if (HW_Addr == long.MaxValue || HW_Addr == long.MaxValue - 1)
                     yield break;
+            }
 
-                var dupVA = new VIRTUAL_ADDRESS(SubVA.Address);
+            // if it's LP then just return the same entry rather than emulating 4k everywhere
+            if (PageContext.PTE.LargePage && Level <= 1)
+            {
+                // cyclic 
+                PageContext.SubTables.Add(PageContext.VA, PageContext);
+                yield return PageContext;
+            }
 
-                for (int i = 0; i < 512; i++)
+            long[] page = new long[512];  
+
+            // copy VA since were going to be making changes
+
+            try { mem.GetPageForPhysAddr(HW_Addr, ref page); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"Physical Address can not find {HW_Addr:X16}"); }
+
+            if (page == null)
+                yield break;
+
+            var dupVA = new VIRTUAL_ADDRESS(SubVA.Address);
+
+            for (int i = 0; i < 512; i++)
+            {
+                if (!RedundantKernelSpaces && i >= 256)
+                    continue;
+
+                if (page[i] == 0)
+                    continue;
+
+                switch (Level)
                 {
-                    if (!RedundantKernelSpaces && i >= 256)
-                        continue;
-
-                    if (page[i] == 0)
-                        continue;
-
-                    switch (Level)
-                    {
-                        case 4:
-                            dupVA.PML4 = i;
-                            break;
-                        case 3:
-                            dupVA.DirectoryPointerOffset = i;
-                            break;
-                        case 2:
-                            dupVA.DirectoryOffset = i;
-                            break;
-                        case 1:
-                            dupVA.TableOffset = i;
-                            break;
-                        default:
-                            break;
-                    }
-
-                    var pfn = new PFN
-                    {
-                        VA = new VIRTUAL_ADDRESS(dupVA.Address),
-                        PTE = new HARDWARE_ADDRESS_ENTRY(page[i])
-                    };
-                    
-                    PageContext.SubTables.Add(
-                            pfn.VA,
-                            pfn);
-
-                    EntriesParsed++;
-                    yield return pfn;
+                    case 4:
+                        dupVA.PML4 = i;
+                        break;
+                    case 3:
+                        dupVA.DirectoryPointerOffset = i;
+                        break;
+                    case 2:
+                        dupVA.DirectoryOffset = i;
+                        break;
+                    case 1:
+                        dupVA.TableOffset = i;
+                        break;
+                    default:
+                        break;
                 }
+
+                var pfn = new PFN
+                {
+                    VA = new VIRTUAL_ADDRESS(dupVA.Address),
+                    PTE = new HARDWARE_ADDRESS_ENTRY(page[i])
+                };
+                    
+                PageContext.SubTables.Add(
+                        pfn.VA,
+                        pfn);
+
+                EntriesParsed++;
+                yield return pfn;
             }
             yield break;
         }
@@ -354,9 +361,8 @@ namespace inVtero.net
                 DepthParsed = 4;
             }
 
-            return Root.Entries.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).Where(kvp => kvp.Key.Address >= StartingVA && kvp.Key.Address <= EndingVA);
-
-
+            return Root.Entries.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).Where(kvp => kvp.Key.Address >= StartingVA && kvp.Key.Address <= EndingVA).Concat(
+                Root.Entries.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).Where(kvp => kvp.Key.Address >= StartingVA && kvp.Key.Address <= EndingVA));
         }
 
 
@@ -391,12 +397,12 @@ namespace inVtero.net
                 foreach(var DirectoryPointerOffset in ExtractNextLevel(pfn, KernelSpace, level))
                 {
                     if (DirectoryPointerOffset == null || !mem.BufferLoadInput) continue;
-                    if(depth > 2)
+                    if(depth > 2 && !DirectoryPointerOffset.PTE.LargePage)
                     foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level-1))
                     {
                         if (DirectoryOffset == null || !mem.BufferLoadInput) continue;
 
-                        if(depth > 3)
+                        if(depth > 3 && !DirectoryOffset.PTE.LargePage)
                         foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
                         {
                             if (TableOffset == null) continue;

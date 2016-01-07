@@ -61,6 +61,7 @@ using System.Diagnostics;
 using static System.Console;
 using System.Globalization;
 using System.Linq;
+using System.Collections.Concurrent;
 
 namespace quickdumps
 {
@@ -319,27 +320,64 @@ namespace quickdumps
                         WriteLine(saveStateFile);
                     }
 
+#if BUFFER_PAGE_TABLES
+                    //var vetted = vtero.ExtrtactAddressSpaces(null, null, Version);
+                    // Extract Address Spaces verifies the linkages between
+                    // process<->CR3<->EPTP(if there is one)
+                    // and that they are functional
+#endif
 
-                    int i = 1;
-                    DetectedProc dp = null;
-                    while(dp == null)
-                        dp = vtero.GetKernelRangeFromGroup(i++);
+#if TRUE
+
+                    // leaving this in as an example maybe? ;)
+
+                    //WriteLine("enter a group ID: ");
+                    //input = ReadLine();
+                    //int Grp = int.Parse(input);
+                    //WriteLine("enter a process ID: ");
+                    //input = ReadLine();
+                    //long procID = long.Parse(input, NumberStyles.HexNumber);
+                    //var proc = (from procz in vtero.ASGroups[Grp]
+                    //            where procz.CR3Value == procID
+                    //            select procz).First();
+                    //int i = 1;
+                    //DetectedProc dp = proc;
+                    //while(dp == null)
+                    //    dp = vtero.GetKernelRangeFromGroup(i++);
 
 
                     // Scan for kernel 
                     // NT kernel may be in 0xFFFFF80000000 to 0xFFFFF8800000 range
                     long KernVAStart = 0xF80000000000;
-                    long KernVAEnd = KernVAStart + 0x8000000000;
+                    long KernVAEnd = KernVAStart + (0x8000000000 - 0x1000);
+                    string input = string.Empty;
+                    ConcurrentDictionary<long, VAScanType> Detections = null;
+                    // were doing this in nested loops to brute force our way past any errors
+                    // but only need the first set of detections per group
+                    foreach (var grpz in vtero.ASGroups)
+                    {
+                        WriteLine($"Group ID: {grpz.Key}");
+                        foreach (var p in grpz.Value)
+                        {
+                            WriteLine($"Proc: {p.CR3Value:X}");
+                            Detections = vtero.ModuleScan(p, null, KernVAStart, KernVAEnd);
+                            if (Detections != null && Detections.Count() > 0)
+                                break;
+                        }
+                        if (Detections != null && Detections.Count() > 0)
+                            break;
+                    }
+
+                    // extract/detect kernel CV/GUID
+                    if (Detections != null && Detections.Count() > 0)
+                    {
+                        // scan for kernel
+                        // de-patch-guard it
+                        // 
+                    }
 
 
-                    var modules_in_range = vtero.ModuleScan(dp, null, KernVAStart, KernVAEnd);
-
-
-                    // Extract Address Spaces verifies the linkages between
-                    // process<->CR3<->EPTP(if there is one)
-                    // and that they are functional
-                    //var vetted = vtero.ExtrtactAddressSpaces(null, null, Version);
-
+#endif
                     ForegroundColor = ConsoleColor.Green;
                     WriteLine($"{Environment.NewLine}Final analysis completed, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
 

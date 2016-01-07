@@ -67,13 +67,13 @@ namespace inVtero.net
 
         public int Phase;
 
-        [ProtoMember(100)]
-        static MemoryDescriptor DetectedDesc;
+        public MemoryDescriptor DetectedDesc;
 
         /// <summary>
         /// Set OverRidePhase to force a re-run of a stage
         /// </summary>
         public bool OverRidePhase;
+
         [ProtoMember(99)]
         Scanner scan;
 
@@ -208,7 +208,7 @@ namespace inVtero.net
 
         public DetectedProc GetKernelRangeFromGroup(int GroupID)
         {
-            var mem = new Mem(MemFile) { OverrideBufferLoadInput = true };
+            var mem = new Mem(MemFile, null, DetectedDesc) { OverrideBufferLoadInput = true };
             DetectedProc Proc = null;
             foreach (var Procz in ASGroups[GroupID])
             {
@@ -238,12 +238,15 @@ namespace inVtero.net
             /// TODO: uhhhhh move mem up into DP
             if (mem != null)
                 localMem = mem;
-            else if (dp.PT.mem == null)
+            else if (dp.PT != null && dp.PT.mem != null)
                 localMem = dp.PT.mem;
             else if (dp.MemAccess != null)
                 localMem = dp.MemAccess;
-            else
-                localMem = new Mem(MemFile);
+            else {
+                localMem = new Mem(MemFile, null, DetectedDesc);
+                if (dp.PT == null)
+                    PageTable.AddProcess(dp, localMem, true, 4);
+            }
 
             VirtualScanner VS = new VirtualScanner(dp, localMem);
 
@@ -394,7 +397,7 @@ namespace inVtero.net
             foreach (var ctx in  ASGroups)
             {
                 var dpz = from d in ctx.Value
-                          orderby d.CR3Value ascending
+                          orderby d.CR3Value descending
                           select d;
 
                 ASGroups[ctx.Key] = new ConcurrentBag<DetectedProc>(dpz);

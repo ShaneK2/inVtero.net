@@ -105,6 +105,9 @@ namespace inVtero.net
 
         public override bool CanWrite { get { return false; } }
 
+        /// <summary>
+        /// This should be the length of the VA space for the given Proc that were looking at
+        /// </summary>
         public override long Length { get { return MemBlockStorage.Length; } }
 
 

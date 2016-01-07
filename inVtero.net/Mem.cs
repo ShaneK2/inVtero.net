@@ -24,10 +24,11 @@ using System.Threading;
 
 using RaptorDB;
 using System.Collections.Concurrent;
+using inVtero.net.Support;
 
 // Details on this struct can be found here and likely many other sources
 // Microsoft published this originally on the singularity project's codeplex (along with some other ingerestiVng things)
-//      http://volatility.googlecode.com/svn-history/r2779/branches/scudette/tools/windows/winpmem/executable/Dump.h
+//
 //          //  Microsoft Research Singularity
 //          typedef struct _PHYSICAL_MEMORY_RUN64
 //          {
@@ -56,7 +57,7 @@ namespace inVtero.net
         /// <summary>
         /// DetectedDescriptor is meant for the user to assign when they have an override
         /// </summary>
-        public MemoryDescriptor DetectedDescriptor { get { return ddes; } set { ddes = value; MD = value; } }
+        public MemoryDescriptor DetectedDescriptor { get { return ddes; } set { ddes = value; if(value != null) MD = value; } }
         public bool BufferLoadInput { get { return OverrideBufferLoadInput ? true : FileSize < BufferLoadMax; } }
 
         public bool OverrideBufferLoadInput { get; set; }
@@ -64,7 +65,7 @@ namespace inVtero.net
         /// <summary>
         /// MD actually gets used for extracting memory
         /// </summary>
-        MemoryDescriptor MD;
+        MemoryDescriptor MD { get; set; }
 
 
         public long StartOfMemory; // adjust for .DMP headers or something
@@ -72,7 +73,6 @@ namespace inVtero.net
 
         const long BufferLoadMax = 20L * 1024 * 1024 * 1024; // If the input is larger than 20GB were not going to buffer load it 
         const int PageCacheMax = 100000;
-        static ConcurrentDictionary<long, long[]> PageCache;
 
         IDictionary<long, long> DiscoveredGaps;
 
@@ -87,14 +87,13 @@ namespace inVtero.net
         const long PAGE_SIZE = 0x1000;
         static int mindex = 0;
 
-        long MapWindowSize;
         long MapViewBase;
         long MapViewSize;
 
         WAHBitArray pfnTableIdx;
         public void DumpPFNIndex()
         {
-            if (!Vtero.VerboseOutput)
+            if (!Vtero.VerboseOutput || pfnTableIdx == null)
                 return;
 
             var idx = pfnTableIdx.GetBitIndexes();
@@ -114,15 +113,17 @@ namespace inVtero.net
         {
             // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
             // PageCache may be better off than a huge window...
-            if (PageCache == null)
-                PageCache = new ConcurrentDictionary<long, long[]>(8, PageCacheMax);
+            // PageCacheMax default is 100000 which is 390MB or so.
+            if(!PageCache.Initalized)
+                PageCache.InitPageCache(Environment.ProcessorCount * 4, PageCacheMax);
 
             // not really used right now
             GapScanSize = 0x10000000;
 
             // common init
             MapViewBase = 0;
-            MapViewSize = MapWindowSize = (0x1000 * 0x1000 * 4);
+            // 64MB
+            MapViewSize = (0x1000 * 0x1000 * 4);
 
             DiscoveredGaps = new Dictionary<long, long>();
         }
@@ -163,9 +164,16 @@ namespace inVtero.net
 
         public Mem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null) : this()
         {
+
             StartOfMemory = Override != null ? Override.StartOfMemmory : 0;
 
-            // maybe their's a bit map we can use from a DMP file
+            if (Override != null)
+            {
+                StartOfMemory = Override.StartOfMemmory;
+                MD = Override;
+            }
+
+            // maybe there's a bit map we can use from a DMP file
             if (BitmapArray != null)
                 pfnTableIdx = new WAHBitArray(WAHBitArray.TYPE.Bitarray, BitmapArray);
             else
@@ -260,15 +268,19 @@ namespace inVtero.net
 
             if (PageCache.ContainsKey(PFN))
             {
-                if (PageCache.TryGetValue(PFN, out block))
-                    return block[PAddr & 0x1ff];
+                do
+                    PageCache.TryGetValue(PFN, out block);
+                while (block == null);
+
+                return block[PAddr & 0x1ff];
             }
 
             // record our access attempt to the pfnIndex
             if (PFN > int.MaxValue || PFN > MD.MaxAddressablePageNumber)
                 return 0;
 
-            pfnTableIdx.Set((int)PFN, true);
+            if(pfnTableIdx != null)
+                pfnTableIdx.Set((int)PFN, true);
 
             // paranoid android setting
             var Fail = true;
@@ -294,10 +306,14 @@ namespace inVtero.net
             // add back in the file offset for possible exact byte lookup
             var rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
 
-            if (GotData)
-                PageCache.TryAdd(PFN, block);
-            else
+
+            if(!GotData)
                 rv = MagicNumbers.BAD_VALUE_READ;
+
+            // be a bit paranoid
+            else  if(block != null)
+                PageCache.TryAdd(PFN, block);
+
 
             return rv;
 
@@ -337,13 +353,13 @@ namespace inVtero.net
             // PML4E
             try
             {
-                Attempted = (HARDWARE_ADDRESS_ENTRY) aCR3.NextTableAddress | (va.PML4 << 3);
+                Attempted = (HARDWARE_ADDRESS_ENTRY) aCR3.NextTableAddress | va.PML4;
                 var PML4E = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                 //Console.WriteLine($"PML4E = {PML4E.PTE:X16}");
                 ConvertedV2P.Add(PML4E);
                 if (PML4E.Valid)
                 {
-                    Attempted = PML4E.NextTableAddress | (va.DirectoryPointerOffset << 3);
+                    Attempted = PML4E.NextTableAddress | va.DirectoryPointerOffset;
                     var PDPTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                     ConvertedV2P.Add(PDPTE);
                     //Console.WriteLine($"PDPTE = {PDPTE.PTE:X16}");
@@ -352,7 +368,7 @@ namespace inVtero.net
                     {
                         if (!PDPTE.LargePage)
                         {
-                            Attempted = PDPTE.NextTableAddress | (va.DirectoryOffset << 3);
+                            Attempted = PDPTE.NextTableAddress | va.DirectoryOffset;
                             var PDE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                             ConvertedV2P.Add(PDE);
                             //Console.WriteLine($"PDE = {PDE.PTE:X16}");
@@ -361,7 +377,7 @@ namespace inVtero.net
                             {
                                 if (!PDE.LargePage)
                                 {
-                                    Attempted = PDE.NextTableAddress | (va.TableOffset << 3);
+                                    Attempted = PDE.NextTableAddress | va.TableOffset;
                                     var PTE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                     ConvertedV2P.Add(PTE);
                                     //Console.WriteLine($"PTE = {PTE.PTE:X16}");
@@ -374,7 +390,7 @@ namespace inVtero.net
                                 }
                                 else
                                 {   // we have a 2MB page
-                                    rv = (PDE.PTE & 0xFFFFFFE00000) | (Addr & 0x1FFFFF);
+                                    rv = (PDE.PTE & 0xFFFFFFE00000) | va.TableOffset << 12;
                                 }
                             }
                             else
@@ -382,7 +398,7 @@ namespace inVtero.net
                         }
                         else
                         {   // we have a 1GB page
-                            rv = (PDPTE.PTE & 0xFFFFC0000000) | (Addr & 0x3FFFFFFF);
+                            rv = (PDPTE.PTE & 0xFFFFC0000000) | va.DirectoryOffset << 12 << 9;
                         }
                     }
                     else
@@ -397,10 +413,10 @@ namespace inVtero.net
             }
             finally
             {
-                foreach(var paddr in ConvertedV2P)
-                {
+                //foreach(var paddr in ConvertedV2P)
+                //{
 
-                }
+                //}
             }
             //Console.WriteLine($"return from V2P {rv:X16}");
             // serialize the dictionary out
@@ -430,10 +446,10 @@ namespace inVtero.net
                 long GapSize = 0;
                 //}
 
-                //Console.WriteLine($"In V2P2P, using CR3 {aCR3.PTE:X16}, found guest phys CR3 {gpaCR3.PTE:X16}, attemptng load of PML4E from {(gpaCR3 | va.PML4):X16}");
+                //Console.WriteLine($"In V2P2P, using CR3 {aCR3.PTE:X16}, found guest phys CR3 {gpaCR3.PTE:X16}, attempting load of PML4E from {(gpaCR3 | va.PML4):X16}");
                 // gPML4E - as we go were getting gPA's which need to pPA
 
-                Attempted = (gpaCR3.NextTableAddress - GapSize) | (va.PML4 << 3);
+                Attempted = (gpaCR3.NextTableAddress - GapSize) | va.PML4 ;
 
                 var gPML4E = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                 ConvertedV2hP.Add(gPML4E);
@@ -442,21 +458,21 @@ namespace inVtero.net
                 // take CR3 and extract gPhys for VA we want to query
                 
                 var hPML4E = VirtualToPhysical(eptp, gPML4E.NextTableAddress);
-                if (EPTP.IsValid(hPML4E.PTE) && EPTP.IsValid2(hPML4E.PTE))
+                if (EPTP.IsValid(hPML4E.PTE) && EPTP.IsValid2(hPML4E.PTE) && HARDWARE_ADDRESS_ENTRY.IsBadEntry(hPML4E))
                 { 
-                    Attempted = (hPML4E.NextTableAddress - GapSize) | (va.DirectoryPointerOffset << 3);
+                    Attempted = (hPML4E.NextTableAddress - GapSize) | va.DirectoryPointerOffset;
                     var gPDPTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                     ConvertedV2hP.Add(gPDPTE);
                     var hPDPTE = VirtualToPhysical(eptp, gPDPTE.NextTableAddress);
 
                     if (EPTP.IsValid(hPDPTE.PTE))
                     {
-                        if(!EPTP.IsLargePDPTE(hPDPTE.PTE))
+                        if (!EPTP.IsLargePDPTE(hPDPTE.PTE))
                         {
                             if (EPTP.IsValid2(hPDPTE.PTE))
                             {
-                                Attempted = (hPDPTE.NextTableAddress - GapSize) | (va.DirectoryOffset << 3);
-                                var gPDE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
+                                Attempted = (hPDPTE.NextTableAddress - GapSize) | va.DirectoryOffset;
+                                var gPDE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                 ConvertedV2hP.Add(gPDE);
                                 var hPDE = VirtualToPhysical(eptp, gPDE.NextTableAddress);
 
@@ -466,7 +482,7 @@ namespace inVtero.net
                                     {
                                         if (EPTP.IsValid2(hPDE.PTE))
                                         {
-                                            Attempted = (hPDE.NextTableAddress - GapSize) | (va.TableOffset << 3);
+                                            Attempted = (hPDE.NextTableAddress - GapSize) | va.TableOffset;
                                             var gPTE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                             ConvertedV2hP.Add(gPTE);
                                             var hPTE = VirtualToPhysical(eptp, gPTE.NextTableAddress);
@@ -475,13 +491,15 @@ namespace inVtero.net
                                                 rv = (hPTE.NextTableAddress - GapSize) | va.Offset;
                                         }
                                     }
-                                    else
-                                        rv = (hPDE.PTE & 0xFFFFFFE00000) | (Addr & 0x1FFFFF);
+                                    else {
+                                        rv = (hPDE.PTE & 0xFFFFFFE00000) | va.TableOffset; //(Addr & 0x1FFFFF);
+                                    }
                                 }
                             }
                         }
-                        else
-                            rv = (hPDPTE.PTE & 0xFFFFC0000000) | (Addr & 0x3FFFFFFF);
+                        else {
+                            rv = (hPDPTE.PTE & 0xFFFFC0000000) | va.DirectoryOffset; //(Addr & 0x3FFFFFFF);
+                        }
                     }
                 }
             }

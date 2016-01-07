@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Reloc;
 using System.IO;
 using System.Collections.Concurrent;
+using RaptorDB;
 
 namespace inVtero.net
 {
@@ -28,6 +29,9 @@ namespace inVtero.net
         /// </summary>
         DetectedProc DPContext;
 
+        WAHBitArray ScanList;
+
+
         // similar to the file based interface, we will only scan 1 page at a time 
         // but if we hit a signature in a check it's free to non-block the others while it completes 
         // a deeper scan
@@ -49,7 +53,9 @@ namespace inVtero.net
 
         public VirtualScanner()
         {
+            DetectedFragments = new ConcurrentDictionary<long, VAScanType>();
             CheckMethods = new List<Func<long, byte[], VAScanType>>();
+            ScanList = new WAHBitArray(); 
         }
 
         public VirtualScanner(DetectedProc Ctx, Mem backingBlocks) : this()
@@ -66,9 +72,12 @@ namespace inVtero.net
         public VAScanType FastPE(long VA, byte[] Block)
         {
             bool rv = false;
-            var extracted = Extract.IsBlockaPE(Block);
 
-            return (extracted != null ? VAScanType.PE_FAST : VAScanType.UNDETERMINED);
+            return (Block[0] == 'M' && Block[1] == 'Z') ? VAScanType.PE_FAST : VAScanType.UNDETERMINED;
+
+            // TODO: improve/fix check
+            //var extracted = Extract.IsBlockaPE(Block);
+            //return (extracted != null ? VAScanType.PE_FAST : VAScanType.UNDETERMINED);
         }
 
         public ConcurrentDictionary<long, VAScanType> DetectedFragments;
@@ -78,20 +87,16 @@ namespace inVtero.net
         /// </summary>
         /// <param name="Start"></param>
         /// <param name="Stop">We just truncate VA's at 48 bit's</param>
-        /// <returns></returns>
+        /// <returns>count of new detections since last Run</returns>
         public long Run(long Start=0, long Stop = 0xFFFFffffFFFF)
         {
-            long rv = 0;
+            long rv = DetectedFragments.Count();
             bool StillGoing = true;
-
-            DetectedFragments = new ConcurrentDictionary<long, VAScanType>();
-
-            //for(long i = StartPage; i < d; i+=Environment.ProcessorCount)
-            //
 
             do
             {
                 Parallel.For(0, Environment.ProcessorCount-1, (j) =>
+                //for (int j = 0; j < 1; j++)
                 {
                     // convert index to an address 
                     // then add start to it
@@ -101,46 +106,49 @@ namespace inVtero.net
                     var bpage = new byte[0x1000];
                     unsafe
                     {
-                        fixed (void* lp = block, bp = bpage)
+                        while (i < Stop)
                         {
-                            while (i < Stop)
+                            foreach (var scanner in CheckMethods)
                             {
-                                foreach (var scanner in CheckMethods)
+                                HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
+
+                                if (DPContext.vmcs != null)
+                                    locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                                else
+                                    locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
+
+                                if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
+                                    continue;
+
+                                fixed (void* lp = block, bp = bpage)
                                 {
-                                    HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
+                                    bool GotData = false;
 
-                                    if (DPContext.vmcs != null)
-                                        locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                                    else
-                                        locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
-
-                                    MemoryBank[j].GetPageForPhysAddr(locPhys, ref block);
+                                    MemoryBank[j].GetPageForPhysAddr(locPhys, ref block, ref GotData);
 
                                     Buffer.MemoryCopy(lp, bp, 4096, 4096);
-
-                                    var scan_detect = scanner(i, bpage);
-                                    if (scan_detect != VAScanType.UNDETERMINED)
-                                    {
-                                        DetectedFragments.TryAdd(i, scan_detect);
-                                        if (Vtero.VerboseOutput)
-                                            Console.WriteLine($"Detected PE @ VA {i:X}");
-                                    }
                                 }
 
-                                i += Environment.ProcessorCount << 12;
+                                var scan_detect = scanner(i, bpage);
+                                if (scan_detect != VAScanType.UNDETERMINED)
+                                {
+                                    DetectedFragments.TryAdd(i, scan_detect);
+                                    if (Vtero.VerboseOutput)
+                                        Console.WriteLine($"Detected PE @ VA {i:X}");
+                                }
                             }
-                            StillGoing = false;
+                            i += Environment.ProcessorCount << 12;
+                            // for easier debugging if your not using Parallel loop
+                            //i += 1 << 12;
                         }
+                        StillGoing = false;
                     }
                 });
-
-
+                //}
 
             } while (StillGoing);
-            //}
 
-
-            return rv;
+            return DetectedFragments.Count() - rv;
         }
     }
 }

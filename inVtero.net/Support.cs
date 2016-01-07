@@ -127,6 +127,14 @@ namespace inVtero.net
             return PTE.CompareTo(obj);
         }
 
+        public static bool IsBadEntry(HARDWARE_ADDRESS_ENTRY entry)
+        {
+            if (entry <= HARDWARE_ADDRESS_ENTRY.MinAddr + 2L || entry >= HARDWARE_ADDRESS_ENTRY.MaxAddr - 2L)
+                return true;
+
+            return false;
+        }
+
         public HARDWARE_ADDRESS_ENTRY(long pte) { PTE = pte; }
         public bool Valid { get { return (PTE & 1) != 0; } set { if (value) PTE |= 1; else PTE &= ~1; } }
         public bool Dirty1 { get { return (PTE & 2) != 0; } }
@@ -135,7 +143,8 @@ namespace inVtero.net
         public bool CacheDisable { get { return (PTE & 0x10) != 0; } }
         public bool Accessed { get { return (PTE & 0x20) != 0; } }
         public bool Dirty { get { return (PTE & 0x40) != 0; } }
-        public bool LargePage { get { return (PTE & 0x80) != 0; } }
+        public bool LargePage { get { return (PTE & 0x80) != 0; } set { if (value) PTE |= 0x80; else PTE &= ~0x80; } }
+
         public bool Global { get { return (PTE & 0x100) != 0; } }
         public bool CopyOnWrite { get { return (PTE & 0x200) != 0; } }
         public bool Unused { get { return (PTE & 0x400) != 0; } }
@@ -151,7 +160,7 @@ namespace inVtero.net
         public long twoMB_PFN { get { return (PTE & 0xFFFFFFE00000) >> 21; } }
         // after >> 30 == 3FFFF tot 1GB pages 
         public long GB_PFN { get { return (PTE & 0xFFFFC0000000) >> 30; } }
-        public long AddressOffset {  get { return PTE & 0xfff; } }
+        public long AddressOffset {  get { return PTE & 0xfff; } set { PTE = PTE &= ~0xfff; PTE |= value & 0xfff;    } }
     }
 
     public struct SLAT_ENTRY
@@ -278,6 +287,8 @@ namespace inVtero.net
         public long NumberOfPages;
 
         long maxAddressablePageNumber;
+
+        [ProtoIgnore]
         public long MaxAddressablePageNumber { get {
 
                 if (maxAddressablePageNumber != 0)

@@ -89,6 +89,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Runtime.Caching" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
@@ -105,6 +106,7 @@
     <Compile Include="Specialties\CrashDump.cs" />
     <Compile Include="Specialties\VMWare.cs" />
     <Compile Include="Support.cs" />
+    <Compile Include="Support\PageCache.cs" />
     <Compile Include="Support\ProgressBar.cs" />
     <Compile Include="Support\WAHBitarray2.cs" />
     <Compile Include="UnsafeHelp.cs" />
