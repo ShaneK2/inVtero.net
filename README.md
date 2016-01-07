@@ -1,6 +1,8 @@
 # inVtero.net
 Find/Extract processes, hypervisors (including nested) in memory dumps using microarchitecture independent
-Virtual Machine Introspection techniques
+Virtual Machine Introspection techniques.  Cross platform, multi-architechture high performance physical memory analysis tools.
+
+Upcoming functionality to render an integrity map for code pages that can be mapped back to cryptographically secure block/page hash values (i.e. SHA256 or TIGER192).  Our results indicate pre-win10 verification rates over 99%, post win10 volatile memory is virtually 100% attestable.  This eliminates substantional guess work and unkown's due to traditional manual handling/review/dissassembly of memory when attempting to detect/analyze multi-gigabytes of input.
 
 | x64 Release |
 |:------------|
