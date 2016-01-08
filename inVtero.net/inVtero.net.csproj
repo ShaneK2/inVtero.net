@@ -94,9 +94,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DeLocate.cs" />
     <Compile Include="DetectedProc.cs" />
     <Compile Include="Dumper.cs" />
     <Compile Include="Extensions.cs" />
+    <Compile Include="extract.cs" />
     <Compile Include="inVtero.cs" />
     <Compile Include="Mem.cs" />
     <Compile Include="PageTable.cs" />
@@ -130,12 +132,6 @@
       <ProductName>.NET Framework 3.5 SP1</ProductName>
       <Install>false</Install>
     </BootstrapperPackage>
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\..\Source\Code\Reloc.net\Reloc.net\Reloc.net.csproj">
-      <Project>{8759443d-ae01-4c00-b4c2-dcc4253d077a}</Project>
-      <Name>Reloc.net</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

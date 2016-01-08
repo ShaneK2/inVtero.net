@@ -99,10 +99,6 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\Source\Code\Reloc.net\Reloc.net\Reloc.net.csproj">
-      <Project>{8759443d-ae01-4c00-b4c2-dcc4253d077a}</Project>
-      <Name>Reloc.net</Name>
-    </ProjectReference>
     <ProjectReference Include="..\inVtero.net\inVtero.net.csproj">
       <Project>{bba65fad-57b1-4b78-b262-e542a88440d6}</Project>
       <Name>inVtero.net</Name>
