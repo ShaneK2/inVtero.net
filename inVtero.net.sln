@@ -16,7 +16,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		TODO.md = TODO.md
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Reloc.net", "..\..\gh-pages\inVtero.net\Reloc.net\Reloc.net\Reloc.net.csproj", "{BC7BD165-A290-419C-9BE3-27EE2562DAB9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Reloc.net", "..\..\..\Source\Code\Reloc.net\Reloc.net\Reloc.net.csproj", "{8759443D-AE01-4C00-B4C2-DCC4253D077A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -42,14 +42,14 @@ Global
 		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Release|Any CPU.Build.0 = Release|Any CPU
 		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Release|x64.ActiveCfg = Release|x64
 		{BAA7175A-C661-40F9-833B-DDDE1826A1F2}.Release|x64.Build.0 = Release|x64
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Debug|x64.Build.0 = Debug|Any CPU
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Release|x64.ActiveCfg = Release|x64
-		{BC7BD165-A290-419C-9BE3-27EE2562DAB9}.Release|x64.Build.0 = Release|x64
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Debug|x64.ActiveCfg = Debug|x64
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Debug|x64.Build.0 = Debug|x64
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Release|x64.ActiveCfg = Release|x64
+		{8759443D-AE01-4C00-B4C2-DCC4253D077A}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

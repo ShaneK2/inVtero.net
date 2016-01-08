@@ -43,6 +43,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -98,8 +99,8 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\gh-pages\inVtero.net\Reloc.net\Reloc.net\Reloc.net.csproj">
-      <Project>{bc7bd165-a290-419c-9be3-27ee2562dab9}</Project>
+    <ProjectReference Include="..\..\..\..\Source\Code\Reloc.net\Reloc.net\Reloc.net.csproj">
+      <Project>{8759443d-ae01-4c00-b4c2-dcc4253d077a}</Project>
       <Name>Reloc.net</Name>
     </ProjectReference>
     <ProjectReference Include="..\inVtero.net\inVtero.net.csproj">
