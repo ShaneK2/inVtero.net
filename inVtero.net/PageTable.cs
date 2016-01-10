@@ -399,13 +399,13 @@ namespace inVtero.net
                 if(depth > 1)
                 foreach(var DirectoryPointerOffset in ExtractNextLevel(pfn, KernelSpace, level))
                 {
-                    if (DirectoryPointerOffset == null || !mem.BufferLoadInput) continue;
+                    if (DirectoryPointerOffset == null) continue;
                     if(depth > 2 && !DirectoryPointerOffset.PTE.LargePage)
                     foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level-1))
                     {
                         if (DirectoryOffset == null || !mem.BufferLoadInput) continue;
 
-                        if(depth > 3 && !DirectoryOffset.PTE.LargePage)
+                        if(depth > 3 && !DirectoryOffset.PTE.LargePage && EnvLimits.MAX_PageTableEntriesToScan > entries)
                         foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
                         {
                             if (TableOffset == null) continue;

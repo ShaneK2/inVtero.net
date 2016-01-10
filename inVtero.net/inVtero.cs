@@ -28,7 +28,9 @@ using static System.Console;
 using ProtoBuf;
 using System.Text;
 using Reloc;
-    
+using System.ComponentModel;
+using System.Diagnostics;
+
 namespace inVtero.net
 {
     /// <summary>
@@ -43,7 +45,7 @@ namespace inVtero.net
         public string MemFile;
         public long FileSize;
         public double GroupThreshold;
-
+        public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
 
         public static bool VerboseOutput { get; set; }
 
@@ -193,7 +195,7 @@ namespace inVtero.net
             //                    group dp by dp.CR3Value into CR3Masters
             //                    select new KeyValuePair<long, DetectedProc>(CR3Masters.Key, CR3Masters.First())).AsParallel();
 
-            scan.VMCSScanSet = Processes.GroupBy(p => p.CR3Value).Select(pg => pg.First()).ToArray();
+            scan.ScanForVMCSset = Processes.GroupBy(p => p.CR3Value).Select(pg => pg.First()).ToArray();
 
             var rv = scan.Analyze();
 
@@ -242,12 +244,12 @@ namespace inVtero.net
 
             if(TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
             {
-                Console.WriteLine("Unable to lock on to CV data.");
+                WriteColor(ConsoleColor.Yellow, "Unable to lock on to CV data.");
                 return null; 
             }
 
             if(Vtero.VerboseOutput)
-                Console.WriteLine($"Locked on to CV Debug info.  Time2 = {TimeDate2:X} Time1 = {Ext.TimeStamp:X}");
+                WriteColor(ConsoleColor.Green, $"Locked on to CV Debug info.  Time2 = {TimeDate2:X} Time1 = {Ext.TimeStamp:X}");
 
             var SizeData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 16);
             var RawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 20);
@@ -255,15 +257,15 @@ namespace inVtero.net
 
             _va = VA + RawData;
 
-            var byte_guid = new byte[16];
+            var bytes = new byte[16];
 
             block = dp.VGetBlock(_va);
 
             // first 4 bytes
             var sig = block[((int)_va & 0xfff)];
             
-            Array.ConstrainedCopy(block, (((int) _va & 0xfff) + 4), byte_guid, 0, 16);
-            var gid = new Guid(byte_guid);
+            Array.ConstrainedCopy(block, (((int) _va & 0xfff) + 4), bytes, 0, 16);
+            var gid = new Guid(bytes);
 
 
             // after GUID
@@ -274,11 +276,131 @@ namespace inVtero.net
 
             if (Vtero.VerboseOutput)
             {
-                Console.WriteLine($"Size = {SizeData} \t Raw = {RawData} \t Pointer {PointerToRawData}");
-                Console.WriteLine($"Str {str} : GUID : {gid}");
+                WriteLine($"Size = {SizeData} \t Raw = {RawData} \t Pointer {PointerToRawData}");
+                WriteLine($"Str {str} : GUID : {gid} : AGE {age}");
             }
 
-            return new CODEVIEW_HEADER { Age = age, aGuid = gid, Sig = sig, PdbName = str };
+            return new CODEVIEW_HEADER { VSize = (int) Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
+        }
+
+        // see http://uninformed.org/index.cgi?v=3&a=3&t=sumry by skape & Skywing
+        public bool GetKernelDebuggerData(DetectedProc dp, Extract ext, CODEVIEW_HEADER cv_data, string SymbolCache)
+        {
+            DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
+            bool rv = false;
+
+            // Locate and extract some data points
+            long KiWaitAlways, KiWaitNever, KdDebuggerDataBlock, KdpDataBlockEncoded;
+
+            symInfo.SizeOfStruct = 0x58;
+            symInfo.MaxNameLen = 1024;
+            rv = DebugHelp.SymFromName(hCurrentProcess, "KdpDataBlockEncoded", ref symInfo);
+            if(!rv)
+            {
+                WriteLine($"Symbol Find : {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
+                return rv;
+            }
+            KdpDataBlockEncoded = dp.GetValue(symInfo.Address);
+            KdDebuggerDataBlock = GetSymValue(dp, "KdDebuggerDataBlock");
+
+            if (KdpDataBlockEncoded == 0)
+                WriteColor(ConsoleColor.Green, $"Kernel KdDebuggerDataBlock {KdDebuggerDataBlock:X16} not encoded.");
+            else
+            {
+                KiWaitNever = GetSymValue(dp, "KiWaitNever");
+                KiWaitAlways = GetSymValue(dp, "KiWaitAlways");
+
+                // Windbg tells us the diff for loaded modules is 0x48 and active proc is 0x50
+                var EncLoadedModuleList = KdDebuggerDataBlock + 0x48;
+                var EncActiveProcessList = KdDebuggerDataBlock + 0x50;
+
+                var PsLoadedModuleList = DecodePointer(KdDebuggerDataBlock, KiWaitAlways, KiWaitNever, EncLoadedModuleList);
+                var PsActiveProcessHead = DecodePointer(KdDebuggerDataBlock, KiWaitAlways, KiWaitNever, EncActiveProcessList);
+
+                WriteLine($"Decoded LoadedModuleList {PsLoadedModuleList}, ActiveProcessList {PsActiveProcessHead}");
+            }
+            return rv;
+        }
+
+        long DecodePointer(long BlockAddress, long Always, long Never, long Value)
+        {
+            long decoded = 0;
+
+            decoded = Value ^ Never;
+            decoded = (long) Misc.RotL((ulong) decoded, (int) Never & 0xff);
+            decoded = decoded ^ BlockAddress;
+
+            var bytes = BitConverter.GetBytes(decoded);
+            Array.Reverse(bytes, 0, 8);
+            decoded = BitConverter.ToInt64(bytes, 0);
+
+            decoded = decoded ^ Always;
+
+            decoded = (long) ((ulong) BlockAddress & 0xffffffff00000000) | (decoded & 0xffffffff);
+            return decoded;
+        }
+
+        long GetSymValue(DetectedProc dp, string SymName)
+        {
+            DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
+
+            symInfo.SizeOfStruct = 0x58;
+            symInfo.MaxNameLen = 1024;
+
+            var rv = DebugHelp.SymFromName(hCurrentProcess, SymName, ref symInfo);
+            if (!rv)
+            {
+                WriteColor(ConsoleColor.Red, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
+                return MagicNumbers.BAD_VALUE_READ;
+            }
+            return dp.GetValue(symInfo.Address);
+        }
+
+        public bool TryLoadSymbols(DetectedProc dp, Extract ext, CODEVIEW_HEADER cv_data, long BaseVA, string SymPath)
+        {
+            
+            DebugHelp.SymSetOptions(DebugHelp.SymOptions.SYMOPT_DEBUG);
+
+            bool symStatus = DebugHelp.SymInitialize(hCurrentProcess, SymPath, false);
+            if(!symStatus)
+                WriteLine($"symbol status  {symStatus}:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
+
+            StringBuilder sbx = new StringBuilder(1024);
+            
+            int three = 0;
+            var flags = DebugHelp.SSRVOPT_GUIDPTR;
+            symStatus = DebugHelp.SymFindFileInPathW(hCurrentProcess, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
+            // try twice, just in case
+            if (!symStatus)
+                symStatus = DebugHelp.SymFindFileInPathW(hCurrentProcess, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
+
+            if(symStatus)
+                WriteColor(ConsoleColor.Cyan, $"Symbols found: {sbx.ToString()}");
+            
+            if (!symStatus)
+            {
+                WriteLine($"Symbol returned {symStatus}: {new Win32Exception(Marshal.GetLastWin32Error()).Message }, attempting less precise request.");
+
+                flags = DebugHelp.SSRVOPT_DWORDPTR;
+                var refBytes = BitConverter.GetBytes(cv_data.TimeDateStamp);
+                GCHandle pinnedArray = GCHandle.Alloc(refBytes, GCHandleType.Pinned);
+                IntPtr pointer = pinnedArray.AddrOfPinnedObject();
+
+                symStatus = DebugHelp.SymFindFileInPath(hCurrentProcess, null, cv_data.PdbName, pointer, (int)ext.SizeOfImage, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
+                pinnedArray.Free();
+                if(!symStatus)
+                    WriteColor(ConsoleColor.Red, $"Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
+
+            }
+
+            if (symStatus)
+            {
+                var symLoaded = DebugHelp.SymLoadModuleEx(hCurrentProcess, IntPtr.Zero, sbx.ToString(), null, BaseVA, (int)ext.SizeOfImage, IntPtr.Zero, 0);
+                if (symLoaded == 0)
+                    WriteColor(ConsoleColor.Red, $"Load Failed: [{new Win32Exception(Marshal.GetLastWin32Error()).Message }]");
+            }
+            
+            return symStatus;
         }
 
         public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, Mem mem, long Start, long End)
@@ -319,6 +441,28 @@ namespace inVtero.net
         /// 
         /// We will assign an address space ID to each detected proc so we know what process belongs with who
         /// After AS grouping we will know what EPTP belongs to which AS since one of the DP's will have it's CR3 in the VMCS 
+        /// 
+        /// Yes it's a bit complicated.  
+        /// 
+        /// The overall procedure however is straight forward in that; 
+        /// 
+        /// * For every detected process
+        ///       Bucket into groups which are the "Address spaces" that initially are 
+        ///       
+        ///       (a) based on kernel address space similarities 
+        ///       and then 
+        ///       (b) based on what VMCS value was found pointing to that group
+        ///              
+        /// This ensures that if we have several hypervisors with a possibly identical kernel grouping (i.e. the PFN's
+        /// were used by each kernel were identical), they are disambiguated by the VMCS.  (Which can be validated later)
+        /// 
+        /// The benefit here is that brute forcing at this stage is fairly expensive and can lead to significant overhead, there does
+        /// tend to be some outliers for large systems that need to be looked at more to determine who they belong too.  Nevertheless, it's 
+        /// inconsequential if they are grouped with the appropriate AS since even if they are isolated into their own 'AS' this is an artificial 
+        /// construct for our book keeping.  The net result is that even if some process is grouped by itself due to some aggressive variation in
+        /// kernel PFN' use (lots of dual mapped memory/MDL's or something), it's still able to be dumped and analyzed.
+        /// 
+        /// 
         /// </summary>
         /// <param name="pTypes">Types to scan for, this is of the already detected processes list so it's already filtered really</param>
         public void GroupAS(PTType pTypes = PTType.UNCONFIGURED)
@@ -333,7 +477,6 @@ namespace inVtero.net
                     where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
                     orderby proc.CR3Value ascending
                     select proc;
-
 
             ASGroups = new ConcurrentDictionary<int, ConcurrentBag<DetectedProc>>();
 
@@ -361,7 +504,6 @@ namespace inVtero.net
 
                     var interSection = currKern.Intersect(AlikelyKernelSet);
                     var correlated = interSection.Count() * 1.00 / AlikelyKernelSet.Count();
-
 
                     if (correlated > GroupThreshold && !ASGroups[CurrASID].Contains(proc))
                     {
@@ -397,12 +539,24 @@ namespace inVtero.net
                                 select px;
                         
                         // just add the ungrouped processes as a single each bare metal
+                        // unless it has an existing VMCS pointer
                         foreach (var px in pz)
                         {
                             WriteLine(px);
                             CurrASID++;
                             px.AddressSpaceID = CurrASID;
                             ASGroups[CurrASID] = new ConcurrentBag<DetectedProc>() { px };
+
+                            var isCandidate = from pvmcs in scan.HVLayer
+                                              where pvmcs.gCR3 == px.CR3Value
+                                              select pvmcs;
+
+                            if (isCandidate.Count() > 0)
+                            {
+                                px.CandidateList = new List<VMCS>(isCandidate);
+                                px.vmcs = px.CandidateList.First();
+                                WriteColor( ConsoleColor.White, $"Detected ungrouped {px.CR3Value} as a candidate under {px.CandidateList.Count()} values (first){px.vmcs.EPTP}");
+                            }
                         }
 
                         ForegroundColor = ConsoleColor.Yellow;
@@ -431,7 +585,7 @@ namespace inVtero.net
             Console.WriteLine($"Done All process groups.");
 
             // after grouping link VMCS back to the group who 'discovered' the VMCS in the first place!
-            var eptpz = VMCSs.Values.GroupBy(eptz => eptz.EPTP).Select(ept => ept.First()).ToArray();
+            var eptpz = VMCSs.Values.GroupBy(eptz => eptz.EPTP).OrderBy(eptx => eptx.Key).Select(ept => ept.First()).ToArray();
 
             // find groups dominated by each vmcs
             var VMCSGroup = from aspace in ASGroups.AsEnumerable()
@@ -442,17 +596,26 @@ namespace inVtero.net
             // link the proc back into the eptp
             foreach (var ctx in VMCSGroup)
                 foreach (var dp in ctx.AS.Value)
+                {
+                    if(dp.CandidateList == null)
+                        dp.CandidateList = new List<VMCS>();
+
                     dp.vmcs = ctx.EPTctx;
+                    dp.CandidateList.Add(ctx.EPTctx);
+                }
 
             // resort by CR3
-            foreach (var ctx in  ASGroups)
+            foreach (var ctx in ASGroups.Values)
             {
-                var dpz = from d in ctx.Value
+                var dpz = from d in ctx
                           orderby d.CR3Value descending
                           select d;
 
-                ASGroups[ctx.Key] = new ConcurrentBag<DetectedProc>(dpz);
-             
+                if (dpz.Count() >= 1)
+                {
+                    var aspace = dpz.First().AddressSpaceID;
+                    ASGroups[aspace] = new ConcurrentBag<DetectedProc>(dpz);
+                }
             }
 
             Phase = 4;
@@ -462,6 +625,9 @@ namespace inVtero.net
         /// <summary>
         /// This routine is fairly expensive, maybe unnecessary as well but it demo's walking the page table + EPT.
         /// You can connect an address space dumper really easily
+        /// 
+        /// TODO: Remake this.  Instead of just pre-buffering everything.  Ensure the GroupAS detections are appropiate 
+        /// and if not, reassign the VMCS/EPTP page to bare metal or a different HVLayer item.
         /// </summary>
         /// <param name="MemSpace">The list of VMCS/EPTP configurations which will alter the page table use</param>
         /// <param name="Procs">Detected procs to query</param>
@@ -475,61 +641,82 @@ namespace inVtero.net
             //var memSpace = MemSpace == null ? VMCSs.First() : MemSpace.First();
             
             var memSpace = MemSpace == null ? VMCSs.Values.GroupBy(x => x.EPTP).Select(xg => xg.First()) : MemSpace;
+            var ms = from memx in memSpace
+                     orderby memx.Offset ascending
+                     select memx;
 
-            int pcnt = Processes.Count();
+            int gcnt = ASGroups.Count();
             int vmcnt = memSpace.Count();
-            var tot = pcnt * vmcnt;
+            var tot = gcnt * vmcnt;
             var curr = 0;
             bool CollectKernelAS = true;
 
             var CurrColor = ForegroundColor;
 
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            WriteLine($"assessing {tot} address space combinations");
+            WriteColor(ConsoleColor.White, $"assessing {tot} address space combinations");
             ProgressBarz.RenderConsoleProgress(0);
 
             var VMCSTriage = new Dictionary<VMCS, int>();
 
             //Parallel.ForEach(memSpace, (space) =>
-            foreach (var space in memSpace)
-            {
+            //foreach (var space in ms)
+            //{
                 // we do it this way so that parallelized tasks do not interfere with each other 
                 // overall it may blow the cache hit ratio but will tune a single task to see the larger/better cache
                 // versus multicore, my suspicion is that multi-core is better
-                using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            {
+
+                var sx = 0;
+
+                // assign address space by group
+                foreach (var grp in ASGroups)
                 {
 
-                    var sx = 0;
+                    // if the group is configured fully, then we know we were successful
+                    // since we null out the list if we fail, so skip to next one
+                    //if ((rvList.ContainsKey(grp.Key) && rvList[grp.Key] != null) || grp.Value == null)
+                    //    continue;
 
-                    // assign address space by group
-                    foreach (var grp in ASGroups)
+                    rvList[grp.Key] = new List<DetectedProc>();
+                    var orderedGroup = from px in grp.Value
+                                        where ((px.PageTableType & PT2Scan) == px.PageTableType) && px.AddressSpaceID == grp.Key
+                                        orderby px.CR3Value ascending
+                                        select procList;
+
+                    //foreach (var proc in from proc in grp.Value
+                    //                     where (((proc.PageTableType & PT2Scan) == proc.PageTableType)) && (proc.AddressSpaceID == grp.Key)
+                    //                    orderby proc.CR3Value ascending
+                    //                   select proc)
+                    //foreach(var proc in orderedGroup.SelectMany(x => x))
+                    //Parallel.ForEach(p, (proc) =>
+                    if (orderedGroup.Count() < 1)
+                        continue;
+
+                    var proc = orderedGroup.First().First();
+
                     {
+                        int i = 0;
+                        List<long> tableCounts = new List<long>();
+                        if (proc.CandidateList == null || proc.CandidateList.Count < 1)
+                        {
+                            if (proc.vmcs != null)
+                                proc.CandidateList = new List<VMCS>() { proc.vmcs }; // just set the one
+                            else
+                                proc.CandidateList = new List<VMCS>() { new VMCS() { EPTP = 0 } };
 
-                        // if the group is configured fully, then we know we were successful
-                        // since we null out the list if we fail, so skip to next one
-                        //if ((rvList.ContainsKey(grp.Key) && rvList[grp.Key] != null) || grp.Value == null)
-                        //    continue;
+                        }
 
-                        rvList[grp.Key] = new List<DetectedProc>();
-                        var orderedGroup = from px in grp.Value
-                                           where ((px.PageTableType & PT2Scan) == px.PageTableType) && px.AddressSpaceID == grp.Key
-                                           orderby px.CR3Value ascending
-                                           select procList;
-
-                        //foreach (var proc in from proc in grp.Value
-                        //                     where (((proc.PageTableType & PT2Scan) == proc.PageTableType)) && (proc.AddressSpaceID == grp.Key)
-                         //                    orderby proc.CR3Value ascending
-                          //                   select proc)
-                        foreach(var proc in orderedGroup.SelectMany(x => x))
-                        //Parallel.ForEach(p, (proc) =>
+                        // find the best space for this proc 
+                        foreach (var space in proc.CandidateList)
                         {
                             try
                             {
-                                    // this is killing memory, probably not needed
+                                // this is killing memory, probably not needed
                                 //var proc = px.Clone<DetectedProc>();
                                 proc.vmcs = space;
                                 if (VerboseOutput)
-                                    WriteLine($"Scanning PT from Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}] ID{proc.AddressSpaceID} Key{grp.Key}"); 
+                                    WriteLine($"Scanning PT from Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}] ID{proc.AddressSpaceID} Key{grp.Key}");
 
                                 var pt = PageTable.AddProcess(proc, memAxs, CollectKernelAS);
                                 CollectKernelAS = false;
@@ -539,13 +726,15 @@ namespace inVtero.net
                                     // so if it's bad we skip the entire evaluation
                                     if (proc.vmcs != null && proc.PT.Root.Count > proc.TopPageTablePage.Count())
                                     {
-                                        if(VerboseOutput)
+                                        tableCounts[i++] = proc.PT.Root.Count;
+                                        WriteLine($"TableCount for VMCS candidate is {proc.PT.Root.Count}");
+                                        if (VerboseOutput)
                                             WriteLine($"{rvList[grp.Key].Count()} of {grp.Value.Count} Virtualized Process PT Entries [{proc.PT.Root.Count}] Type [{proc.PageTableType}] PID [{proc.vmcs.EPTP:X}:{proc.CR3Value:X}]");
 
                                         // collect process into now joined EPTP<->Proc
                                         rvList[grp.Key].Add(proc);
 
-                                        if(rvList[grp.Key].Count() == grp.Value.Count && VerboseOutput)
+                                        if (rvList[grp.Key].Count() == grp.Value.Count && VerboseOutput)
                                         {
                                             ForegroundColor = ConsoleColor.Green;
                                             WriteLine($"Validated 100% {grp.Value.Count} of detected group {proc.AddressSpaceID}, continuing with next group.");
@@ -559,12 +748,12 @@ namespace inVtero.net
                                         {
                                             ForegroundColor = ConsoleColor.Red;
                                             WriteLine($"canceling evaluation of bad EPTP for this group/Address Space ({grp.Key})");
-                                            foreach (var p in Processes)
-                                                if (p.vmcs != null && p.vmcs.EPTP == space.EPTP && p.AddressSpaceID == proc.AddressSpaceID)
-                                                    p.vmcs = null;
+                                            //foreach (var p in Processes)
+                                            //    if (p.vmcs != null && p.vmcs.EPTP == space.EPTP && p.AddressSpaceID == proc.AddressSpaceID)
+                                            //        p.vmcs = null;
 
-                                            ForegroundColor = CurrColor;
-                                            rvList[grp.Key] = null;
+                                            //ForegroundColor = CurrColor;
+                                            //rvList[grp.Key] = null;
                                         }
                                         break;
                                     }
@@ -605,6 +794,7 @@ namespace inVtero.net
                     }
                 }
             }
+            //}
             //});
 
             CollectKernelAS = true;

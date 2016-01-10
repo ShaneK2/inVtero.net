@@ -20,9 +20,17 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using ProtoBuf;
+using static System.Console;
 
 namespace inVtero.net
 {
+    public static class EnvLimits
+    {
+        public const int PageCacheMaxEntries = 100000;
+        public const long BufferingMaxInputSize = (20L * 1024 * 1024 * 1024); // If the input is larger than 20GB were not going to buffer load it 
+        public const long MAX_PageTableEntriesToScan = 10 * 1000000; // more than 10Million page table entries in a single address space, somethings going on 
+    }
+ 
     public static class MagicNumbers
     {
         public const long BAD_VALUE_READ = 0x7bafcafe000f00d0;
@@ -38,6 +46,34 @@ namespace inVtero.net
         public static long MinEPTPAddr = 0x32; // there is no rule about this but even if just not the zero page would cut the false positives down a lot
                                                // if you miss the EPTP reduce this to 0 or 1 ;)
                                                // I could/should probably write a EPTP detection similar to the Linux one 
+    }
+
+    public static class Misc
+    {
+        public static ulong RotL(ulong N, int S)
+        {
+            return ((N >> (~S)) >> 1) | (N << S);
+        }
+        public static ulong RotR(ulong N, int S)
+        {
+            return ((N << (~S)) << 1) | (N >> S);
+        }
+
+        public static void WriteColor(ConsoleColor ForeGround, string var)
+        {
+            if (ForegroundColor != ForeGround)
+                ForegroundColor = ForeGround;
+            WriteLine(var);
+        }
+        public static void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
+        {
+            if (BackgroundColor != BackGround)
+                BackgroundColor = BackGround;
+            if (ForegroundColor != ForeGround)
+                ForegroundColor = ForeGround;
+
+            WriteLine(var);
+        }
     }
 
 
@@ -244,8 +280,8 @@ namespace inVtero.net
         }
         public static bool IsValid2(long SLATe)
         {
-            //if ((0xF0000000000F8 & (ulong)SLATe) != 0)
-                //return false;
+            if ((0xF0000000000F8 & (ulong)SLATe) != 0)
+                return false;
             return true;
         }
         

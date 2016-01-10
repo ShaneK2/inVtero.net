@@ -28,6 +28,7 @@ using System.Threading.Tasks;
 using static inVtero.net.UnsafeHelp;
 using static System.Console;
 using ProtoBuf;
+using static inVtero.net.Misc;
 
 namespace inVtero.net
 {
@@ -46,7 +47,7 @@ namespace inVtero.net
         [ProtoIgnore]
         public ConcurrentDictionary<long, DetectedProc> DetectedProcesses;
         [ProtoIgnore]
-        public DetectedProc[] VMCSScanSet;
+        public DetectedProc[] ScanForVMCSset;
 
         [ProtoIgnore]
         public uint HexScanDword;
@@ -61,7 +62,7 @@ namespace inVtero.net
         public string Filename;
         public long FileSize;
         [ProtoIgnore]
-        public List<VMCS> HVLayer;
+        public ConcurrentBag<VMCS> HVLayer;
         public bool DumpVMCSPage;
 
         List<MemoryRun> Gaps;
@@ -113,7 +114,7 @@ namespace inVtero.net
         Scanner()
         {
             DetectedProcesses = new ConcurrentDictionary<long, DetectedProc>();
-            HVLayer = new List<VMCS>();
+            HVLayer = new ConcurrentBag<VMCS>();
             FileSize = 0;
             Gaps = new List<MemoryRun>();
             CheckMethods = new List<Func<long, bool>>();
@@ -182,7 +183,7 @@ namespace inVtero.net
             var LinkCount = 0;
             var Neg1 = -1;
 
-            if (VMCSScanSet == null)
+            if (ScanForVMCSset == null)
                 throw new NullReferenceException("Entered VMCS callback w/o having found any VMCS, this is a second pass Func");
 
             // this might be a bit micro-opt-pointless ;)
@@ -213,13 +214,13 @@ namespace inVtero.net
 
             // curr width of line to screen
             Candidate = false;
-            Parallel.For(0, VMCSScanSet.Length, (v) =>
+            Parallel.For(0, ScanForVMCSset.Length, (v) =>
             {
-                var vmcs_entry = VMCSScanSet[v];
+                var ScanFor = ScanForVMCSset[v];
 
                 for (int check = 1; check < block.Length; check++)
                 {
-                    if (block[check] == vmcs_entry.CR3Value && Candidate == false)
+                    if (block[check] == ScanFor.CR3Value && Candidate == false)
                     {
                         var OutputList = new List<long>();
                         StringBuilder sb = null, sbRED = null;
@@ -236,7 +237,7 @@ namespace inVtero.net
 
                             sbRED = new StringBuilder();
                             sbRED.Append($"Hypervisor: VMCS revision field: {RevID} [{((uint)RevID):X8}] abort indicator: {Acode} [{((int)Acode):X8}]{Environment.NewLine}");
-                            sbRED.Append($"Hypervisor: {vmcs_entry.PageTableType} CR3 found [{vmcs_entry.CR3Value:X16})] byte-swapped: [{Converted:X16}] @ PAGE/File Offset = [{xoffset:X16}]");
+                            sbRED.Append($"Hypervisor: {ScanFor.PageTableType} CR3 found [{ScanFor.CR3Value:X16})] byte-swapped: [{Converted:X16}] @ PAGE/File Offset = [{xoffset:X16}]");
                         }
 
                         for (int i = 0; i < block.Length; i++)
@@ -247,6 +248,7 @@ namespace inVtero.net
                             if (block[i] > 0
                             && block[i] < FileSize
                             && eptp.IsFullyValidated()
+                            && EPTP.IsValid(eptp.aEPTP) && EPTP.IsValid2(eptp.aEPTP) && EPTP.IsValidEntry(eptp.aEPTP)
                             && !OutputList.Contains(block[i]))
                             {
                                 Candidate = true;
@@ -269,22 +271,20 @@ namespace inVtero.net
                         }
                         if (Candidate && Vtero.VerboseOutput)
                         {
-                            ForegroundColor = ConsoleColor.Red;
-                            WriteLine(sbRED.ToString());
-                            ForegroundColor = ConsoleColor.DarkGreen;
-                            WriteLine(sb.ToString());
+                            WriteColor(ConsoleColor.Red, sbRED.ToString());
+                            WriteColor(ConsoleColor.DarkGreen, sb.ToString());
                         }
 
-
-                        VMCS vmcsFound = null;
                         // most VMWare I've scanned comes are using this layout
+                        // we know VMWare well so ignore any other potential candidates // TODO: Constantly Verify assumption's 
                         if (RevID == REVISION_ID.VMWARE_NESTED && OutputList.Contains(block[14]))
-                            vmcsFound = new VMCS { dp = vmcs_entry, EPTP = block[14], gCR3 = vmcs_entry.CR3Value };
-                        else if (OutputList.Count() == 1)
-                            vmcsFound = new net.VMCS { dp = vmcs_entry, EPTP = OutputList[0], gCR3 = vmcs_entry.CR3Value };
-
-                        if (vmcsFound != null)
+                        {
+                            var vmcsFound = new VMCS { dp = ScanFor, EPTP = block[14], gCR3 = ScanFor.CR3Value, Offset = xoffset };
                             HVLayer.Add(vmcsFound);
+                        }
+                        else
+                            foreach (var entry in OutputList)
+                                HVLayer.Add(new VMCS { dp = ScanFor, EPTP = entry, gCR3 = ScanFor.CR3Value, Offset = xoffset });
                     }
                 }
             });

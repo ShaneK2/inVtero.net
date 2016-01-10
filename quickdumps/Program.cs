@@ -64,6 +64,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Collections.Concurrent;
 using Reloc;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.ComponentModel;
 
 namespace quickdumps
 {
@@ -291,7 +294,6 @@ namespace quickdumps
                 if (!SkipVMCS)
                 {
                     var VMCSCount = vtero.VMCSScan();
-
                     //Timer.Stop();
 
                     #region VMCS page detection
@@ -321,12 +323,12 @@ namespace quickdumps
                         saveStateFile = vtero.CheckpointSaveState();
                         WriteLine(saveStateFile);
                     }
-
-#if BUFFER_PAGE_TABLES
-                    //var vetted = vtero.ExtrtactAddressSpaces(null, null, Version);
+                    var vetted = vtero.ExtrtactAddressSpaces(null, null, Version);
                     // Extract Address Spaces verifies the linkages between
                     // process<->CR3<->EPTP(if there is one)
                     // and that they are functional
+
+#if BUFFER_PAGE_TABLES
 #endif
 
 #if TRUE
@@ -357,43 +359,61 @@ namespace quickdumps
                     DetectedProc LikelyKernel = null;
                     // were doing this in nested loops to brute force our way past any errors
                     // but only need the first set of detections per group
+
                     foreach (var grpz in vtero.ASGroups)
                     {
-                        WriteLine($"Group ID: {grpz.Key}");
-                        foreach (var p in grpz.Value)
+                        foreach (var vm in vtero.VMCSs.Values)
                         {
-                            WriteLine($"Proc: {p.CR3Value:X}");
-                            Detections = Detections.Concat(vtero.ModuleScan(p, null, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
-                                .ToDictionary(x => x.Key, x => x.Value);
-
-                            if (Detections.Count() > 0)
+                            WriteLine($"Group ID: {grpz.Key}");
+                            foreach (var p in grpz.Value)
                             {
-                                LikelyKernel = p;
+                                WriteLine($"Proc: {p.CR3Value:X}");
+                                Detections = Detections.Concat(vtero.ModuleScan(p, null, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
+                                    .ToDictionary(x => x.Key, x => x.Value);
 
-                                // scan for kernel
-                                foreach (var detected in Detections)
+                                if (Detections.Count() > 0)
                                 {
-                                    ForegroundColor = ConsoleColor.Green;
-                                    WriteLine($"Attempting to parse module loaded @ {detected.Key:X}");
-                                    ForegroundColor = ConsoleColor.Cyan;
-                                    WriteLine(detected.Value);
-                                    ForegroundColor = ConsoleColor.White;
-                                    //var cvGUID = vtero.ExtractCVDebug(LikelyKernel, detected.Key + detected.Value);
-                                    //WriteLine($"Extracted info: {cvGUID}");
+                                    LikelyKernel = p;
 
-                                    if (detected.Value.ToString().Contains("POOLCODE"))
+                                    if (vm.EPTP == 0)
+                                        p.vmcs = null;
+                                    else
+                                        p.vmcs = vm;
+
+                                    // scan for kernel
+                                    foreach (var detected in Detections)
                                     {
-                                        WriteLine("Likely Kernel analyzing for CV data");
-                                        vtero.ExtractCVDebug(LikelyKernel, detected.Value, detected.Key);
-                                    }
+                                        ForegroundColor = ConsoleColor.Green;
+                                        WriteLine($"Attempting to parse detected PE module loaded @ {detected.Key:X}");
+                                        ForegroundColor = ConsoleColor.Cyan;
+                                        WriteLine(detected.Value);
+                                        ForegroundColor = ConsoleColor.White;
 
-                                    // de-patch-guard it
+                                        if (detected.Value.ToString().Contains("POOLCODE"))
+                                        {
+                                            WriteLine("Likely Kernel analyzing for CV data");
+                                            var cv_data = vtero.ExtractCVDebug(LikelyKernel, detected.Value, detected.Key);
+
+                                            if (cv_data != null)
+                                            {
+                                                var sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH");
+                                                if (string.IsNullOrWhiteSpace(sympath))
+                                                    sympath = "SRV*http://msdl.microsoft.com/download/symbols";
+
+                                                if (vtero.TryLoadSymbols(LikelyKernel, detected.Value, cv_data, detected.Key, sympath))
+                                                    vtero.GetKernelDebuggerData(LikelyKernel, detected.Value, cv_data, sympath);
+
+                                            }
+                                        }
+
+                                        // de-patch-guard it
+                                    }
                                 }
+                                WriteLine("Keep Scanning? yes/(n)o");
+                                var key = ReadKey();
+                                if (key.Key != ConsoleKey.Y)
+                                    break;
                             }
-                            WriteLine("KeepScanning? yes/(n)o");
-                            var key = ReadKey();
-                            if (key.Key != ConsoleKey.Y)
-                                break;
                         }
                     }
 #endif

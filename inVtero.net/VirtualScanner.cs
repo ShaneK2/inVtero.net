@@ -131,13 +131,15 @@ namespace inVtero.net
                                 fixed (void* lp = block, bp = bpage)
                                 {
                                     bool GotData = false;
-
-                                    MemoryBank[j].GetPageForPhysAddr(locPhys, ref block, ref GotData);
-
-                                    Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                                    try
+                                    {
+                                        MemoryBank[j].GetPageForPhysAddr(locPhys, ref block, ref GotData);
+                                        Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                                    }
+                                    catch (Exception ex) { }
                                 }
 
-                                var scan_detect = scanner(i, bpage);
+                                    var scan_detect = scanner(i, bpage);
                                 if (scan_detect != VAScanType.UNDETERMINED)
                                 {
                                     DetectedFragments.TryAdd(i, scan_detect);

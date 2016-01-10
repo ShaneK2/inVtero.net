@@ -71,8 +71,8 @@ namespace inVtero.net
         public long StartOfMemory; // adjust for .DMP headers or something
         public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
-        const long BufferLoadMax = 20L * 1024 * 1024 * 1024; // If the input is larger than 20GB were not going to buffer load it 
-        const int PageCacheMax = 100000;
+        const long BufferLoadMax = EnvLimits.BufferingMaxInputSize;
+        const int PageCacheMax = EnvLimits.PageCacheMaxEntries;
 
         IDictionary<long, long> DiscoveredGaps;
 

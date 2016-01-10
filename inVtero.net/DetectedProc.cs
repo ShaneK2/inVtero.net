@@ -25,7 +25,7 @@ using System.Runtime.Serialization;
 namespace inVtero.net
 {
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
-    public class DetectedProc
+    public class DetectedProc : IComparable
     {
         public DetectedProc()
         {
@@ -33,6 +33,7 @@ namespace inVtero.net
         }
         public int Group;       // linux only 
         public VMCS vmcs;       // vmcs if available
+        public List<VMCS> CandidateList;
         public PageTable PT;    // extracted page table
         public long CR3Value;
         public long FileOffset;
@@ -44,6 +45,13 @@ namespace inVtero.net
 
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
+
+        public long GetValue(long VA)
+        {
+            var data = VGetBlock(VA);
+            return data[VA & 0xfff];
+
+        }
 
         public byte[] VGetBlock(long VA)
         {
@@ -75,6 +83,27 @@ namespace inVtero.net
 
         public override string ToString() => $"Process CR3 [{CR3Value:X12}] File Offset [{FileOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
 
+        public int CompareTo(object obj)
+        {
+            int vi = 0;
+            if(obj is DetectedProc)
+            {
+                DetectedProc dp = obj as DetectedProc;
+                if(vmcs != null || dp.vmcs != null)
+                {
+                    if (vmcs == null && dp.vmcs == null)
+                        return FileOffset.CompareTo(dp.FileOffset);
+                    else if (vmcs != null && dp.vmcs == null)
+                        return 1;
+                    else if (vmcs == null && dp.vmcs != null)
+                        return -1;
+                    else
+                        vi = vmcs.Offset.CompareTo(dp.vmcs.Offset);
+                }
+                return vi + FileOffset.CompareTo(dp.FileOffset);
+            }
+            return int.MinValue;
+        }
     }
 
 
@@ -94,17 +123,20 @@ namespace inVtero.net
         public long hCR3;
         public long EPTP;
         public long EPTP_off;
-
+        public long Offset;
         public override string ToString() => $"EPTP:[{new EPTP(this.EPTP):X12}]";
     }
 
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class CODEVIEW_HEADER
     {
+        public int VSize;
+        public byte[] byteGuid;
         public uint Sig;
         public Guid aGuid;
-        public uint Age;
+        public int Age;
         public string PdbName;
+        public uint TimeDateStamp;
     }
 
 }
