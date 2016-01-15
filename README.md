@@ -13,6 +13,9 @@ If the buld-status is yellow, I have to fix my CI script to properly clone the s
 
 ![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
 
+## Upcoming changes
+K2 is going to be commiting soon a major revamp of the console interface built around PowerArgs.  I'm not going to submodule again since that really didn't work out well for me with the Reloc project and I really want the latest fixes/snapshot (NuGet somewhat older also) from @adamabdelhamed/PowerArgs) I'll be importing a fork directly into the master branch here and manually maintaining the fork out side of a submodule.
+
 ## quickdumps
 Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
 
