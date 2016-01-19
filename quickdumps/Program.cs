@@ -66,381 +66,177 @@ using System.Collections.Concurrent;
 using Reloc;
 using System.Text;
 using System.Runtime.InteropServices;
-using System.ComponentModel;
+using inVtero.net.ConsoleUtils;
+using static inVtero.net.Misc;
+using PowerArgs;
+using PowerArgs.Cli;
+using System.Threading.Tasks;
 
-namespace quickdumps
+namespace inVtero.net
 {
     // demo of inVtero !!!
-    public class Program
+    /*[ArgExceptionBehavior(ArgExceptionPolicy.StandardExceptionHandling, ShowTypeColumn = true, ShowPossibleValues = true),
+        TabCompletion(Indicator = "> ", REPL = true, HistoryToSave = 1000)]  // ,CompletionSourceType = typeof(ItemNameCompletion), 
+    [ArgExample("Dump -f filename", "dumps"), ArgExample("scan", "-f filename scan's memory")]
+   */
+    public class quickdumps
     {
-        static Stopwatch Timer;
-
-        static void PrintHelp()
+        #region inactive
+        private class OSPicker : ISmartTabCompletionSource
         {
-            WriteLine("inVtero FileName [win|lin|fbsd|obsd|nbsd|gen|-vmcs|!]");
-            WriteLine("\"inVtero FileName winfbsd\"  (will run FreeBSD and Windows together)");
-            WriteLine("\"inVtero FileName !-obsd-nbsd\" (will run all scanners except for OpenBSD and NetBSD)");    
-            WriteLine("Using -* should disable that scanner, you can not enable only a VMCS scan since VMCS EPTP detection requires a prior scan.");
+            public OSPicker()
+            {
+                
+            }
+
+            public bool TryComplete(TabCompletionContext context, out string completion)
+            {
+                var allRemotes = new List<string>
+                {
+                    "windows",
+                    "hyperv",
+                    "linux",
+                    "freebsd",
+                    "openbsd",
+                    "netbsd",
+                    "generic",
+                    "all",
+                    "vmcs"
+                };
+
+                var list = allRemotes.Where(r => r.StartsWith(context.CompletionCandidate.ToLower(), StringComparison.InvariantCultureIgnoreCase))
+                    .Select(r => ContextAssistSearchResult.FromString(r))
+                    .ToList();
+
+                completion = list.FirstOrDefault().RichDisplayText.StringValue;
+                return !string.IsNullOrWhiteSpace(completion);
+            }
         }
 
-        public static void Main(string[] args)
+        //[ArgActionMethod, ArgumentAwareTabCompletion(typeof(PTType)),
+        //    ArgDescription("OS Support to enable"),
+        //    ArgContextualAssistant(typeof(OSPicker)),
+        //    DefaultValue("Windows")]
+        PTType OS { get; set; }
+        #endregion
+        /*
+        [ArgActionMethod, ArgDescription("Run scan")]
+        public void scan(ScanOptions oo)
+
         {
-            #region fluff
-            var Version = PTType.UNCONFIGURED;
-            var Filename = string.Empty;
-            var SkipVMCS = false;
-            var Is64Scan = false;
-            uint valuI = 0;
-            ulong valuL = 0;
+            CliHelper cli = new CliHelper();
 
-            if (args.Length < 1)
+            var scanit = new Scan();
+
+            vtero = scanit.Scanit(oo);
+
+            return;
+        }
+
+        [ArgActionMethod, ArgDescription("Run default dump routine")]
+        public void dump(DumpOptions oo)
+        {
+            var ops = new DumpOptions();
+
+            vtero = new Vtero();
+
+            var saveStateFile = $"{ops.Global.FileName }.inVtero.net";
+            if (File.Exists(saveStateFile))
             {
-                PrintHelp();
-                return;
+                vtero = vtero.CheckpointRestoreState(saveStateFile);
+                vtero.OverRidePhase = true;
             }
-            try {
-                Filename = args[0];
 
-                if (!File.Exists(Filename))
-                {
-                    PrintHelp();
-                    return;
-                }
+            // TODO: fail when no state
 
-                if (args.Length > 1)
-                {
-                    var spec = args[1].ToLower();
+            Timer = Stopwatch.StartNew();
 
-                    if (spec.Contains("win"))
-                        Version |= PTType.Windows;
-                    if (spec.Contains("hv"))
-                        Version |= PTType.HyperV;
-                    if (spec.Contains("lin"))
-                        Version |= PTType.LinuxS;
-                    if (spec.Contains("fbsd"))
-                        Version |= PTType.FreeBSD;
-                    if (spec.Contains("obsd"))
-                        Version |= PTType.OpenBSD;
-                    if (spec.Contains("nbsd"))
-                        Version |= PTType.NetBSD;
-                    if (spec.Contains("gen"))
-                        Version |= PTType.GENERIC;
-                    if (spec.Contains("value"))
-                        Version |= PTType.VALUE;
+            //var dumper = new Dumper(vtero, string.Empty, null);
 
-                    if (spec.Contains("!"))
-                        Version |= PTType.ALL;
+            //dumper.DumpIt();
+            return;
+        }
 
-                    if (spec.Contains("-vmcs"))
-                        SkipVMCS = true;
+        [ArgActionMethod, ArgDescription("Run default analyze routine")]
+        public void analyze(AnalyzeOptions ops)
+        {
 
-                    if (spec.Contains("-obsd"))
-                        Version = Version & ~PTType.OpenBSD;
-                    if (spec.Contains("-nbsd"))
-                        Version = Version & ~PTType.NetBSD;
-                    if (spec.Contains("-fbsd"))
-                        Version = Version & ~PTType.FreeBSD;
-                    if (spec.Contains("-lin"))
-                        Version = Version & ~PTType.LinuxS;
-                    if (spec.Contains("-hv"))
-                        Version = Version & ~PTType.HyperV;
-                    if (spec.Contains("-win"))
-                        Version = Version & ~PTType.Windows;
-                }
-                else
-                    Version = PTType.ALL;
-#if TESTING
-                if((Version & PTType.VALUE) == PTType.VALUE)
-                {
-                    bool Parsed = false;
-                    do
-                    {
-                        if(args.Length < 2)
-                        {
-                            WriteLine($"Specify value");
-                            return;
-                        }
+            if (!string.IsNullOrWhiteSpace(FileName))
+                ops.Global.FileName = FileName;
 
-                        Parsed = uint.TryParse(args[2],NumberStyles.HexNumber, CultureInfo.CurrentCulture, out valuI);
-                        if (!Parsed)
-                        {
-                            Parsed = ulong.TryParse(args[2], NumberStyles.HexNumber, CultureInfo.CurrentCulture, out valuL);
-                            if (Parsed)
-                                Is64Scan = true;
-                            else {
-                                WriteLine($"Unable to parse input {args[2]}");
-                                return;
-                            }
-                        }
-                        else
-                            valuL = (ulong)valuI;
+            vtero = new Vtero();
 
-                    } while (!Parsed);
-                }
-#endif
-                Vtero vtero = new Vtero();
+            var saveStateFile = $"{ops.Global.FileName}.inVtero.net";
+            if (File.Exists(saveStateFile))
+            {
+                vtero = vtero.CheckpointRestoreState(saveStateFile);
+                vtero.OverRidePhase = true;
+            }
 
-                var saveStateFile = $"{Filename}.inVtero.net";
+            Mem.InitMem(ops.Global.FileName, null, vtero.DetectedDesc);
 
-                if (File.Exists(saveStateFile))
-                {
-                    WriteLine("Found save state, (l)oad or (d)iscard?");
-                    var todo = ReadKey();
-                    if (todo.Key != ConsoleKey.D)
-                    {
-                        vtero = vtero.CheckpointRestoreState(saveStateFile);
-                        vtero.OverRidePhase = true;
-                    }
-                    else
-                        File.Delete(saveStateFile);
-                }
+            var analyzer = new Analyze();
 
-                if(vtero.Phase < 2)
-                    vtero = new Vtero(Filename);
+            Timer = Stopwatch.StartNew();
+            analyzer.StartAnalyze(ops, vtero);
 
-                Vtero.VerboseOutput = true;
-                
+            return;
+        }
+        */
+
+
+
+        public static int Main(string[] args)
+        {
+            try
+            {
                 CancelKeyPress += Console_CancelKeyPress;
                 AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
-                ForegroundColor = ConsoleColor.Cyan;
 
-#endregion
-                Timer = Stopwatch.StartNew();
+                RunCLIREPL._Main(args);
 
-#if TESTING
-                if ((Version & PTType.VALUE) == PTType.VALUE)
+                var p = new quickdumps();
+                
+
+
+
+                /*
+
+                // I wanted a flexible syntax that I didn't know how to (yet) attribute with CommandLine 2.0beta :\
+                if (args.Length > 1 && File.Exists(args[0]))
                 {
-                    var off = vtero.ScanValue(Is64Scan, valuL, 0);
-                    
-                    WriteLine(FormatRate(vtero.FileSize, Timer.Elapsed));
-                    using (var dstream = File.OpenRead(vtero.MemFile))
-                    {
-                        using (var dbin = new BinaryReader(dstream))
-                        {
-                            foreach (var xoff in off)
-                            {
-                                WriteLine($"Checking Memory Descriptor @{(xoff + 28):X}");
-                                if (xoff > vtero.FileSize)
-                                {
-                                    WriteLine($"offset {xoff:X} > FileSize {vtero.FileSize:X}");
-                                    continue;
-                                }
-
-                                dstream.Position = xoff + 28;
-                                var MemRunDescriptor = new MemoryDescriptor();
-                                MemRunDescriptor.NumberOfRuns = dbin.ReadInt64();
-                                MemRunDescriptor.NumberOfPages = dbin.ReadInt64();
-
-                                Console.WriteLine($"Runs: {MemRunDescriptor.NumberOfRuns}, Pages: {MemRunDescriptor.NumberOfPages} ");
-
-                                if (MemRunDescriptor.NumberOfRuns < 0 || MemRunDescriptor.NumberOfRuns > 32)
-                                {
-                                    continue;
-                                }
-                                for (int i = 0; i < MemRunDescriptor.NumberOfRuns; i++)
-                                {
-                                    var basePage = dbin.ReadInt64();
-                                    var pageCount = dbin.ReadInt64();
-
-                                    MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
-                                }
-                                WriteLine($"MemoryDescriptor {MemRunDescriptor}");
-                            }
-                        }
-                    }
-                    WriteLine("Finished VALUE scan.");
-                    return;
+                    p.FileName = args[0];
+                    var tmp = new string[args.Length-1];
+                    Array.Copy(args, 1, tmp, 0, args.Length - 1);
+                    args = tmp;
                 }
-                if ((Version & PTType.VALUE) == PTType.VALUE)
-                    return;
-#endif
-                    // basic perf checking
-               Timer = Stopwatch.StartNew();
 
-                var procCount = vtero.ProcDetectScan(Version);
+                var parser = new Parser(with => with.EnableDashDash = true);
 
-#region page table/CR3 progress report
-                ForegroundColor = ConsoleColor.Blue;
-                BackgroundColor = ConsoleColor.Yellow;
-
-                var msg = $"{procCount} candidate process page tables. Time so far: {Timer.Elapsed}, second pass starting.";
-
-                Write(msg);
-
-                WriteLine(FormatRate(vtero.FileSize, Timer.Elapsed));
-                BackgroundColor = ConsoleColor.Black;
-                ForegroundColor = ConsoleColor.Cyan;
-                if (procCount < 3)
-                {
-                    WriteLine("Seems like a fail. Try generic scanning or implement a state scan like LinuxS");
-                    return;
-                }
-                //BackgroundColor = ConsoleColor.White;
-                #endregion
-                #region blighering
-                // second pass
-                // with the page tables we acquired, locate candidate VMCS pages in the format
-                // [31-bit revision id][abort indicator]
-                // the page must also have at least 1 64bit value which is all set (-1)
-                // Root-HOST CR3 will have uniform diff
-                // unless an extent based dump image is input, some .DMP variations
-                // TODO: Add support for extent based inputs
-                // Guest VMCS will contain host CR3 & guest CR3 (hCR3 & gCR3)
-                // sometimes CR3 will be found in multiple page tables, e.g. system process or SMP 
-                // if I have more than 1 CR3 from different file_offset, just trim them out for now
-                // future may have a reason to isolate based on original locationAG
-                #endregion
-
-                if (!SkipVMCS)
-                {
-                    var VMCSCount = vtero.VMCSScan();
-                    //Timer.Stop();
-
-                    #region VMCS page detection
-                    ForegroundColor = ConsoleColor.Blue;
-                    BackgroundColor = ConsoleColor.Yellow;
-
-
-                    WriteLine($"{VMCSCount} candidate VMCS pages. Time to process: {Timer.Elapsed}");
-                    Write($"Data scanned: {vtero.FileSize:N}");
-
-                    // second time 
-                    WriteLine($"Second pass done. {FormatRate(vtero.FileSize * 2, Timer.Elapsed)}");
-                    BackgroundColor = ConsoleColor.Black;
-                    ForegroundColor = ConsoleColor.Cyan;
-
-                    #region TEST
-                    // each of these depends on a VMCS scan/pass having been done at the moment
-                    WriteLine("grouping and joining all memory");
-
-                    // After this point were fairly functional
-                    vtero.GroupAS();
-
-                    // sync-save state so restarting is faster
-                    if (!File.Exists(saveStateFile))
-                    {
-                        Write($"Saving checkpoint... ");
-                        saveStateFile = vtero.CheckpointSaveState();
-                        WriteLine(saveStateFile);
-                    }
-                    var vetted = vtero.ExtrtactAddressSpaces(null, null, Version);
-                    // Extract Address Spaces verifies the linkages between
-                    // process<->CR3<->EPTP(if there is one)
-                    // and that they are functional
-
-#if BUFFER_PAGE_TABLES
-#endif
-
-#if TRUE
-
-                    // leaving this in as an example maybe? ;)
-
-                    //WriteLine("enter a group ID: ");
-                    //input = ReadLine();
-                    //int Grp = int.Parse(input);
-                    //WriteLine("enter a process ID: ");
-                    //input = ReadLine();
-                    //long procID = long.Parse(input, NumberStyles.HexNumber);
-                    //var proc = (from procz in vtero.ASGroups[Grp]
-                    //            where procz.CR3Value == procID
-                    //            select procz).First();
-                    //int i = 1;
-                    //DetectedProc dp = proc;
-                    //while(dp == null)
-                    //    dp = vtero.GetKernelRangeFromGroup(i++);
-
-
-                    // Scan for kernel 
-                    // NT kernel may be in 0xFFFFF80000000 to 0xFFFFF8800000 range
-                    long KernVAStart = 0xF80000000000;
-                    long KernVAEnd = KernVAStart + (0x8000000000 - 0x1000);
-                    string input = string.Empty;
-                    var Detections = new Dictionary<long, Extract>();
-                    DetectedProc LikelyKernel = null;
-                    // were doing this in nested loops to brute force our way past any errors
-                    // but only need the first set of detections per group
-
-                    foreach (var grpz in vtero.ASGroups)
-                    {
-                        foreach (var vm in vtero.VMCSs.Values)
-                        {
-                            WriteLine($"Group ID: {grpz.Key}");
-                            foreach (var p in grpz.Value)
-                            {
-                                WriteLine($"Proc: {p.CR3Value:X}");
-                                Detections = Detections.Concat(vtero.ModuleScan(p, null, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
-                                    .ToDictionary(x => x.Key, x => x.Value);
-
-                                if (Detections.Count() > 0)
-                                {
-                                    LikelyKernel = p;
-
-                                    if (vm.EPTP == 0)
-                                        p.vmcs = null;
-                                    else
-                                        p.vmcs = vm;
-
-                                    // scan for kernel
-                                    foreach (var detected in Detections)
-                                    {
-                                        ForegroundColor = ConsoleColor.Green;
-                                        WriteLine($"Attempting to parse detected PE module loaded @ {detected.Key:X}");
-                                        ForegroundColor = ConsoleColor.Cyan;
-                                        WriteLine(detected.Value);
-                                        ForegroundColor = ConsoleColor.White;
-
-                                        if (detected.Value.ToString().Contains("POOLCODE"))
-                                        {
-                                            WriteLine("Likely Kernel analyzing for CV data");
-                                            var cv_data = vtero.ExtractCVDebug(LikelyKernel, detected.Value, detected.Key);
-
-                                            if (cv_data != null)
-                                            {
-                                                var sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH");
-                                                if (string.IsNullOrWhiteSpace(sympath))
-                                                    sympath = "SRV*http://msdl.microsoft.com/download/symbols";
-
-                                                if (vtero.TryLoadSymbols(LikelyKernel, detected.Value, cv_data, detected.Key, sympath))
-                                                    vtero.GetKernelDebuggerData(LikelyKernel, detected.Value, cv_data, sympath);
-
-                                            }
-                                        }
-
-                                        // de-patch-guard it
-                                    }
-                                }
-                                WriteLine("Keep Scanning? yes/(n)o");
-                                var key = ReadKey();
-                                if (key.Key != ConsoleKey.Y)
-                                    break;
-                            }
-                        }
-                    }
-#endif
-                    ForegroundColor = ConsoleColor.Green;
-                    WriteLine($"{Environment.NewLine}Final analysis completed, address spaces extracted. {Timer.Elapsed} {FormatRate(vtero.FileSize * 3, Timer.Elapsed)}");
-
-                    // do a test dump
-                    // extract & dump could be done at the same time
-                    vtero.DumpASToFile();
-
-                    if (Vtero.VerboseOutput)
-                        vtero.DumpFailList();
-                }
-#endregion
-#endregion
-            } catch (Exception ex)
+                return CommandLine.Parser.Default.ParseArguments<ScanOptions, DumpOptions, AnalyzeOptions>(args)
+                    .MapResult(
+                      (ScanOptions opts) => p.InitialPhaseScans(opts),
+                      (DumpOptions opts) => p.DoDumping(opts),
+                      (AnalyzeOptions opts) => p.DoAnalyze(opts),
+                      errs => 1);
+                      */
+            }
+            catch (Exception ex)
             {
                 Write("Error in processing, likely need to adjust run/gaps. ");
                 Write(ex.ToString());
                 WriteLine((ex.InnerException == null ? "." : ex.InnerException.ToString()));
             }
-            finally {
+            finally
+            {
                 ResetColor();
             }
-            return;
+            return 0;
         }
-#region Utilities
+
+
+        #region Utilities
+       
         private static void CurrentDomain_ProcessExit(object sender, EventArgs e)
         {
             ResetColor();
@@ -450,25 +246,27 @@ namespace quickdumps
             ResetColor();
         }
 
-        static string FormatRate(long siz, TimeSpan t)
+
+        #endregion
+    }
+
+    public class ScanTypeScanTypeCompletionSource : SimpleTabCompletionSource
+    {
+        public ScanTypeScanTypeCompletionSource() : base(new string[] {
+            "Windows",
+            "HyperV",
+            "FreeBSD",
+            "OpenBSD",
+            "NetBSD",
+            "HyperV", 
+            "Linux",
+            "Generic",
+            "ALL",
+            "VMCS"
+
+        })
         {
-            var rv = string.Empty;
-            if (t.Seconds > 0)
-            {
-                var cnt = siz * 1.00 / t.TotalSeconds;
-
-                if (cnt > 1024 * 1024)
-                    rv = $" rate: {(cnt / (1024 * 1024)):F3} MB/s";
-                else if (cnt > 1024)
-                    rv = $" rate: {(cnt / 1024):F3} kb/s";
-                else
-                    rv = $" rate: {cnt:F3} bp/s";
-            }
-            else
-                rv = " rate: INSTANTLY!?!?";
-
-            return rv;
+            this.MinCharsBeforeCyclingBegins = 0;
         }
-#endregion
     }
 }

@@ -1,4 +1,4 @@
-﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
+﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
 
 //Copyright(C) 2015 Shane Macaulay
 
@@ -15,12 +15,15 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
+
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using ProtoBuf;
 using static System.Console;
+using inVtero.net.Support;
 
 namespace inVtero.net
 {
@@ -59,11 +62,19 @@ namespace inVtero.net
             return ((N << (~S)) << 1) | (N >> S);
         }
 
+
+
+        public static void WriteColor(string var)
+        {
+            WriteLine(var.PadRight(var.Length % WindowWidth, ' '));
+            LowerBoundOutput();
+        }
         public static void WriteColor(ConsoleColor ForeGround, string var)
         {
             if (ForegroundColor != ForeGround)
                 ForegroundColor = ForeGround;
-            WriteLine(var);
+            WriteLine(var.PadRight(var.Length % WindowWidth, ' '));
+            LowerBoundOutput();
         }
         public static void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
         {
@@ -72,7 +83,40 @@ namespace inVtero.net
             if (ForegroundColor != ForeGround)
                 ForegroundColor = ForeGround;
 
-            WriteLine(var);
+            WriteLine(var.PadRight(var.Length % WindowWidth, ' '));
+
+            LowerBoundOutput();
+
+        }
+
+        static void LowerBoundOutput()
+        {
+            const int BarHeight = 5;
+            
+            var MaxText = (WindowTop + WindowHeight - 1) - BarHeight;
+
+            if (CursorTop >= MaxText)
+            {
+                BackgroundColor = ConsoleColor.Black;
+                var newlines = CursorTop % MaxText;
+
+                for (int i=0; i < newlines; i++)
+                    WriteLine(" ".PadRight(WindowWidth));
+
+                CursorTop = MaxText-1;
+            }
+            ProgressBarz.RenderConsoleProgress(ProgressBarz.Progress);
+        }
+
+        public static void WColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
+        {
+            if (BackgroundColor != BackGround)
+                BackgroundColor = BackGround;
+            if (ForegroundColor != ForeGround)
+                ForegroundColor = ForeGround;
+
+            Write(var.PadRight(var.Length % WindowWidth, '\t'));
+            LowerBoundOutput();
         }
     }
 
@@ -395,7 +439,7 @@ namespace inVtero.net
     /// PTType configures the Scanner methods by setting ScanMode
     /// </summary>
     [Flags]
-    public enum PTType : uint
+    public enum PTType : int
     {
         UNCONFIGURED = 0,
         Windows = 1,
@@ -408,7 +452,7 @@ namespace inVtero.net
         VALUE   = 0x20000000,   // Value Scan (i.e. scan for a dword or ulong)
         GENERIC = 0x40000000,   // Generic stateless
         ALL = int.MaxValue,
-        VMCS = 0x80000000,      // VMCS uses state also and also 2 pass
+        VMCS = 0x8000000      // VMCS uses state also and also 2 pass
     }
 
     [Flags]

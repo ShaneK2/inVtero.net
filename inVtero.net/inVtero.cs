@@ -1,4 +1,4 @@
-﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
+﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
 
 //Copyright(C) 2015 Shane Macaulay
 
@@ -14,6 +14,8 @@
 //You should have received a copy of the GNU General Public License
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
 
 using inVtero.net.Support;
 using System;
@@ -33,6 +35,8 @@ using System.Diagnostics;
 
 namespace inVtero.net
 {
+
+
     /// <summary>
     /// Moving things around to support save state
     /// If it turns out that we are to parse the input aggressively, it may make sense to not have to waste time doing the same analysis over again
@@ -42,12 +46,18 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Vtero
     {
+        public static Action ProgressCallback;
+
         public string MemFile;
         public long FileSize;
         public double GroupThreshold;
         public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
 
+        public PTType Version { get; set; }
+
         public static bool VerboseOutput { get; set; }
+
+        public static int VerboseLevel { get; set; }
 
         /// <summary>
         /// I should really get an errorlevel going
@@ -101,6 +111,7 @@ namespace inVtero.net
             ProgressBarz.pBarColor = ConsoleColor.Yellow;
 
         }
+        
 
         public Vtero(string MemoryDump) :this()
         {
@@ -109,6 +120,17 @@ namespace inVtero.net
             scan = new Scanner(MemFile);
             FileSize = new FileInfo(MemFile).Length;
 
+            DeriveMemoryDescriptors();
+        }
+
+        public Vtero(string MemoryDump, MemoryDescriptor MD) : this(MemoryDump)
+        {
+            DetectedDesc = MD;
+        }
+
+        [ProtoAfterDeserialization]
+        void DeriveMemoryDescriptors()
+        {
             if (MemFile.EndsWith(".dmp"))
             {
                 var dump = new CrashDump(MemFile);
@@ -116,7 +138,7 @@ namespace inVtero.net
                     DetectedDesc = dump.PhysMemDesc;
 
             }
-            else if(MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
+            else if (MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
             {
                 var dump = new VMWare(MemFile);
                 if (dump.IsSupportedFormat())
@@ -125,12 +147,13 @@ namespace inVtero.net
 
                     MemFile = dump.MemFile;
                 }
-            }                       
-        }
+            }
+            if (DetectedDesc.NumberOfPages < 1)
+                // if the memory run is defined as 0 count then it's implicitly 1
+                DetectedDesc = new MemoryDescriptor(FileSize);
 
-        public Vtero(string MemoryDump, MemoryDescriptor MD) : this(MemoryDump)
-        {
-            DetectedDesc = MD;
+
+            Mem.InitMem(MemFile, null, DetectedDesc);
         }
 
         public string CheckpointSaveState(string OverrideName = null, string DirSpec = null)
@@ -211,14 +234,14 @@ namespace inVtero.net
 
         public DetectedProc GetKernelRangeFromGroup(int GroupID)
         {
-            var mem = new Mem(MemFile, null, DetectedDesc) { OverrideBufferLoadInput = true };
+            //var mem = new Mem(MemFile, null, DetectedDesc) { OverrideBufferLoadInput = true };
             DetectedProc Proc = null;
             foreach (var Procz in ASGroups[GroupID])
             {
                 Proc = Procz;
 
                 if (Proc.PT == null)
-                    PageTable.AddProcess(Proc, mem, true, 4);
+                    PageTable.AddProcess(Proc, Mem.Instance, true, 4);
 
                 if (Proc.PT.EntriesParsed < 512)
                     continue;
@@ -405,7 +428,7 @@ namespace inVtero.net
 
         public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, Mem mem, long Start, long End)
         {
-            Mem localMem = null;
+            Mem localMem = Mem.Instance;
 
             /// TODO: uhhhhh move mem up into DP
             if (mem != null)
@@ -415,7 +438,8 @@ namespace inVtero.net
             else if (dp.MemAccess != null)
                 localMem = dp.MemAccess;
             else {
-                localMem = new Mem(MemFile, null, DetectedDesc);
+                //localMem = new Mem(MemFile, null, DetectedDesc); 
+                localMem = Mem.Instance;
                 if (dp.PT == null)
                     PageTable.AddProcess(dp, localMem, true, 4);
             }
@@ -505,12 +529,12 @@ namespace inVtero.net
                     var interSection = currKern.Intersect(AlikelyKernelSet);
                     var correlated = interSection.Count() * 1.00 / AlikelyKernelSet.Count();
 
-                    if (correlated > GroupThreshold && !ASGroups[CurrASID].Contains(proc))
+                    // add this detected CR3/process address space to an address space grouping when
+                    // the kernel range is above the acceptable threshold, the group does not contain this proc
+                    // and this proc is not already joined into another group
+                    if (correlated > GroupThreshold && !ASGroups[CurrASID].Contains(proc) && proc.AddressSpaceID == 0)
                     {
-                        if(ForegroundColor != ConsoleColor.Cyan)
-                            ForegroundColor = ConsoleColor.Cyan;
-
-                        WriteLine($"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{correlated:P3}] PID [{proc.CR3Value:X}]");
+                        WriteColor(ConsoleColor.Cyan, $"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{correlated:P3}] PID [{proc.CR3Value:X}]");
 
                         proc.AddressSpaceID = CurrASID;
                         ASGroups[CurrASID].Add(proc);
@@ -524,7 +548,7 @@ namespace inVtero.net
                 var totGrouped = (from g in ASGroups.Values
                                   select g).Sum(x => x.Count());
 
-                Console.WriteLine($"Finished Group {CurrASID} collected size {ASGroups[CurrASID].Count()} next group");
+                WriteLine($"Finished Group {CurrASID} collected size {ASGroups[CurrASID].Count()}, continuing to group");
                 // if there is more work todo, setup an entry for testing
                 if (totGrouped < totUngrouped)
                 {
@@ -593,7 +617,7 @@ namespace inVtero.net
                             where aspace.Value.Any(adpSpace => adpSpace == ept.dp)
                             select new { AS = aspace, EPTctx = ept };
 
-            // link the proc back into the eptp
+            // link the proc back into the eptp 
             foreach (var ctx in VMCSGroup)
                 foreach (var dp in ctx.AS.Value)
                 {
@@ -626,7 +650,7 @@ namespace inVtero.net
         /// This routine is fairly expensive, maybe unnecessary as well but it demo's walking the page table + EPT.
         /// You can connect an address space dumper really easily
         /// 
-        /// TODO: Remake this.  Instead of just pre-buffering everything.  Ensure the GroupAS detections are appropiate 
+        /// TODO: Remake this.  Instead of just pre-buffering everything.  Ensure the GroupAS detections are appropriate 
         /// and if not, reassign the VMCS/EPTP page to bare metal or a different HVLayer item.
         /// </summary>
         /// <param name="MemSpace">The list of VMCS/EPTP configurations which will alter the page table use</param>
@@ -661,10 +685,11 @@ namespace inVtero.net
             //Parallel.ForEach(memSpace, (space) =>
             //foreach (var space in ms)
             //{
-                // we do it this way so that parallelized tasks do not interfere with each other 
-                // overall it may blow the cache hit ratio but will tune a single task to see the larger/better cache
-                // versus multicore, my suspicion is that multi-core is better
-            using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            // we do it this way so that parallelized tasks do not interfere with each other 
+            // overall it may blow the cache hit ratio but will tune a single task to see the larger/better cache
+            // versus multicore, my suspicion is that multi-core is better
+            //using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            var memAxs = Mem.Instance;
             {
 
                 var sx = 0;
@@ -799,7 +824,8 @@ namespace inVtero.net
 
             CollectKernelAS = true;
             // a backup to test a non-VMCS 
-            using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            //using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            //var memAxs = Mem.Instance;
             {
                 var nonVMCSprocs = from proc in Processes
                                    where (((proc.PageTableType & PT2Scan) == proc.PageTableType))
@@ -895,7 +921,8 @@ namespace inVtero.net
             string LastDumped = string.Empty;
             int cntDumped = 0;
             WriteLine($"{Environment.NewLine} Address spaces resolved.  Dump method starting. {Environment.NewLine}");
-            using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            //using (var memAxs = new Mem(MemFile, null, DetectedDesc))
+            var memAxs = Mem.Instance;
             {
                 memAxs.OverrideBufferLoadInput = true;
 
@@ -917,7 +944,9 @@ TripleBreak:
                     var ASselect = ReadLine();
                     validInput = int.TryParse(ASselect, out asID);
                     if (!validInput)
-                        WriteLine("just enter the number 0 or 1 or 2 or ... that coincides with the address space you want to investigate.");
+                        WriteLine("just enter the number that coincides with the address space you want to investigate.");
+                    if (!DumpList.ContainsKey(asID))
+                        validInput = false;
 
                 } while (!validInput);
 
@@ -1098,7 +1127,7 @@ DoubleBreak:
 
                             foreach (var mr in MemRanges)
                             {
-                                LastDumped = WriteRange(mr, saveLoc, memAxs);
+                                LastDumped = WriteRange(mr.Key, mr.Value, saveLoc, memAxs);
                                 DumpedToDisk.Add(LastDumped);
                                 cntDumped++;
                             }
@@ -1106,7 +1135,7 @@ DoubleBreak:
                         else
                         {
                             var a_range = new KeyValuePair<VIRTUAL_ADDRESS, PFN>(next_table.VA, next_table);
-                            LastDumped = WriteRange(a_range, saveLoc, memAxs);
+                            LastDumped = WriteRange(a_range.Key, a_range.Value, saveLoc, memAxs);
                             DumpedToDisk.Add(LastDumped);
                             cntDumped++;
                         }
@@ -1195,11 +1224,12 @@ DoubleBreak:
 
         long ContigSize;
 
-        string WriteRange(KeyValuePair<VIRTUAL_ADDRESS, PFN> pte, string BaseFileName, Mem PhysMemReader)
+        public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null)
         {
             bool canAppend = false;
-            var saveLoc = BaseFileName + pte.Key.Address.ToString("X") + ".bin";
-            var lastLoc = BaseFileName + (pte.Key.Address - ContigSize).ToString("X") + ".bin";
+
+            var saveLoc = BaseFileName + KEY.Address.ToString("X") + ".bin";
+            var lastLoc = BaseFileName + (KEY.Address - ContigSize).ToString("X") + ".bin";
 
             if (File.Exists(lastLoc))
             {
@@ -1224,12 +1254,12 @@ DoubleBreak:
 
                     if (DiagOutput)
                     {
-                        if (!pte.Value.PTE.Valid)
+                        if (!VALUE.PTE.Valid)
                             Console.ForegroundColor = ConsoleColor.Red;
                         else
                             Console.ForegroundColor = ConsoleColor.Cyan;
 
-                        WriteLine($"VA: {pte.Key:X12}  \t PFN: {pte.Value.PTE}");
+                        WriteLine($"VA: {KEY:X12}  \t PFN: {VALUE.PTE}");
 
                     }
 
@@ -1237,18 +1267,18 @@ DoubleBreak:
                     // the data may be present, or a prototype or actually in swap.
                     // for the moment were only going to dump hardware managed data
                     // or feel free to patch this up ;)
-                    if (!pte.Value.PTE.Valid)
+                    if (!VALUE.PTE.Valid)
                         return string.Empty;
 
-                    if (pte.Value.PTE.LargePage)
+                    if (VALUE.PTE.LargePage)
                     {
                         using (var lsavefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
                             // 0x200 * 4kb = 2MB
                             // TODO: Large pages properly
                             for (int i = 0; i < 0x200; i++)
                             {
-                                try { PhysMemReader.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
-                                pte.Value.PTE.PTE += (i * 0x1000);
+                                try { PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
+                                VALUE.PTE.PTE += (i * 0x1000);
                                 if (block == null)
                                     break;
 
@@ -1258,7 +1288,7 @@ DoubleBreak:
                     }
                     else
                     {
-                        try { PhysMemReader.GetPageForPhysAddr(pte.Value.PTE, ref block); } catch (Exception ex) { }
+                        try { PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
 
                         if (block != null)
                         using (var savefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))

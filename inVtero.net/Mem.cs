@@ -1,4 +1,4 @@
-﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
+﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
 
 //Copyright(C) 2015 Shane Macaulay
 
@@ -15,6 +15,8 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -25,6 +27,7 @@ using System.Threading;
 using RaptorDB;
 using System.Collections.Concurrent;
 using inVtero.net.Support;
+using ProtoBuf;
 
 // Details on this struct can be found here and likely many other sources
 // Microsoft published this originally on the singularity project's codeplex (along with some other ingerestiVng things)
@@ -51,21 +54,25 @@ namespace inVtero.net
     ///     * Type has to be a value/struct type and is expected to be 64 bits width
     ///     * TODO: Adjust for other size struts & values straddling page boundaries
     /// </summary>
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Mem : IDisposable
     {
         MemoryDescriptor ddes;
         /// <summary>
         /// DetectedDescriptor is meant for the user to assign when they have an override
         /// </summary>
-        public MemoryDescriptor DetectedDescriptor { get { return ddes; } set { ddes = value; if(value != null) MD = value; } }
+        [ProtoMember(2)]
+        public MemoryDescriptor DetectedDescriptor { get { return ddes; } set { ddes = value; if(value != null) MD.Value = value; } }
+        
         public bool BufferLoadInput { get { return OverrideBufferLoadInput ? true : FileSize < BufferLoadMax; } }
-
+        [ProtoMember(4)]
         public bool OverrideBufferLoadInput { get; set; }
 
         /// <summary>
         /// MD actually gets used for extracting memory
         /// </summary>
-        MemoryDescriptor MD { get; set; }
+        [ProtoMember(1)]
+        ThreadLocal<MemoryDescriptor> MD { get; set; }
 
 
         public long StartOfMemory; // adjust for .DMP headers or something
@@ -76,26 +83,29 @@ namespace inVtero.net
 
         IDictionary<long, long> DiscoveredGaps;
 
-        MemoryMappedViewAccessor mappedAccess;
-        MemoryMappedFile mappedFile;
-        FileStream mapStream;
+        ThreadLocal<MemoryMappedViewAccessor> mappedAccess;
+        ThreadLocal<MemoryMappedFile> mappedFile;
+        ThreadLocal<FileStream> mapStream;
 
+        [ProtoMember(3)]
         string MemoryDump;
+        [ProtoMember(5)]
         long FileSize;
+        [ProtoIgnore]
         public long Length { get { return FileSize; } }
 
         const long PAGE_SIZE = 0x1000;
         static int mindex = 0;
 
-        long MapViewBase;
-        long MapViewSize;
+        ThreadLocal<long> MapViewBase;
+        ThreadLocal<long> MapViewSize;
 
         WAHBitArray pfnTableIdx;
         public void DumpPFNIndex()
         {
+#if USE_BITMAP
             if (!Vtero.VerboseOutput || pfnTableIdx == null)
                 return;
-
             var idx = pfnTableIdx.GetBitIndexes();
             int i = 0;
 
@@ -107,49 +117,60 @@ namespace inVtero.net
                 if (i >= Console.WindowWidth - 7)
                     Console.Write(Environment.NewLine);
             }
+#endif
         }
+        [ProtoIgnore]
+        static Mem Global;
+
+        [ProtoIgnore]
+        public static Mem Instance { get { return Global; } }
 
         Mem()
         {
-            // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
-            // PageCache may be better off than a huge window...
-            // PageCacheMax default is 100000 which is 390MB or so.
-            if(!PageCache.Initalized)
-                PageCache.InitPageCache(Environment.ProcessorCount * 4, PageCacheMax);
+            if (Global == null)
+            {
+                // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
+                // PageCache may be better off than a huge window...
+                // PageCacheMax default is 100000 which is 390MB or so.
+                if (!PageCache.Initalized)
+                    PageCache.InitPageCache(Environment.ProcessorCount * 4, PageCacheMax);
 
-            // not really used right now
-            GapScanSize = 0x10000000;
+                // not really used right now
+                GapScanSize = 0x10000000;
 
-            // common init
-            MapViewBase = 0;
-            // 64MB
-            MapViewSize = (0x1000 * 0x1000 * 4);
+                // common init
+                MapViewBase = new ThreadLocal<long>();
 
-            DiscoveredGaps = new Dictionary<long, long>();
+                // 64MB
+                MapViewSize = new ThreadLocal<long>(() => 0x1000 * 0x1000 * 4);
+
+                DiscoveredGaps = new Dictionary<long, long>();
+                Global = this;
+            }
         }
 
         void SetupStreams()
         {
             var lmindex = Interlocked.Increment(ref mindex);
-            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString();
+            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString() + Thread.CurrentThread.ManagedThreadId.ToString();
 
-            mapStream = new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            mappedFile = MemoryMappedFile.CreateFromFile(mapStream,
+            Global.mapStream = new ThreadLocal<FileStream>(() => new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            Global.mappedFile = new ThreadLocal<MemoryMappedFile>(() => MemoryMappedFile.CreateFromFile(mapStream.Value,
                     mapName,
                     0,
                     MemoryMappedFileAccess.Read,
                     null,
                     HandleInheritability.Inheritable,
-                    false);
+                    false));
 
-            mappedAccess = mappedFile.CreateViewAccessor(
-                MapViewBase,
-                MapViewSize,
-                MemoryMappedFileAccess.Read);
+            Global.mappedAccess = new ThreadLocal<MemoryMappedViewAccessor>(() => mappedFile.Value.CreateViewAccessor(
+                MapViewBase.Value,
+                MapViewSize.Value,
+                MemoryMappedFileAccess.Read));
         }
 
 
-
+#if MEM_INSTANCE
         public Mem(Mem parent) : this()
         {
             MD = parent.MD;
@@ -161,18 +182,25 @@ namespace inVtero.net
 
             SetupStreams();
         }
+#endif
 
-        public Mem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null) : this()
+        public static void InitMem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null) //: this()
         {
+            if (Global == null)
+            {
+                Global = new Mem();
+                Global.MD = new ThreadLocal<MemoryDescriptor>();
+            }
 
-            StartOfMemory = Override != null ? Override.StartOfMemmory : 0;
+
+            Global.StartOfMemory = Override != null ? Override.StartOfMemmory : 0;
 
             if (Override != null)
             {
-                StartOfMemory = Override.StartOfMemmory;
-                MD = Override;
+                Global.StartOfMemory = Override.StartOfMemmory;
+                Global.MD.Value = Override;
             }
-
+#if USE_BITMAP
             // maybe there's a bit map we can use from a DMP file
             if (BitmapArray != null)
                 pfnTableIdx = new WAHBitArray(WAHBitArray.TYPE.Bitarray, BitmapArray);
@@ -181,24 +209,25 @@ namespace inVtero.net
 
             // 32bit's of pages should be plenty?
             pfnTableIdx.Length = (int) (MapViewSize / 0x1000);
-
+#endif
 
             if (File.Exists(mFile))
             {
-                MemoryDump = mFile;
-                FileSize = new FileInfo(MemoryDump).Length;
+                Global.MemoryDump = mFile;
+                Global.FileSize = new FileInfo(Global.MemoryDump).Length;
 
                 if (Override != null)
-                    MD = Override;
+                    Global.MD.Value = Override;
                 else {
-                    MD = new MemoryDescriptor(FileSize);
-                    if (DetectedDescriptor != null)
-                        MD = DetectedDescriptor;
+                    Global.MD.Value = new MemoryDescriptor(Global.FileSize);
+                    if (Global.DetectedDescriptor != null)
+                        Global.MD.Value = Global.DetectedDescriptor;
                 }
             }
 
-            SetupStreams();
+            Global.SetupStreams();
         }
+
 
         public static ulong cntInAccessor = 0;
         public static ulong cntOutAccsor = 0;
@@ -211,17 +240,17 @@ namespace inVtero.net
             DataRead = false;
 
 
-            var CheckBase = FileOffset / MapViewSize;
-            if (MapViewBase != CheckBase * MapViewSize)
-                NewMapViewBase = CheckBase * MapViewSize;
+            var CheckBase = FileOffset / MapViewSize.Value;
+            if (MapViewBase.Value != CheckBase * MapViewSize.Value)
+                NewMapViewBase.Value = CheckBase * MapViewSize.Value;
 
             if (FileOffset > FileSize)
                 return 0;
 
-            if (FileOffset < NewMapViewBase)
+            if (FileOffset < NewMapViewBase.Value)
                 throw new OverflowException("FileOffset must be >= than base");
 
-            var AbsOffset = FileOffset - NewMapViewBase;
+            var AbsOffset = FileOffset - NewMapViewBase.Value;
             var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
 
             try
@@ -230,14 +259,14 @@ namespace inVtero.net
                 {
                     cntInAccessor++;
 
-                    if (NewMapViewBase + MapViewSize > FileSize)
-                        NewMapViewSize = FileSize - NewMapViewBase;
+                    if (NewMapViewBase.Value + MapViewSize.Value > FileSize)
+                        NewMapViewSize.Value = FileSize - NewMapViewBase.Value;
                     else
-                        NewMapViewSize = MapViewSize;
+                        NewMapViewSize.Value = MapViewSize.Value;
 
-                    mappedAccess = mappedFile.CreateViewAccessor(
-                        NewMapViewBase,
-                        NewMapViewSize,
+                    mappedAccess.Value = mappedFile.Value.CreateViewAccessor(
+                        NewMapViewBase.Value,
+                        NewMapViewSize.Value,
                         MemoryMappedFileAccess.Read);
 
                     MapViewBase = NewMapViewBase;
@@ -247,9 +276,9 @@ namespace inVtero.net
                     cntOutAccsor++;
 
                 if(block != null)
-                    UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block);
+                    UnsafeHelp.ReadBytes(mappedAccess.Value, BlockOffset, ref block);
 
-                rv = mappedAccess.ReadInt64(AbsOffset);
+                rv = mappedAccess.Value.ReadInt64(AbsOffset);
                 DataRead = true;
 
             }
@@ -276,26 +305,26 @@ namespace inVtero.net
             }
 
             // record our access attempt to the pfnIndex
-            if (PFN > int.MaxValue || PFN > MD.MaxAddressablePageNumber)
+            if (PFN > int.MaxValue || PFN > MD.Value.MaxAddressablePageNumber)
                 return 0;
-
+#if USE_BITMAP
             if(pfnTableIdx != null)
                 pfnTableIdx.Set((int)PFN, true);
-
+#endif
             // paranoid android setting
             var Fail = true;
 
             long IndexedPFN = 0;
-            for (int i = 0; i < MD.NumberOfRuns; i++)
+            for (int i = 0; i < MD.Value.NumberOfRuns; i++)
             {
-                if (PFN >= MD.Run[i].BasePage && PFN < (MD.Run[i].BasePage + MD.Run[i].PageCount))
+                if (PFN >= MD.Value.Run[i].BasePage && PFN < (MD.Value.Run[i].BasePage + MD.Value.Run[i].PageCount))
                 {
-                    var currBaseOffset = PFN - MD.Run[i].BasePage;
+                    var currBaseOffset = PFN - MD.Value.Run[i].BasePage;
                     IndexedPFN += currBaseOffset;
                     Fail = false;
                     break;
                 }
-                IndexedPFN += MD.Run[i].PageCount;
+                IndexedPFN += MD.Value.Run[i].PageCount;
             }
             if (Fail)
                 throw new MemoryRunMismatchException(PAddr.PTE);

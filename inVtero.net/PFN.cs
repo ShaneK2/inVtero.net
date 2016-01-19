@@ -1,4 +1,4 @@
-﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
+﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
 
 //Copyright(C) 2015 Shane Macaulay
 
@@ -14,6 +14,8 @@
 //You should have received a copy of the GNU General Public License
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
 
 using System;
 using System.Collections.Generic;

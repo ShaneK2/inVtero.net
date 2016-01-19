@@ -1,4 +1,4 @@
-﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
+﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
 
 //Copyright(C) 2015 Shane Macaulay
 
@@ -14,6 +14,8 @@
 //You should have received a copy of the GNU General Public License
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
 
 using inVtero.net.Support;
 using System;
@@ -134,7 +136,7 @@ namespace inVtero.net
                     if ((ulong)ValueBlock[i] == HexScanUlong)
                     {
                         long xoff = offset + (i * 8);
-                        WriteLine($"Found Hex data @{offset} + {i * 8}");
+                        WriteColor($"Found Hex data @{offset} + {i * 8}");
                         FoundValueOffsets.Add(xoff);
                         return true;
                     }
@@ -146,18 +148,18 @@ namespace inVtero.net
                     {
                         long xoff = offset + (i * 8);
 
-                        WriteLine($"Found Hex ({HexScanDword:x8}) data OFFSET {offset:X16} + {(i * 8):X} @{(offset + (i * 8)):X} i={i}");
-                        WriteLine($"{ValueBlock[i]:X16} : {ValueBlock[i + 1]:X16} : {ValueBlock[i + 2]:X16} : {ValueBlock[i + 3]:X16}");
-                        WriteLine($"{ValueBlock[i + 4]:X16} : {ValueBlock[i + 5]:X16} : {ValueBlock[i + 6]:X16} : {ValueBlock[i + 7]:X16}");
+                        WriteColor($"Found Hex ({HexScanDword:x8}) data OFFSET {offset:X16} + {(i * 8):X} @{(offset + (i * 8)):X} i={i}");
+                        WriteColor($"{ValueBlock[i]:X16} : {ValueBlock[i + 1]:X16} : {ValueBlock[i + 2]:X16} : {ValueBlock[i + 3]:X16}");
+                        WriteColor($"{ValueBlock[i + 4]:X16} : {ValueBlock[i + 5]:X16} : {ValueBlock[i + 6]:X16} : {ValueBlock[i + 7]:X16}");
                         FoundValueOffsets.Add(xoff);
                         return true;
                     }
                     else if ((uint)(ValueBlock[i] >> 32) == HexScanDword)
                     {
                         long xoff = offset + (i * 8) + 4;
-                        WriteLine($"Found Hex ({HexScanDword:x8}) data OFFSET {offset:X16} + {(i * 8):X} @{(offset + (i * 8)):X}");
-                        WriteLine($"{ValueBlock[i]:X16} : {ValueBlock[i + 1]:X16} : {ValueBlock[i + 2]:X16} : {ValueBlock[i + 3]:X16}");
-                        WriteLine($"{ValueBlock[i + 4]:X16} : {ValueBlock[i + 5]:X16} : {ValueBlock[i + 6]:X16} : {ValueBlock[i + 7]:X16}");
+                        WriteColor($"Found Hex ({HexScanDword:x8}) data OFFSET {offset:X16} + {(i * 8):X} @{(offset + (i * 8)):X}");
+                        WriteColor($"{ValueBlock[i]:X16} : {ValueBlock[i + 1]:X16} : {ValueBlock[i + 2]:X16} : {ValueBlock[i + 3]:X16}");
+                        WriteColor($"{ValueBlock[i + 4]:X16} : {ValueBlock[i + 5]:X16} : {ValueBlock[i + 6]:X16} : {ValueBlock[i + 7]:X16}");
                         FoundValueOffsets.Add(xoff);
                         return true;
                     }
@@ -194,8 +196,6 @@ namespace inVtero.net
             //{
             KnownAbortCode = typeof(VMCS_ABORT).GetEnumValues().Cast<VMCS_ABORT>().Any(x => x == Acode);
             //});
-
-
 
             // TODO: Link pointer may not always be needed, evaluate removing this constraint
             // Find a 64bit value for link ptr
@@ -242,13 +242,15 @@ namespace inVtero.net
 
                         for (int i = 0; i < block.Length; i++)
                         {
-                            var eptp = new EPTP(block[i]);
+                            var value = block[i];
+
+                            var eptp = new EPTP(value);
 
                             // any good minimum size? 64kb?
                             if (block[i] > 0
                             && block[i] < FileSize
                             && eptp.IsFullyValidated()
-                            && EPTP.IsValid(eptp.aEPTP) && EPTP.IsValid2(eptp.aEPTP) && EPTP.IsValidEntry(eptp.aEPTP)
+                   //         && EPTP.IsValid(eptp.aEPTP) && EPTP.IsValid2(eptp.aEPTP) && EPTP.IsValidEntry(eptp.aEPTP)
                             && !OutputList.Contains(block[i]))
                             {
                                 Candidate = true;
@@ -271,8 +273,8 @@ namespace inVtero.net
                         }
                         if (Candidate && Vtero.VerboseOutput)
                         {
-                            WriteColor(ConsoleColor.Red, sbRED.ToString());
-                            WriteColor(ConsoleColor.DarkGreen, sb.ToString());
+                            WriteColor(ConsoleColor.Red, sbRED.ToString().PadRight(WindowWidth));
+                            WriteColor(ConsoleColor.DarkGreen, sb.ToString().PadRight(WindowWidth));
                         }
 
                         // most VMWare I've scanned comes are using this layout
@@ -333,14 +335,13 @@ namespace inVtero.net
                //IsZero(block, 8, 0xe0)
                )
 
-            /*
-            if (IsZero(block, 8,     0xE0) &&
-                IsZero(block, 0x100, 0x10) &&
+            if (
+                    /*IsZero(block, 8,     0xE0) &&
+                IsZero(block, 0x100, 0x10) &&*/
                 IsZero(block, 0x111, 0x80) &&
                 IsZero(block, 0x193, 0x3e) &&
                 IsZero(block, 0x1D2, 0x02) &&
                 IsZero(block, 0x1D5, 0x29))
-            */
             {
                 // before we catalog this entry, check to see if we can put it in a group
                 for (int i = 0; i < LinuxSFirstPages.Count(); i++)
@@ -362,7 +363,7 @@ namespace inVtero.net
                         dp.TopPageTablePage.Add(p, block[p]);
 
                 if (Vtero.VerboseOutput)
-                    WriteLine(dp.ToString());
+                    WriteColor(dp.ToString());
 
                 DetectedProcesses.TryAdd(offset, dp);
                 Candidate = true;
@@ -400,7 +401,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteLine(dp.ToString());
+                            WriteColor(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -442,7 +443,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteLine(dp.ToString());
+                            WriteColor(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -479,7 +480,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteLine(dp.ToString());
+                            WriteColor(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -535,7 +536,7 @@ namespace inVtero.net
 
                                     DetectedProcesses.TryAdd(offset, dp);
                                     if (Vtero.VerboseOutput)
-                                        WriteLine(dp.ToString());
+                                        WriteColor(dp.ToString());
                                     Candidate = true;
                                 }
                             }
@@ -582,7 +583,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteLine(dp.ToString());
+                            WriteColor(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -629,7 +630,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteLine(dp.ToString());
+                            WriteColor(dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -673,7 +674,7 @@ namespace inVtero.net
                         var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 1, PageTableType = PTType.Windows };
 
                         DetectedProcesses.TryAdd(offset, dp);
-                        WriteLine(dp);
+                        WriteColor(dp);
 
                         Candidate = true;
                     }
@@ -792,7 +793,7 @@ namespace inVtero.net
                             {
                                 var target = From + ioff;
 
-                                //WriteLine($"Found input @ {(target):X}");
+                                //WriteColor($"Found input @ {(target):X}");
                                 rv.Add(target);
                                 yield return target;
                             }
@@ -836,7 +837,7 @@ namespace inVtero.net
                     //{
                     var localOffset = RevCurrWindowBase + (j * ReadSize);
 
-                    WriteLine($"Scanning From {localOffset:X} To {(localOffset + ReadSize):X} bytes");
+                    WriteColor($"Scanning From {localOffset:X} To {(localOffset + ReadSize):X} bytes");
                     var results = MapScanFile(Filename, localOffset, (int)HexScanDword, ValueReadCount);
 
                     foreach (var offset in results)

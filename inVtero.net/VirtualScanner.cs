@@ -1,4 +1,23 @@
-﻿using System;
+﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
+
+//Copyright(C) 2015 Shane Macaulay
+
+//This program is free software; you can redistribute it and/or
+//modify it under the terms of the GNU General Public License
+//as published by the Free Software Foundation.
+
+//This program is distributed in the hope that it will be useful,
+//but WITHOUT ANY WARRANTY; without even the implied warranty of
+//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+//GNU General Public License for more details.
+
+//You should have received a copy of the GNU General Public License
+//along with this program; if not, write to the Free Software
+//Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -67,9 +86,9 @@ namespace inVtero.net
             BackingBlocks = backingBlocks;
             BackingStream = new PhysicalMemoryStream(backingBlocks, Ctx);
 
-            MemoryBank = new ConcurrentDictionary<int, Mem>();
-            for(int i=0; i< Environment.ProcessorCount; i++)
-                MemoryBank[i] = new Mem(BackingBlocks);
+            //mn ,n m,MemoryBank = new ConcurrentDictionary<int, Mem>();
+            //for(int i=0; i< Environment.ProcessorCount; i++)
+                //MemoryBank[i] = new Mem(BackingBlocks);
         }
 
         public VAScanType FastPE(long VA, byte[] Block)
@@ -103,8 +122,8 @@ namespace inVtero.net
 
             do
             {
-                Parallel.For(0, Environment.ProcessorCount, (j) =>
-                //for (int j = 0; j < 1; j++)
+                //Parallel.For(0, Environment.ProcessorCount, (j) =>
+                for (int j = 0; j < 1; j++)
                 {
                     // convert index to an address 
                     // then add start to it
@@ -119,11 +138,15 @@ namespace inVtero.net
                             foreach (var scanner in CheckMethods)
                             {
                                 HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
-
-                                if (DPContext.vmcs != null)
-                                    locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                                else
-                                    locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
+                                try
+                                {
+                                    if (DPContext.vmcs != null)
+                                        locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                                    else
+                                        locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
+                                }
+                                catch (Exception ex)
+                                { }
 
                                 if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
                                     continue;
@@ -147,14 +170,14 @@ namespace inVtero.net
                                         Console.WriteLine($"Detected PE @ VA {i:X}");
                                 }
                             }
-                            i += Environment.ProcessorCount << 12;
+                            //i += Environment.ProcessorCount << 12;
                             // for easier debugging if your not using Parallel loop
-                            //i += 1 << 12;
+                            i += 1 << 12;
                         }
                         StillGoing = false;
                     }
-                });
-                //}
+                //});
+                }
 
             } while (StillGoing);
 

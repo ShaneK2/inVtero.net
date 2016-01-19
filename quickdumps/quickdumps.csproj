@@ -56,7 +56,7 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup>
-    <StartupObject>quickdumps.Program</StartupObject>
+    <StartupObject>inVtero.net.quickdumps</StartupObject>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <DebugSymbols>true</DebugSymbols>
@@ -91,6 +91,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Analyze.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
@@ -101,6 +102,14 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\ConsoleUtils\ConsoleUtils.csproj">
+      <Project>{1e44f5eb-ad5f-4def-a9fb-e754ab732390}</Project>
+      <Name>ConsoleUtils</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Externals\PowerArgs\PowerArgs\PowerArgs.csproj">
+      <Project>{35809fab-7fbd-4663-8409-2d6a312c8265}</Project>
+      <Name>PowerArgs</Name>
+    </ProjectReference>
     <ProjectReference Include="..\inVtero.net\inVtero.net.csproj">
       <Project>{bba65fad-57b1-4b78-b262-e542a88440d6}</Project>
       <Name>inVtero.net</Name>

@@ -1,4 +1,4 @@
-﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
+﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
 
 //Copyright(C) 2015 Shane Macaulay
 
@@ -15,6 +15,8 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -28,10 +30,10 @@ namespace inVtero.net
     /// Maintain a cached representation of scanned results from analysis
     /// Group regions and address spaces
     /// 
-    /// TODO: Enumerate and expose available virtual addresses for a given page table
-    ///  - probably just do a recursive routine to descend/enum all available virtual addresses
+    /// ~~TODO: Enumerate and expose available virtual addresses for a given page table~~
+    ///  ~~- probably just do a recursive routine to descend/enum all available virtual addresses~~
     /// 
-    /// TODO: Implement join-on-shared-kernel-spaces
+    /// ~~TODO: Implement join-on-shared-kernel-spaces~~
     /// 
     /// TODO: Convert all of the names into tee http://www.pagetable.com/?p=308 convention :)
     /// </summary>
@@ -101,6 +103,13 @@ namespace inVtero.net
         }
 
         /// <summary>
+        /// 
+        /// Pretty much not used any more, but I guess I can leave it in for a bit.  Trying to decide 
+        /// if I should focus on the core and release a bunch of .csx scripts seems everybody likes scripts these days
+        /// 
+        /// Or maybe write a UI.... hmmmm
+        /// 
+        /// 
         /// An Inline extraction for the page table hierarchy.
         /// Why not let the compiler do it?  I have code clones here?
         /// 
