@@ -62,7 +62,7 @@ namespace inVtero.net
             int rv = PageCount;
 
             if(offset != 0)
-                throw new NotImplementedException("Sub-Page reads not supported");
+                throw new NotImplementedException("Sub-Page reads not supported, use BufferedStream to even out your access pattern.");
 
             while (PageCount > 0)
             {

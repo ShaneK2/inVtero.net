@@ -51,6 +51,12 @@ namespace inVtero.net.ConsoleUtils
             vtero = Scan.Scanit(option);
         }
 
+        [ArgActionMethod, ArgDescription("start IronPython REPL")]
+        public void python(string[] Args)
+        {
+            PythonConsoleHost.RunREPL(Args);
+        }
+
         [ArgActionMethod, ArgDescription("Initial scanning action (required step will save a cache of data & may be skipped after)")]
         public void scan()
         {
