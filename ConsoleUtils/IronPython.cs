@@ -13,6 +13,7 @@ namespace inVtero.net.ConsoleUtils
 {
     public class PythonConsoleHost : ConsoleHost
     {
+        Vtero Vtero;
 
         protected override Type Provider
         {
@@ -79,13 +80,26 @@ namespace inVtero.net.ConsoleUtils
             this.Run(moreArgs.ToArray());
         }
 
-        public static void RunREPL(string []Args)
+        public static void RunREPL(Vtero vtero, string []Args)
         {
+            if (vtero == null)
+            {
+                Console.WriteLine("unable to scan memory");
+                return;
+            }
+
             if (Environment.GetEnvironmentVariable("TERM") == null)
             {
                 Environment.SetEnvironmentVariable("TERM", "ANSI");
             }
-            new PythonConsoleHost().RunConsole(Args);
+
+            var pch = new PythonConsoleHost();
+
+            pch.Vtero = vtero;
+
+
+
+            pch.RunConsole(Args);
         }
     }
 

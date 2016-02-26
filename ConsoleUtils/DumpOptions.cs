@@ -5,11 +5,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ConsoleUtils
+namespace inVtero.net.ConsoleUtils
 {
+    [TabCompletion]
+
     public class DumpOptions 
     {
-        public QuickOptions Global;
+        //public    QuickOptions Global;
 
         [ArgShortcut("-s"), ArgEnforceCase, ArgDescription("Download/use symbols to improve dumps. (uses environment symbol path _NT_SYMBOL_PATH")]
         public bool SymbolLoading { get; set; }

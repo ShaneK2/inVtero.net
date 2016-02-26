@@ -20,6 +20,7 @@ using System;
 using System.Text;
 using static System.Console;
 using PowerArgs.Cli;
+using PowerArgs;
 
 namespace inVtero.net.Support
 {
@@ -30,6 +31,7 @@ namespace inVtero.net.Support
 
         public static bool DisableProgressBar = false;
 
+        public static ConsoleString BaseMessage;
         private static char progressBarCharacter = '\u2592';
         static int LastProgLine;
         static int SavePos;
@@ -37,7 +39,7 @@ namespace inVtero.net.Support
         public static CliProgressBar Bar;
 
         static ProgressBarz() {
-            Bar = new CliProgressBar("Initalizing...", WindowWidth - 5);
+            Bar = new CliProgressBar("Initalizing...");
         }
 
         public static void RenderConsoleProgress(int percentage)
@@ -45,13 +47,14 @@ namespace inVtero.net.Support
             Progress = percentage;
 
             if (DisableProgressBar) return;
+
             CursorVisible = false;
             const int BarHeight = 3;
             var BarStart = (WindowTop + WindowHeight - 1) - BarHeight;
 
             CursorTop = BarStart;
-
             Bar.Progress = percentage / 100.00;
+            Bar.Message = BaseMessage.AppendUsingCurrentFormat($".  {percentage} %");
             Bar.Render();
 
             CursorTop = BarStart-1;

@@ -28,6 +28,7 @@ using System.Collections.Concurrent;
 using Reloc;
 using PowerArgs;
 using ConsoleUtils;
+using inVtero.net.ConsoleUtils;
 
 namespace inVtero.net
 {
@@ -38,7 +39,7 @@ namespace inVtero.net
         { }
 
 
-        public static void DumpIt(Vtero vtero, ConfigOptions co)
+        public static void DumpIt(Vtero vtero, ConfigOptions co, DumpOptions dmpo)
         {
             var Version = vtero.Version;
 
@@ -138,7 +139,9 @@ namespace inVtero.net
 
             // do a test dump
             // extract & dump could be done at the same time
-            //vtero.DumpASToFile();
+
+            if(!dmpo.ListOnly)
+                vtero.DumpASToFile();
 
             //if (Vtero.VerboseOutput)
                 //vtero.DumpFailList();

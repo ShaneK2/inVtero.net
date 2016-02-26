@@ -45,16 +45,44 @@ namespace inVtero.net.ConsoleUtils
                 option.FileName = value; } }
 
 
-        [ArgActionMethod, ArgDescription("Initial scanning action (required step will save a cache of data & may be skipped after)")]
-        public void dump()
+        [ArgActionMethod, ArgDescription("Dump results of scan into contagious virtual regions ")]
+        public void dump(DumpOptions argz)
         {
-            vtero = Scan.Scanit(option);
+
+            DumpOptions dOptions = argz;
+
+            if(argz == null)
+            {
+                ArgUsage.GetStyledUsage<DumpOptions>().Write();
+                return;
+            }
+
+            if (option.IgnoreSaveData)
+            {
+                ConsoleString.WriteLine("No save state available or requested to ignore, scan first before dumping.", ConsoleColor.Yellow, ConsoleColor.Black);
+                return;
+            }
+
+            if(vtero == null)
+                vtero = Scan.Scanit(option);
+          
+             Dump.DumpIt(vtero, option, dOptions);
         }
 
         [ArgActionMethod, ArgDescription("start IronPython REPL")]
         public void python(string[] Args)
         {
-            PythonConsoleHost.RunREPL(Args);
+
+            if (vtero == null)
+                vtero = Scan.Scanit(option);
+
+            if (vtero == null)
+            {
+                ConsoleString.WriteLine("Scan failed, investigate.", ConsoleColor.Red, ConsoleColor.Black);
+                return;
+            }
+
+            PythonConsoleHost.RunREPL(vtero, Args);
         }
 
         [ArgActionMethod, ArgDescription("Initial scanning action (required step will save a cache of data & may be skipped after)")]

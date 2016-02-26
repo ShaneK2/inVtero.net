@@ -35,7 +35,7 @@ namespace inVtero.net
     public class VirtualScanner
     {
         Mem BackingBlocks;
-        ConcurrentDictionary<int, Mem> MemoryBank;
+        //ConcurrentDictionary<int, Mem> MemoryBank;
         public ConcurrentDictionary<long, Extract> Artifacts;
         PhysicalMemoryStream BackingStream;
 
@@ -141,9 +141,11 @@ namespace inVtero.net
                                 try
                                 {
                                     if (DPContext.vmcs != null)
-                                        locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
                                     else
-                                        locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
+                                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
+                                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.CR3Value, i);
                                 }
                                 catch (Exception ex)
                                 { }
@@ -156,7 +158,7 @@ namespace inVtero.net
                                     bool GotData = false;
                                     try
                                     {
-                                        MemoryBank[j].GetPageForPhysAddr(locPhys, ref block, ref GotData);
+                                        BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData);
                                         Buffer.MemoryCopy(lp, bp, 4096, 4096);
                                     }
                                     catch (Exception ex) { }

@@ -148,7 +148,7 @@ namespace inVtero.net
                     MemFile = dump.MemFile;
                 }
             }
-            if (DetectedDesc.NumberOfPages < 1)
+            if (DetectedDesc == null || DetectedDesc.NumberOfPages < 1)
                 // if the memory run is defined as 0 count then it's implicitly 1
                 DetectedDesc = new MemoryDescriptor(FileSize);
 
