@@ -31,6 +31,7 @@ namespace inVtero.net
         {
             TopPageTablePage = new Dictionary<int, long>();
         }
+        public int ASGroup;
         public int Group;       // linux only 
         public VMCS vmcs;       // vmcs if available
         public List<VMCS> CandidateList;
@@ -80,6 +81,8 @@ namespace inVtero.net
 
         [ProtoIgnore]
         public Mem MemAccess { get; set; }
+        [ProtoIgnore]
+        public string ShortName {get { if (vmcs != null) return $"{vmcs.EPTP:X}-{CR3Value:X}"; return $"{CR3Value:X}"; } }
 
         public override string ToString() => $"Process CR3 [{CR3Value:X12}] File Offset [{FileOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
 

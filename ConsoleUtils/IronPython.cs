@@ -80,25 +80,14 @@ namespace inVtero.net.ConsoleUtils
             this.Run(moreArgs.ToArray());
         }
 
-        public static void RunREPL(Vtero vtero, string []Args)
+        public static void RunREPL(string []Args)
         {
-            if (vtero == null)
-            {
-                Console.WriteLine("unable to scan memory");
-                return;
-            }
-
             if (Environment.GetEnvironmentVariable("TERM") == null)
             {
                 Environment.SetEnvironmentVariable("TERM", "ANSI");
             }
 
             var pch = new PythonConsoleHost();
-
-            pch.Vtero = vtero;
-
-
-
             pch.RunConsole(Args);
         }
     }

@@ -75,6 +75,7 @@ namespace inVtero.net
             string input = string.Empty;
             var Detections = new Dictionary<long, Extract>();
             DetectedProc LikelyKernel = null;
+            bool Decoded = false;
             // were doing this in nested loops to brute force our way past any errors
             // but only need the first set of detections per group
 
@@ -101,15 +102,12 @@ namespace inVtero.net
                             // scan for kernel
                             foreach (var detected in Detections)
                             {
-                                ForegroundColor = ConsoleColor.Green;
-                                WriteLine($"Attempting to parse detected PE module loaded @ {detected.Key:X}");
-                                ForegroundColor = ConsoleColor.Cyan;
-                                WriteLine(detected.Value);
-                                ForegroundColor = ConsoleColor.White;
+                                WriteColor(ConsoleColor.Green, $"Attempting to parse detected PE module loaded @ {detected.Key:X}");
+                                WriteColor(ConsoleColor.Cyan, detected.Value.ToString());
 
                                 if (detected.Value.ToString().Contains("POOLCODE"))
                                 {
-                                    WriteLine("Likely Kernel analyzing for CV data");
+                                    WriteColor(ConsoleColor.White, "Likely Kernel analyzing for CV data");
                                     var cv_data = vtero.ExtractCVDebug(LikelyKernel, detected.Value, detected.Key);
 
                                     if (cv_data != null)
@@ -119,20 +117,16 @@ namespace inVtero.net
                                             sympath = "SRV*http://msdl.microsoft.com/download/symbols";
 
                                         if (vtero.TryLoadSymbols(LikelyKernel, detected.Value, cv_data, detected.Key, sympath))
-                                            vtero.GetKernelDebuggerData(LikelyKernel, detected.Value, cv_data, sympath);
-
+                                            Decoded = vtero.GetKernelDebuggerData(LikelyKernel, detected.Value, cv_data, sympath);
                                     }
                                 }
-
-                                // de-patch-guard it
                             }
                         }
-                        WriteLine("Keep Scanning? yes/(n)o");
-                        var key = ReadKey();
-                        if (key.Key != ConsoleKey.Y)
-                            break;
+                        if (Decoded) break;
                     }
+                    if (Decoded) break;
                 }
+                if (Decoded) break;
             }
             ForegroundColor = ConsoleColor.Green;
             WriteLine($"{Environment.NewLine}Final analysis completed, address spaces extracted. {QuickOptions.Timer.Elapsed} {QuickOptions.FormatRate(vtero.FileSize * 3, QuickOptions.Timer.Elapsed)}");

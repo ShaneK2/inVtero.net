@@ -78,6 +78,40 @@ namespace inVtero.net
         //WAHBitArray PFNdb;
         public ConcurrentDictionary<int, ConcurrentBag<DetectedProc>> ASGroups;
 
+
+        /// <summary>
+        /// Flatten the ConcurrentDictionary/ConcurrentBag to a simple List.
+        /// We move the AS info into the proc object itself
+        /// </summary>
+        public List<DetectedProc> FlattenASGroups
+        {
+            get {
+                var rv = new List<DetectedProc>();
+
+                foreach(var id in ASGroups.Keys)
+                    foreach (var proc in ASGroups[id])
+                    {
+                        proc.ASGroup = id;
+                        rv.Add(proc);
+                    }
+
+                return rv;
+            }
+            set
+            {
+                if (ASGroups == null)
+                    ASGroups = new ConcurrentDictionary<int, ConcurrentBag<DetectedProc>>();
+
+                foreach (var proc in value)
+                {
+                    if (ASGroups[proc.ASGroup] == null)
+                        ASGroups[proc.ASGroup] = new ConcurrentBag<DetectedProc>();
+
+                    ASGroups[proc.ASGroup].Add(proc);
+                }
+            }
+        }
+
         public int Phase;
 
         public MemoryDescriptor DetectedDesc;
@@ -323,6 +357,11 @@ namespace inVtero.net
                 WriteLine($"Symbol Find : {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
                 return rv;
             }
+
+            // at this point we should return true if it's encoded or not
+            rv = true;
+
+
             KdpDataBlockEncoded = dp.GetValue(symInfo.Address);
             KdDebuggerDataBlock = GetSymValue(dp, "KdDebuggerDataBlock");
 
@@ -345,7 +384,7 @@ namespace inVtero.net
             return rv;
         }
 
-        long DecodePointer(long BlockAddress, long Always, long Never, long Value)
+        public long DecodePointer(long BlockAddress, long Always, long Never, long Value)
         {
             long decoded = 0;
 
@@ -363,7 +402,7 @@ namespace inVtero.net
             return decoded;
         }
 
-        long GetSymValue(DetectedProc dp, string SymName)
+        public long GetSymValue(DetectedProc dp, string SymName)
         {
             DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
 
@@ -957,7 +996,6 @@ TripleBreak:
                 // sort for convince
                 ToDump.Sort((x, y) => { if (x.CR3Value < y.CR3Value) return -1; else if (x.CR3Value > y.CR3Value) return 1; else return 0; });
 
-
                 while (true)
                 {
 DoubleBreak:
@@ -1149,12 +1187,12 @@ DoubleBreak:
             }
         }
 
-        void AddProcessPageTable(DetectedProc tdp, Mem memAxs)
+        public void AddProcessPageTable(DetectedProc tdp, Mem memAxs)
         {
             PageTable.AddProcess(tdp, memAxs, true);
         }
 
-        void ReScanNextLevel(DetectedProc tdp, bool DisplayOutput = false)
+        public void ReScanNextLevel(DetectedProc tdp, bool DisplayOutput = false)
         {
             bool validInput, ignoreSlat;
             int levels;
@@ -1193,19 +1231,19 @@ DoubleBreak:
             }
         }
 
-        void WriteColor(ConsoleColor ForeGround, string var)
+        public void WriteColor(ConsoleColor ForeGround, string var)
         {
             ForegroundColor = ForeGround;
             WriteLine(var);
         }
-        void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
+        public void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
         {
             BackgroundColor = BackGround;
             ForegroundColor = ForeGround;
             WriteLine(var);
         }
 
-        void PrintLastDumped(List<string> LastList)
+        public void PrintLastDumped(List<string> LastList)
         {
             foreach(var s in LastList)
                 WriteColor(ConsoleColor.DarkCyan, ConsoleColor.Gray, $"Dumped {s} {new FileInfo(s).Length}");
@@ -1235,6 +1273,7 @@ DoubleBreak:
             {
                 canAppend = true;
                 ContigSize += 0x1000;
+                saveLoc = lastLoc;
             }
             else
                 ContigSize = 0x1000;

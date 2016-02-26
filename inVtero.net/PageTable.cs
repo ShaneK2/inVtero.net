@@ -70,7 +70,7 @@ namespace inVtero.net
             if(Vtero.DiagOutput)
                 WriteLine($"PT analysis of {dp}");
 
-            dp.vmcs = null;
+            //dp.vmcs = null;
             var rv = new PageTable
             {
                 Root = new PageTableRoot() { SLAT = dp.vmcs != null ? dp.vmcs.EPTP : 0, CR3 = dp.CR3Value, Entries = new PFN() },
@@ -452,6 +452,30 @@ namespace inVtero.net
             Root.Count = entries;
             
             return entries;
+        }
+
+
+        public static List<KeyValuePair<VIRTUAL_ADDRESS, PFN>> Flatten(Dictionary<VIRTUAL_ADDRESS, PFN> TableEntries, int Level)
+        {
+            List<KeyValuePair<VIRTUAL_ADDRESS, PFN>> MemRanges = null;
+            switch (Level)
+            {
+                case 4:
+                    MemRanges = TableEntries.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).ToList();
+                    break;
+                case 3:
+                    MemRanges = TableEntries.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).ToList();
+                    break;
+                case 2:
+                    MemRanges = TableEntries.SelectMany(x => x.Value.SubTables).ToList();
+                    break;
+                case 1:
+                default:
+                    MemRanges = TableEntries.ToList();
+                    break;
+            }
+
+            return MemRanges;
         }
     }
 }

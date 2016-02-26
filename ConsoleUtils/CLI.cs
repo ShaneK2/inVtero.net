@@ -72,17 +72,7 @@ namespace inVtero.net.ConsoleUtils
         [ArgActionMethod, ArgDescription("start IronPython REPL")]
         public void python(string[] Args)
         {
-
-            if (vtero == null)
-                vtero = Scan.Scanit(option);
-
-            if (vtero == null)
-            {
-                ConsoleString.WriteLine("Scan failed, investigate.", ConsoleColor.Red, ConsoleColor.Black);
-                return;
-            }
-
-            PythonConsoleHost.RunREPL(vtero, Args);
+            PythonConsoleHost.RunREPL(Args);
         }
 
         [ArgActionMethod, ArgDescription("Initial scanning action (required step will save a cache of data & may be skipped after)")]
@@ -168,18 +158,17 @@ namespace inVtero.net.ConsoleUtils
     {
         public static void _Main(string[] args)
         {
-            Console.Clear(); 
-
+            //Console.Clear(); 
             // reset to a good position
-            if (Console.CursorTop >= (Console.WindowHeight + Console.WindowTop - 1))
-                WriteLine($"{Environment.NewLine}{Environment.NewLine}{Environment.NewLine}");
+            //if (Console.CursorTop >= (Console.WindowHeight + Console.WindowTop - 1))
+            //    WriteLine($"{Environment.NewLine}{Environment.NewLine}{Environment.NewLine}");
 
             Args.InvokeAction<CLI>(args);
         }
     }
 
     public class ItemNameCompletion : SimpleTabCompletionSource
-    {
+    { 
         // The lambda that is sent to the base constructor will ensure that we get tab completion
         // on the REPL command line for items that are in the list at the time of execution.
         public ItemNameCompletion() : base(() => { return new[] { "help", "quit", "scan", "dump", "set", "config", "history", "reset" }; })

@@ -26,6 +26,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Volatility", "Volatility\Vo
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{92143A5B-B728-4B44-BA13-317A8A2F6184}"
 	ProjectSection(SolutionItems) = preProject
+		Scripts\List.py = Scripts\List.py
 		Scripts\Scan.py = Scripts\Scan.py
 	EndProjectSection
 EndProject

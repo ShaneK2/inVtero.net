@@ -43,7 +43,7 @@ namespace inVtero.net
     public class Scanner
     {
         // for diagnostic printf's
-        const int MAX_LINE_WIDTH = 120;
+        int MAX_LINE_WIDTH = Console.WindowWidth;
 
         // using bag since it has the same collection interface as List
         [ProtoIgnore]
@@ -273,8 +273,8 @@ namespace inVtero.net
                         }
                         if (Candidate && Vtero.VerboseOutput)
                         {
-                            WriteColor(ConsoleColor.Red, sbRED.ToString().PadRight(WindowWidth));
-                            WriteColor(ConsoleColor.DarkGreen, sb.ToString().PadRight(WindowWidth));
+                            WColor(ConsoleColor.Red, ConsoleColor.Black, sbRED.ToString().PadRight(WindowWidth));
+                            WColor(ConsoleColor.DarkGreen, ConsoleColor.Black, sb.ToString().PadRight(WindowWidth));
                         }
 
                         // most VMWare I've scanned comes are using this layout
@@ -363,7 +363,7 @@ namespace inVtero.net
                         dp.TopPageTablePage.Add(p, block[p]);
 
                 if (Vtero.VerboseOutput)
-                    WriteColor(dp.ToString());
+                    WriteColor(ConsoleColor.Cyan, dp.ToString());
 
                 DetectedProcesses.TryAdd(offset, dp);
                 Candidate = true;
@@ -401,7 +401,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteColor(dp.ToString());
+                            WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -443,7 +443,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteColor(dp.ToString());
+                            WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -480,7 +480,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteColor(dp.ToString());
+                            WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -536,7 +536,7 @@ namespace inVtero.net
 
                                     DetectedProcesses.TryAdd(offset, dp);
                                     if (Vtero.VerboseOutput)
-                                        WriteColor(dp.ToString());
+                                        WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
                                     Candidate = true;
                                 }
                             }
@@ -583,7 +583,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteColor(dp.ToString());
+                            WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
                         Candidate = true;
                     }
                 }
@@ -630,7 +630,7 @@ namespace inVtero.net
 
                         DetectedProcesses.TryAdd(offset, dp);
                         if (Vtero.VerboseOutput)
-                            WriteColor(dp.ToString());
+                            WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
                         Candidate = true;
                     }
                 }

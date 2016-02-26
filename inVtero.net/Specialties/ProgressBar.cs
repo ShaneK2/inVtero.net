@@ -30,6 +30,7 @@ namespace inVtero.net.Support
         public static int Progress;
 
         public static bool DisableProgressBar = false;
+        public static bool TextInfo = false;
 
         public static ConsoleString BaseMessage;
         private static char progressBarCharacter = '\u2592';
@@ -44,20 +45,28 @@ namespace inVtero.net.Support
 
         public static void RenderConsoleProgress(int percentage)
         {
-            Progress = percentage;
-
-            if (DisableProgressBar) return;
 
             CursorVisible = false;
             const int BarHeight = 3;
             var BarStart = (WindowTop + WindowHeight - 1) - BarHeight;
 
             CursorTop = BarStart;
-            Bar.Progress = percentage / 100.00;
-            Bar.Message = BaseMessage.AppendUsingCurrentFormat($".  {percentage} %");
-            Bar.Render();
+
+            if (!DisableProgressBar)
+            {
+                Bar.Progress = percentage / 100.00;
+                Bar.Message = BaseMessage.AppendUsingCurrentFormat($".  {percentage} %");
+                Bar.Render();
+            } else if(TextInfo && percentage != Progress)
+            {
+                ForegroundColor = ConsoleColor.DarkBlue;
+                BackgroundColor = ConsoleColor.Yellow;
+                WriteLine($" {percentage} % ");
+            }
 
             CursorTop = BarStart-1;
+
+            Progress = percentage;
 
 
             /*
