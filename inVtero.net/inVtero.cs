@@ -32,6 +32,8 @@ using System.Text;
 using Reloc;
 using System.ComponentModel;
 using System.Diagnostics;
+using PowerArgs;
+using RaptorDB;
 
 namespace inVtero.net
 {
@@ -113,8 +115,8 @@ namespace inVtero.net
         }
 
         public int Phase;
-
         public MemoryDescriptor DetectedDesc;
+        bool ForceDescScan;
 
         /// <summary>
         /// Set OverRidePhase to force a re-run of a stage
@@ -147,12 +149,13 @@ namespace inVtero.net
         }
         
 
-        public Vtero(string MemoryDump) :this()
+        public Vtero(string MemoryDump, bool SetForceDescScan = false) :this()
         {
             MemFile = MemoryDump.ToLower();
 
             scan = new Scanner(MemFile);
             FileSize = new FileInfo(MemFile).Length;
+            ForceDescScan = SetForceDescScan;
 
             DeriveMemoryDescriptors();
         }
@@ -165,14 +168,21 @@ namespace inVtero.net
         [ProtoAfterDeserialization]
         void DeriveMemoryDescriptors()
         {
-            if (MemFile.EndsWith(".dmp"))
+            if(ProgressBarz.BaseMessage == null || string.IsNullOrWhiteSpace(ProgressBarz.BaseMessage.ToString()))
+                ProgressBarz.BaseMessage = new ConsoleString("Value Scan for memory descriptors in progress");
+
+            if (ForceDescScan)
+            {
+                var dump = new CrashDump(MemFile);
+                DetectedDesc = dump.ExtractMemDesc(this);
+
+            } else  if (MemFile.EndsWith(".dmp"))
             {
                 var dump = new CrashDump(MemFile);
                 if (dump.IsSupportedFormat(this))
                     DetectedDesc = dump.PhysMemDesc;
 
-            }
-            else if (MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
+            } else if (MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
             {
                 var dump = new VMWare(MemFile);
                 if (dump.IsSupportedFormat())
@@ -716,7 +726,7 @@ namespace inVtero.net
 
             var CurrColor = ForegroundColor;
 
-            WriteColor(ConsoleColor.White, $"assessing {tot} address space combinations");
+            WriteColor(ConsoleColor.White, ConsoleColor.Black, $"assessing {tot} address space combinations");
             ProgressBarz.RenderConsoleProgress(0);
 
             var VMCSTriage = new Dictionary<VMCS, int>();
@@ -810,14 +820,12 @@ namespace inVtero.net
                                         // let's just cancel if we haven't done any decodes
                                         if (rvList[grp.Key].Count() < 1)
                                         {
-                                            ForegroundColor = ConsoleColor.Red;
-                                            WriteLine($"canceling evaluation of bad EPTP for this group/Address Space ({grp.Key})");
-                                            //foreach (var p in Processes)
-                                            //    if (p.vmcs != null && p.vmcs.EPTP == space.EPTP && p.AddressSpaceID == proc.AddressSpaceID)
-                                            //        p.vmcs = null;
+                                            WriteColor(ConsoleColor.Yellow, $"Canceling evaluation of bad EPTP for this group/Address Space ({grp.Key}) a likely bare metal group");
+                                            foreach (var p in Processes)
+                                                if (p.vmcs != null && p.vmcs.EPTP == space.EPTP && p.AddressSpaceID == proc.AddressSpaceID)
+                                                    p.vmcs = null;
 
-                                            //ForegroundColor = CurrColor;
-                                            //rvList[grp.Key] = null;
+                                            rvList[grp.Key] = null;
                                         }
                                         break;
                                     }
@@ -896,7 +904,7 @@ namespace inVtero.net
                         rvList.Add(pmetal.AddressSpaceID, new List<DetectedProc>());
                 }
             }
-            return rvList;
+             return rvList;
         }
 
         public void DumpFailList()
@@ -1261,11 +1269,25 @@ DoubleBreak:
 
 
         long ContigSize;
+        /// <summary>
+        /// Single Instance Storage bitmap
+        /// </summary>
+        static WAHBitArray SISmap;
 
-        public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null)
+        public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null, bool SinglePFNStore = true, bool DumpNULL = false)
         {
-            bool canAppend = false;
+            if (SinglePFNStore && SISmap == null)
+                SISmap = new WAHBitArray();
 
+            if(SinglePFNStore)
+            {
+                if (SISmap.Get((int)VALUE.PTE.PFN))
+                    return string.Empty;
+
+                SISmap.Set((int)VALUE.PTE.PFN, true);
+            }
+
+            bool canAppend = false;
             var saveLoc = BaseFileName + KEY.Address.ToString("X") + ".bin";
             var lastLoc = BaseFileName + (KEY.Address - ContigSize).ToString("X") + ".bin";
 
@@ -1278,29 +1300,16 @@ DoubleBreak:
             else
                 ContigSize = 0x1000;
 
-            long[] block = new long[0x200]; // 0x200 * 8 = 4k
-            byte[] bpage = new byte[0x1000];
+            //unsafe
+            //{
+                var block = new long[0x200]; // 0x200 * 8 = 4k
+                var bpage = new byte[0x1000];
 
-
-            unsafe
-            {
-                // block may be set to null by the GetPageForPhysAddr call, so we need to remake it every time through...
-                block = new long[0x200]; // 0x200 * 8 = 4k
-                bpage = new byte[0x1000];
-
-                fixed (void* lp = block, bp = bpage)
-                {
+                //fixed (void* lp = block, bp = bpage)
+                //{
 
                     if (DiagOutput)
-                    {
-                        if (!VALUE.PTE.Valid)
-                            Console.ForegroundColor = ConsoleColor.Red;
-                        else
-                            Console.ForegroundColor = ConsoleColor.Cyan;
-
-                        WriteLine($"VA: {KEY:X12}  \t PFN: {VALUE.PTE}");
-
-                    }
+                        WriteColor(VALUE.PTE.Valid ? ConsoleColor.Cyan : ConsoleColor.Red,  $"VA: {KEY:X12}  \t PFN: {VALUE.PTE}");
 
                     // if we have invalid (software managed) page table entries
                     // the data may be present, or a prototype or actually in swap.
@@ -1311,37 +1320,61 @@ DoubleBreak:
 
                     if (VALUE.PTE.LargePage)
                     {
-                        using (var lsavefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
-                            // 0x200 * 4kb = 2MB
-                            // TODO: Large pages properly
-                            for (int i = 0; i < 0x200; i++)
-                            {
-                                try { PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
-                                VALUE.PTE.PTE += (i * 0x1000);
-                                if (block == null)
-                                    break;
+                        // 0x200 * 4kb = 2MB
+                        // TODO: Large pages properly
+                        for (int i = 0; i < 0x200; i++)
+                        {
+                            try { PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
+                            VALUE.PTE.PTE += 0x1000;
+                            if (block == null)
+                                break;
 
-                                Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                                lsavefile.Write(bpage, 0, 4096);
+                            if (!DumpNULL && UnsafeHelp.IsZero(block))
+                            {
+                                ContigSize = 0;
+                                // reset lastLoc for next run since were -0x1000 from the actual start, were going to go up this time
+                                lastLoc = BaseFileName + KEY.Address.ToString("X") + ".bin";
+                                continue;
                             }
+                            Buffer.BlockCopy(block, 0, bpage, 0, 4096);
+                            //Buffer.MemoryCopy(lp, bp, 4096, 4096);
+
+                            using (var lsavefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
+                                lsavefile.Write(bpage, 0, 4096);
+                            //lsavefile.Write(bpage, 0, 4096);
+
+                        }
+                        if (File.Exists(lastLoc) && new FileInfo(lastLoc).Length == 0)
+                        {
+                            File.Delete(lastLoc);
+                            return string.Empty;
+                        }
+                        return lastLoc;
                     }
                     else
                     {
                         try { PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
 
                         if (block != null)
-                        using (var savefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
+                        {
+                            if (DumpNULL || !UnsafeHelp.IsZero(block))
                             {
-                            Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                            savefile.Write(bpage, 0, 4096);
+                                Buffer.BlockCopy(block, 0, bpage, 0, 4096);
+                               //Buffer.MemoryCopy(lp, bp, 4096, 4096);
+
+                                using (var savefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
+                                    savefile.Write(bpage, 0, 4096);
+
+                                    //savefile.Write(bpage, 0, 4096);
+                                return lastLoc;
+                            }
                         }
                     }
-                }
-            }
-            return saveLoc;
+                    ContigSize = 0;
+                    return string.Empty;
+                //}
+            //}
         }
         #endregion
-
-
     }
 }

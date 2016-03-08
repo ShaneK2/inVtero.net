@@ -35,7 +35,8 @@ namespace inVtero.net
     }
  
     public static class MagicNumbers
-    {
+    { 
+        public const int PAGE_SHIFT = 12;
         public const long BAD_VALUE_READ = 0x7bafcafe000f00d0;
 
         public static int[] Each { get { return new int[] { Windows_SelfPtr, FreeBSD_RecursiveEntry, OpenBSD_RecursiveEntry }; } }

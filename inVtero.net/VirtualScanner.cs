@@ -131,8 +131,8 @@ namespace inVtero.net
 
                     var block = new long[0x200]; // 0x200 * 8 = 4k
                     var bpage = new byte[0x1000];
-                    unsafe
-                    {
+                    //unsafe
+                    //{
                         while (i < Stop)
                         {
                             foreach (var scanner in CheckMethods)
@@ -153,16 +153,17 @@ namespace inVtero.net
                                 if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
                                     continue;
 
-                                fixed (void* lp = block, bp = bpage)
-                                {
+                                //fixed (void* lp = block, bp = bpage)
+                                //{
                                     bool GotData = false;
                                     try
                                     {
                                         BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData);
-                                        Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                                        Buffer.BlockCopy(block, 0, bpage, 0, 4096);
+                                        //Buffer.MemoryCopy(lp, bp, 4096, 4096);
                                     }
                                     catch (Exception ex) { }
-                                }
+                                //}
 
                                     var scan_detect = scanner(i, bpage);
                                 if (scan_detect != VAScanType.UNDETERMINED)
@@ -175,7 +176,7 @@ namespace inVtero.net
                             //i += Environment.ProcessorCount << 12;
                             // for easier debugging if your not using Parallel loop
                             i += 1 << 12;
-                        }
+                        //}
                         StillGoing = false;
                     }
                 //});

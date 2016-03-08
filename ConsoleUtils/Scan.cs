@@ -61,7 +61,7 @@ namespace inVtero.net.ConsoleUtils
             }
 
             if (vtero.Phase < 2)
-                vtero = new Vtero(Filename);
+                vtero = new Vtero(Filename, co.ForceScanMemGaps);
 
             if (!vtero.OverRidePhase)
             {
@@ -146,6 +146,8 @@ namespace inVtero.net.ConsoleUtils
 
             if (SkipVMCS)
             {
+                vtero.GroupAS();
+
                 if (co.VerboseLevel > 1)
                     WriteColor(ConsoleColor.Yellow, "Skipping VMCS scan (as requested).");
                 return vtero;

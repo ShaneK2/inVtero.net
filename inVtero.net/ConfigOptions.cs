@@ -19,6 +19,8 @@ namespace inVtero.net
 
         public bool VerboseOutput { get; set; }
 
+        public bool ForceScanMemGaps{ get; set; }
+
         public override string ToString()
         {
             return $"\t(-f) FileName = [{FileName}]{NewLine}" +

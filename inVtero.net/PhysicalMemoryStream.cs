@@ -51,7 +51,7 @@ namespace inVtero.net
             set { position = value; Seek(value, SeekOrigin.Begin); }
         }
 
-        public unsafe override int Read(byte[] buffer, int offset, int count)
+        public override int Read(byte[] buffer, int offset, int count)
         {
             int CurrOff = 0;
             // figure out how many pages we need 
@@ -70,19 +70,20 @@ namespace inVtero.net
                 var lblock = new long[0x200]; // 0x200 * 8 = 4k
                 PageCount--;
 
-                fixed (void* lp = lblock, bp = buffer)
-                {
+                //fixed (void* lp = lblock, bp = buffer)
+                //{
                     try {
                         if (MemBlockStorage.GetPageForPhysAddr(CurrPage.PTE, ref lblock) == MagicNumbers.BAD_VALUE_READ)
                             continue;
 
-                        Buffer.MemoryCopy((byte*)lp + CurrOff, (byte*)bp + CurrOff, 4096, 4096);
+                        Buffer.BlockCopy(lblock, CurrOff/4, buffer, CurrOff, 4096);
+                        //Buffer.MemoryCopy((byte*)lp + CurrOff, (byte*)bp + CurrOff, 4096, 4096);
                     } finally
                     {
                         CurrOff += 0x1000;
                     }
                     
-                }
+                //}
             }
 
             return (rv - PageCount) * 0x1000;

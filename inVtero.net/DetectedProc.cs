@@ -37,7 +37,7 @@ namespace inVtero.net
         public List<VMCS> CandidateList;
         public PageTable PT;    // extracted page table
         public long CR3Value;
-        public long FileOffset;
+        public long FileOffset; 
         public long Diff;
         public int Mode; // 1 or 2
         public PTType PageTableType;
@@ -68,14 +68,15 @@ namespace inVtero.net
             else
                 hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
             
-            unsafe
-            {
-                fixed (void* lp = rv, bp = buffer)
-                {
+            //unsafe
+            //{
+                //fixed (void* lp = rv, bp = buffer)
+                //{
                     MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData, true);
-                    Buffer.MemoryCopy((byte*)lp, (byte*)bp, 4096, 4096);
-                }
-            }
+                    Buffer.BlockCopy(rv, 0, buffer, 0, 4096);
+                    //Buffer.MemoryCopy((byte*)lp, (byte*)bp, 4096, 4096);
+                //}
+            //}
             return buffer;
         }
 

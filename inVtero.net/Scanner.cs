@@ -814,12 +814,17 @@ namespace inVtero.net
             // each processor will ValueReadCount
             long ReadSize = 1024 * 1024 * 8;
             var ValueReadCount = (int)ReadSize / 4;
-            var RevMapSize = ReadSize * Environment.ProcessorCount;
+            var RevMapSize = ReadSize;
 
             var ShortFirstChunkSize = (int)(FileSize & (ReadSize - 1));
             var ShortFirstChunkBase = FileSize - ShortFirstChunkSize;
 
-            var found = MapScanFile(Filename, ShortFirstChunkBase, (int) HexScanDword, ShortFirstChunkSize / 4);
+            if (ShortFirstChunkSize != 0)
+            {
+                var found = MapScanFile(Filename, ShortFirstChunkBase, (int)HexScanDword, ShortFirstChunkSize / 4);
+                foreach (var offset in found)
+                    yield return offset;
+            }
 
             var RevCurrWindowBase = FileSize - ShortFirstChunkSize;
 
@@ -828,16 +833,21 @@ namespace inVtero.net
 
             bool StopRunning = false;
 
+            long localOffset = ShortFirstChunkBase - ReadSize;
+
             for (long i = ChunkCount; i > 0; i--)
             {
                 // testing if to For.Parallel this inner loop
-                for (int j = 0; j < Environment.ProcessorCount; j++)
-                {
-                    //if (!StopRunning)
-                    //{
-                    var localOffset = RevCurrWindowBase + (j * ReadSize);
+                //for (int j = 0; j < Environment.ProcessorCount; j++)
+                //{
 
-                    WriteColor($"Scanning From {localOffset:X} To {(localOffset + ReadSize):X} bytes");
+
+                if (!StopRunning)
+                {
+
+                    if(Vtero.VerboseLevel > 1)
+                        WriteColor($"Scanning From {localOffset:X} To {(localOffset + ReadSize):X} bytes");
+
                     var results = MapScanFile(Filename, localOffset, (int)HexScanDword, ValueReadCount);
 
                     foreach (var offset in results)
@@ -846,20 +856,23 @@ namespace inVtero.net
                     if (ExitAfter > 0 && FoundValueOffsets.Count() >= ExitAfter)
                         StopRunning = true;
 
+                    CurrWindowBase += (1 * ReadSize);
                     var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
                     if (progress != ProgressBarz.Progress)
                         ProgressBarz.RenderConsoleProgress(progress);
 
                     //}
 
-                    RevCurrWindowBase -= RevMapSize;
-                    if (RevCurrWindowBase < 0 && !StopRunning)
+                    localOffset -= RevMapSize;
+                    if (localOffset < 0 && !StopRunning)
                     {
-                        RevCurrWindowBase = 0;
+                        localOffset = 0;
                         StopRunning = true;
+
                     }
                 }
             }
+            //}
             yield break;
         }
 

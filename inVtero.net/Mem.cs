@@ -278,7 +278,7 @@ namespace inVtero.net
                 if(block != null)
                     UnsafeHelp.ReadBytes(mappedAccess.Value, BlockOffset, ref block);
 
-                rv = mappedAccess.Value.ReadInt64(AbsOffset);
+                rv = mappedAccess.Value.ReadInt64(AbsOffset & ~7L);
                 DataRead = true;
 
             }

@@ -22,6 +22,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using static System.Console;
+using inVtero.net;
+using static inVtero.net.Misc;
+
 
 /// <summary>
 /// Adding some specialties for practical purposes.
@@ -58,6 +61,8 @@ namespace inVtero.net.Specialties
         uint StartOfMem;
         public bool GoodDesc;
         long MemSize;
+        FileInfo finfo;
+        long MaxNumPages;
 
         public MemoryDescriptor ExtractMemDesc(Vtero vtero)
         {
@@ -70,10 +75,10 @@ namespace inVtero.net.Specialties
                 {
                     foreach (var xoff in off)
                     {
-                        WriteLine($"Checking Memory Descriptor @{(xoff + 28):X}");
+                        //WriteLine($"Checking Memory Descriptor @{(xoff + 28):X}");
                         if (xoff > vtero.FileSize)
                         {
-                            WriteLine($"offset {xoff:X} > FileSize {vtero.FileSize:X}");
+                        //    WriteLine($"offset {xoff:X} > FileSize {vtero.FileSize:X}");
                             continue;
                         }
 
@@ -84,25 +89,25 @@ namespace inVtero.net.Specialties
 
                         Console.WriteLine($"Runs: {MemRunDescriptor.NumberOfRuns}, Pages: {MemRunDescriptor.NumberOfPages} ");
 
-                        if (MemRunDescriptor.NumberOfRuns > 0 && MemRunDescriptor.NumberOfRuns < 32
+                        if (MemRunDescriptor.NumberOfRuns >= 0 && MemRunDescriptor.NumberOfRuns < 32
                             &&
                             // this means the descriptor covers our input
-                            (((MemSize - StartOfMem) / 0x1000) & 0xffffff00) == (MemRunDescriptor.NumberOfPages & 0xffffff00))
+                            (((MemSize - StartOfMem) >> MagicNumbers.PAGE_SHIFT) & 0xffffff00) == (MemRunDescriptor.NumberOfPages & 0xffffff00))
                             GoodDesc = true;
 
-                        for (int i = 0; i < MemRunDescriptor.NumberOfRuns; i++)
-                        {
-                            var basePage = dbin.ReadInt64();
-                            var pageCount = dbin.ReadInt64();
-
-                            MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
-                        }
-                        WriteLine($"MemoryDescriptor {MemRunDescriptor}");
-
-
                         if (GoodDesc)
-                            return MemRunDescriptor;
+                        {
+                            for (int i = 0; i < MemRunDescriptor.NumberOfRuns; i++)
+                            {
+                                var basePage = dbin.ReadInt64();
+                                var pageCount = dbin.ReadInt64();
 
+                                MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
+                            }
+                            WriteColor(ConsoleColor.Cyan, $"MemoryDescriptor {MemRunDescriptor}");
+
+                            return MemRunDescriptor;
+                        }
                     }
                 }
             }
@@ -110,7 +115,10 @@ namespace inVtero.net.Specialties
             return MemRunDescriptor;
         }
 
-
+        private void WriteColor(ConsoleColor cyan, string v)
+        {
+            throw new NotImplementedException();
+        }
 
         public bool IsSupportedFormat(Vtero vtero)
         {
@@ -181,6 +189,9 @@ namespace inVtero.net.Specialties
         public CrashDump(string FilePath)
         {
             DumpFile = FilePath;
+            finfo = new FileInfo(DumpFile);
+            MaxNumPages = finfo.Length >> MagicNumbers.PAGE_SHIFT;
+            MemSize = finfo.Length;
         }
 
     }
