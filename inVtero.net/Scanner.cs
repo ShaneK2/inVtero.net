@@ -491,6 +491,10 @@ namespace inVtero.net
         /// Naturally the Generic checker is fairly chatty but at least you can use it
         /// to find unknowns, we could use some more tunable values here to help select the
         /// best match, I currently use the value with the lowest diff, which can be correct
+        /// 
+        /// This will find a self pointer in the first memory run for a non-sparse memory dump.
+        /// After you locate the kernel in this first range, determine the memory run topology,
+        /// and then you can extract/identify the remaining entries.
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
@@ -502,9 +506,9 @@ namespace inVtero.net
             var bestOffset = long.MaxValue;
             var i = 0x1ff;
 
-            do
+            if (((block[0] & 0xff) == 0x63) || (block[0] & 0xfdf) == 0x847)
             {
-                if (((block[0] & 0xff) == 0x63) && block[0x1ff] == 0)
+                do
                 {
                     if (((block[i] & 0xff) == 0x63 || (block[i] & 0xff) == 0x67))
                     {
@@ -525,9 +529,13 @@ namespace inVtero.net
                                     bestDiff = diff;
                                     bestOffset = offset;
                                 }
-                                if (!DetectedProcesses.ContainsKey(offset))
+
+                                var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.GENERIC };
+
+                                // BUGBUG: Need to K-Means this or something cluster values to help detection of processes in sparse format
+                                // this could be better 
+                                if (shifted == offset)
                                 {
-                                    var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.GENERIC };
                                     for (int p = 0; p < 0x200; p++)
                                     {
                                         if (block[p] != 0)
@@ -542,11 +550,11 @@ namespace inVtero.net
                             }
                         }
                     }
-                }
-                i--;
-                // maybe some kernels keep more than 1/2 system memory 
-                // wouldn't that be a bit greedy though!?
-            } while (i > 0xFF);
+                    i--;
+                } while (i > 0xFF && !Candidate);
+            }
+            // maybe some kernels keep more than 1/2 system memory 
+            // wouldn't that be a bit greedy though!?
             return Candidate;
         }
 
@@ -600,13 +608,16 @@ namespace inVtero.net
         {
             var Candidate = false;
 
+            // pre randomized kernel 10.16 anniversario edition
+            const int SELF_PTR = 0x1ed;
+
             //var offset = CurrWindowBase + CurrMapBase;
-            var shifted = (block[0x1ed] & 0xFFFFFFFFF000);
+            var shifted = (block[SELF_PTR] & 0xFFFFFFFFF000);
             var diff = offset - shifted;
 
             // detect mode 2, 2 seems good for most purposes and is more portable
             // maybe 0x3 is sufficient
-            if (((block[0] & 0xfdf) == 0x847) && ((block[0x1ed] & 0xff) == 0x63 || (block[0x1ed] & 0xff) == 0x67))
+            if (((block[0] & 0xfdf) == 0x847) && ((block[SELF_PTR] & 0xff) == 0x63 || (block[SELF_PTR] & 0xff) == 0x67))
             {
                 // we disqualify entries that have these bits configured
                 //111 1111 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 1000 0000

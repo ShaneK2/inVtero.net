@@ -25,8 +25,8 @@ copts = ConfigOptions()
 # do not regenerate scan data every time
 # !!if you have _STALE_ data try changing this to True!!! (normally False is going to save time)
 ## currently the save state is missing for a few fields
-copts.IgnoreSaveData = False 
-copts.FileName = "c:\\dev\\memory.dmp"
+copts.IgnoreSaveData = True 
+copts.FileName = "c:\\work\\R0283773_RAM_R4PhysicalMemory"
 # support scanning for these targets
 # use PTType.VMCS when your suspect VM's or nested VM/hypervisors in use
 # PTType can also include HyperV, FreeBSD, OpenBSD, NetBSD and Linux
@@ -45,14 +45,14 @@ vtero = Scan.Scanit(copts)
 mem = Mem.Instance;
 
 newdir = copts.FileName + ".dumped"
-#topDir = Directory.CreateDirectory(newdir)
+topDir = Directory.CreateDirectory(newdir)
 
 SetGroup = set()
 #Vtero.DiagOutput = True
 BareMetalGroup = -1
 
 for proc in vtero.FlattenASGroups:
-    currProcBase = newdir + "-" + proc.ASGroup.ToString() + "-" + proc.CR3Value.ToString("X")
+    currProcBase = newdir + "\\Group-" + proc.ASGroup.ToString() + "-Process-" + proc.CR3Value.ToString("X")
     # By default wipe out any stale stuff
     if Directory.Exists(currProcBase):
         Directory.Delete(currProcBase, True)
@@ -73,16 +73,16 @@ for proc in vtero.FlattenASGroups:
         # Assign the current group as a known group so we do not continue to redundantly dump kernel ranges
         # possibly continue to attempt dumping only kernel ranges which are not mapped into other processes
         # also where the PFN != previous mapped PFN
-        if proc.ASGroup not in SetGroup:
-            SetGroup.add(proc.ASGroup)
+        #if proc.ASGroup not in SetGroup:
+        #    SetGroup.add(proc.ASGroup)
         # Were ready to go with a process & set of ranges
         print "Process %s, ranges %d, entries %d" % (proc.ShortName, ranges.Count, pt.EntriesParsed)
         for range in ranges:
-            if range.Value.PTE.Valid:
-                if not Directory.Exists(currProcBase):
-                    dirz = Directory.CreateDirectory(currProcBase)
-                # Dump ranges into a process specific directory
-                outFile = vtero.WriteRange(range.Key, range.Value, "%s\\%s-" % (currProcBase, proc.ShortName), mem)
+            #if range.Value.PTE.Valid:
+            if not Directory.Exists(currProcBase):
+                dirz = Directory.CreateDirectory(currProcBase)
+            # Dump ranges into a process specific directory
+            outFile = vtero.WriteRange(range.Key, range.Value, "%s\\%s-" % (currProcBase, proc.ShortName), mem)
 
 
 
