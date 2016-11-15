@@ -2,11 +2,6 @@
 Find/Extract processes, hypervisors (including nested) in memory dumps using microarchitecture independent
 Virtual Machine Introspection techniques.  Cross platform, multi-architechture high performance physical memory analysis tools.
 
-Upcoming functionality to render an integrity map for code pages that can be mapped back to cryptographically secure block/page hash values (i.e. SHA256 or TIGER192).  Our results indicate pre-win10 verification rates over 99%, post win10 volatile memory is virtually 100% attestable.  This eliminates substantional guess work and unkown's due to traditional manual handling/review/dissassembly of memory when attempting to detect/analyze multi-gigabytes of input.
-
-~~## Reloc Submodule
-If the buld-status is yellow, I have to fix my CI script to properly clone the submodule... in any case, you may need to do the same, grab the Reloc project as some of it is a small dependency.  ~~
-
 | x64 Release |
 |:------------|
 |![Build status](https://ktwo.visualstudio.com/DefaultCollection/_apis/public/build/definitions/16d48273-682e-4b01-8392-1f83fc2c3bcd/4/badge)|
@@ -15,6 +10,13 @@ If the buld-status is yellow, I have to fix my CI script to properly clone the s
 
 ## Upcoming changes
 K2 is going to be commiting soon a major revamp of the console interface built around PowerArgs.  I'm not going to submodule again since that really didn't work out well for me with the Reloc project and I really want the latest fixes/snapshot (NuGet somewhat older also) from @adamabdelhamed/PowerArgs) I'll be importing a fork directly into the master branch here and manually maintaining the fork out side of a submodule.
+
+### NEW STUFF
+* XEN Support 
+  * (VMWare, XEN, MS CRASHDUMP & RAW)
+* New memory run detection
+* Windows kernel memory address randomization (including page table base self/entry)
+* Basic Linux (BSD, HyperV, Windows, Generic) 
 
 ## quickdumps
 Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
@@ -124,6 +126,8 @@ In the above example, VMWARE's EPTP is at index 14 in it's VMCS.
 ## Goals
 To refrain from using OS logical structures to support memory analysis.  It's likely that most OS layer structures, data,
 code and objects may be manipulated by an attacker to misdirect an analyst’s efforts.
+
+Upcoming functionality to render an integrity map for code pages that can be mapped back to cryptographically secure block/page hash values (i.e. SHA256 or TIGER192).  Our results indicate pre-win10 verification rates over 99%, post win10 volatile memory is virtually 100% attestable.  This eliminates substantional guess work and unkown's due to traditional manual handling/review/dissassembly of memory when attempting to detect/analyze multi-gigabytes of input.
 
 
 

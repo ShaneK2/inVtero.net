@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>inVtero.net</RootNamespace>
     <AssemblyName>inVtero.net</AssemblyName>
-    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <SccProjectName>SAK</SccProjectName>
@@ -62,13 +62,33 @@
     </StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="ELFSharp, Version=1.0.0.0, Culture=neutral, PublicKeyToken=22f480d29a3ced83, processorArchitecture=MSIL">
+      <HintPath>..\packages\ELFSharp.1.0.4\lib\net40\ELFSharp.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
       <HintPath>..\packages\EntityFramework.6.1.3\lib\net45\EntityFramework.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="LinqOptimizer.Base, Version=0.6.3.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\LinqOptimizer.CSharp.0.6.3\lib\LinqOptimizer.Base.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="LinqOptimizer.Core, Version=0.6.3.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\LinqOptimizer.CSharp.0.6.3\lib\LinqOptimizer.Core.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="LinqOptimizer.CSharp, Version=0.6.3.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\LinqOptimizer.CSharp.0.6.3\lib\LinqOptimizer.CSharp.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="Microsoft.CSharp" />
-    <Reference Include="protobuf-net, Version=2.0.0.668, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
-      <HintPath>..\packages\protobuf-net.2.1.0-alpha-1\lib\net45\protobuf-net.dll</HintPath>
+    <Reference Include="MiscUtil, Version=1.0.0.0, Culture=neutral, PublicKeyToken=d3c42c4bfacf7596, processorArchitecture=MSIL">
+      <HintPath>..\packages\JonSkeet.MiscUtil.0.1\lib\net35-Client\MiscUtil.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="protobuf-net, Version=2.1.0.0, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
+      <HintPath>..\packages\protobuf-net.2.1.0\lib\net451\protobuf-net.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="System" />
@@ -92,8 +112,10 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Scanner.cs" />
     <Compile Include="Specialties\CrashDump.cs" />
+    <Compile Include="Specialties\IMemAwareChecking.cs" />
     <Compile Include="Specialties\ProgressBar.cs" />
     <Compile Include="Specialties\VMWare.cs" />
+    <Compile Include="Specialties\XEN.cs" />
     <Compile Include="Support.cs" />
     <Compile Include="Support\PageCache.cs" />
     <Compile Include="Support\WAHBitarray2.cs" />
@@ -105,7 +127,9 @@
       <SubType>Designer</SubType>
     </None>
     <None Include="inVtero.net.ruleset" />
-    <None Include="packages.config" />
+    <None Include="packages.config">
+      <SubType>Designer</SubType>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.5.2">

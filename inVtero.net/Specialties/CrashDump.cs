@@ -54,9 +54,16 @@ namespace inVtero.net.Specialties
     /// 
     /// Amazingly simple to support the basic CrashDump format (Thank you MicroSoft)
     /// </summary>
-    public class CrashDump
+    public class CrashDump : IMemAwareChecking
     {
-        public MemoryDescriptor PhysMemDesc;
+
+        // TODO: All these things that do file I/O need to be better at closing resources down / ISTREAM
+
+
+        public MemoryDescriptor PhysMemDesc { get; set; }
+        public string vDeviceFile { get; set; }
+        public string MemFile { get; set; }
+
         string DumpFile;
         uint StartOfMem;
         public bool GoodDesc;
@@ -68,7 +75,7 @@ namespace inVtero.net.Specialties
         {
             MemoryDescriptor MemRunDescriptor = null;
             var off = vtero.ScanValue(false, 0x6c4d6d4d, 4);
-
+            
             using (var dstream = File.OpenRead(vtero.MemFile))
             {
                 using (var dbin = new BinaryReader(dstream))
@@ -82,7 +89,7 @@ namespace inVtero.net.Specialties
                             continue;
                         }
 
-                        dstream.Position = xoff + 28;
+                        dstream.Position = xoff + 20; // TODO: double check we ma need to do a sub loop step range 8,16,20,24,28,32 -- ensure we scan hard'r
                         MemRunDescriptor = new MemoryDescriptor();
                         MemRunDescriptor.NumberOfRuns = dbin.ReadInt64();
                         MemRunDescriptor.NumberOfPages = dbin.ReadInt64();
@@ -104,7 +111,7 @@ namespace inVtero.net.Specialties
 
                                 MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
                             }
-                            WriteColor(ConsoleColor.Cyan, $"MemoryDescriptor {MemRunDescriptor}");
+                            WriteLine($"MemoryDescriptor {MemRunDescriptor}");
 
                             return MemRunDescriptor;
                         }
@@ -188,7 +195,7 @@ namespace inVtero.net.Specialties
         // extract initialization values from FilePath to derive memory RUN/base
         public CrashDump(string FilePath)
         {
-            DumpFile = FilePath;
+            MemFile = DumpFile = FilePath;
             finfo = new FileInfo(DumpFile);
             MaxNumPages = finfo.Length >> MagicNumbers.PAGE_SHIFT;
             MemSize = finfo.Length;

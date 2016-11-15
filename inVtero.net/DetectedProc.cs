@@ -49,9 +49,15 @@ namespace inVtero.net
 
         public long GetValue(long VA)
         {
-            var data = VGetBlock(VA);
+           var data = VGetBlock(VA);
             return data[VA & 0xfff];
+        }
 
+
+        public ulong GetUValue(ulong VA)
+        {
+            var data = VGetBlock((long) VA);
+            return data[VA & 0xfff];
         }
 
         public byte[] VGetBlock(long VA)

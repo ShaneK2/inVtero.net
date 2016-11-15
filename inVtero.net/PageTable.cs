@@ -23,6 +23,7 @@ using System.Diagnostics;
 using static System.Console;
 using ProtoBuf;
 using System.Linq;
+using inVtero.net.Specialties;
 
 namespace inVtero.net
 {
@@ -70,6 +71,33 @@ namespace inVtero.net
             if(Vtero.DiagOutput)
                 WriteLine($"PT analysis of {dp}");
 
+#if KLUDGE_WHEN_WE_HAVE_NO_RU
+            long IndexedPFN = 0, aPFN = dp.CR3Value >> MagicNumbers.PAGE_SHIFT;
+            bool fail = false;
+            //BUGBUG: when detector has not figured out run's yet
+            if (mem.MemSpaceDetector == typeof(XEN))
+            {
+                for (int i = 0; i < mem.MD.Value.NumberOfRuns; i++)
+                {
+                    if (aPFN >= mem.MD.Value.Run[i].BasePage && aPFN < (mem.MD.Value.Run[i].BasePage + mem.MD.Value.Run[i].PageCount))
+                    {
+                        var currBaseOffset = aPFN - mem.MD.Value.Run[i].BasePage;
+                        IndexedPFN += currBaseOffset;
+                        fail = false;
+                        break;
+                    }
+                    IndexedPFN += mem.MD.Value.Run[i].PageCount;
+                }
+
+
+                long xen_adjust_start = dp.FileOffset - (IndexedPFN << MagicNumbers.PAGE_SHIFT);
+                Mem.Instance.StartOfMemory = xen_adjust_start;
+                mem.StartOfMemory = xen_adjust_start;
+
+                // optimize out this code...
+                mem.MemSpaceDetector = null;
+            }
+#endif
             //dp.vmcs = null;
             var rv = new PageTable
             {
@@ -393,7 +421,7 @@ namespace inVtero.net
             foreach (var kvp in DP.TopPageTablePage)
             {
                 // Only extract user portion, kernel will be mostly redundant
-                if(!RedundantKernelSpaces && kvp.Key >= 256)
+                if(!RedundantKernelSpaces && kvp.Key >= 255)
                     continue;
 
                 // were at the top level (4th)

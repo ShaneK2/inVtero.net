@@ -19,7 +19,7 @@ namespace Volatility
     //def scan(self, address_space, offset = 0, maxlen = None):
     //The main method is def check(self, offset):
     //def __init__(self, address_space, ** _kwargs):
-    //def object_offset(self, offset, address_space):
+    //def object_offset(self, offset, address_space):n mb
     //def check(self, _offset):
     //## If you want to speed up the scanning define this method - it
     //#def skip(self, data, offset):

@@ -24,6 +24,7 @@ using System.Text;
 using ProtoBuf;
 using static System.Console;
 using inVtero.net.Support;
+using inVtero.net.Specialties;
 
 namespace inVtero.net
 {
@@ -38,6 +39,7 @@ namespace inVtero.net
     { 
         public const int PAGE_SHIFT = 12;
         public const long BAD_VALUE_READ = 0x7bafcafe000f00d0;
+        public const long BAD_RUN_CONFIG_READ = 0x7bafcafe000f00d1;
 
         public static int[] Each { get { return new int[] { Windows_SelfPtr, FreeBSD_RecursiveEntry, OpenBSD_RecursiveEntry }; } }
 
@@ -195,7 +197,7 @@ namespace inVtero.net
         }
         public override string ToString()
         {
-            var sb = $"VA:{PTE:X16} PFN:{PFN:X12} AO:{AddressOffset:X3} WS:{SoftwareWsIndex:X4} NX:{NoExecute} W:{Write} UN:{Unused} COW:{CopyOnWrite} G:{Global} LP:{LargePage} D:{Dirty} A:{Accessed} CD:{CacheDisable} WT:{WriteThrough} S|O{Owner} D1:{Dirty1} V:{Valid}";
+            var sb = $"PTE:{PTE:X16} PFN:{PFN:X12} AO:{AddressOffset:X3} WS:{SoftwareWsIndex:X4} NX:{NoExecute} W:{Write} UN:{Unused} COW:{CopyOnWrite} G:{Global} LP:{LargePage} D:{Dirty} A:{Accessed} CD:{CacheDisable} WT:{WriteThrough} S|O{Owner} D1:{Dirty1} V:{Valid}";
 
             // I wish bool had a format specifier!
             var replacements = new List<Tuple<string, string>>() { Tuple.Create<string, string>("True", "+"), Tuple.Create<string, string>("False", "-") };
@@ -383,6 +385,15 @@ namespace inVtero.net
         public MemoryDescriptor()
         {
             Run = new List<MemoryRun>();
+        }
+
+        public MemoryDescriptor(long MemSize, long BaseOffset) : this()
+        {
+            StartOfMemmory = BaseOffset;
+            NumberOfPages = (MemSize / 4096) - BaseOffset / 4096;
+            NumberOfRuns = 1;
+
+            Run.Add(new MemoryRun { BasePage = 0, PageCount = NumberOfPages });
         }
 
         public MemoryDescriptor(long MemSize) : this()

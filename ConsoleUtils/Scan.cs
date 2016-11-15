@@ -65,7 +65,7 @@ namespace inVtero.net.ConsoleUtils
 
             if (!vtero.OverRidePhase)
             {
-                Mem.InitMem(co.FileName, null, vtero.DetectedDesc);
+                Mem.InitMem(co.FileName, null, vtero.DetectedDesc, null);
                 ProgressBarz.BaseMessage = new ConsoleString("First pass, looking for processes");
                 ForegroundColor = ConsoleColor.Cyan;
 #if TESTING

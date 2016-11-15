@@ -9,9 +9,11 @@ from inVtero.net.ConsoleUtils import *
 copts = ConfigOptions()
 
 # do not regenerate scan data every time
-copts.IgnoreSaveData = False
-copts.FileName = "D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-bbbe109e.vmem"
+copts.IgnoreSaveData = True
+#copts.FileName = "D:\\Users\\files\\VMs\\Windows Server 2016 TP5\\Windows Server 2016 TP5-16da3812.vmem"
+copts.FileName = "c:\\temp\\win2012R2.xendump"
 copts.VersionsToEnable = PTType.VMCS | PTType.FreeBSD | PTType.Windows | PTType.HyperV | PTType.GENERIC
+# PTType.VMCS | PTType.FreeBSD | PTType.Windows | PTType.HyperV | PTType.GENERIC
 copts.VerboseLevel = 1
 copts.VerboseOutput = True
 

@@ -168,7 +168,9 @@ namespace inVtero.net
         [ProtoAfterDeserialization]
         void DeriveMemoryDescriptors()
         {
-            if(ProgressBarz.BaseMessage == null || string.IsNullOrWhiteSpace(ProgressBarz.BaseMessage.ToString()))
+            Type SpaceDetector = typeof(object);
+
+            if (ProgressBarz.BaseMessage == null || string.IsNullOrWhiteSpace(ProgressBarz.BaseMessage.ToString()))
                 ProgressBarz.BaseMessage = new ConsoleString("Value Scan for memory descriptors in progress");
 
             if (ForceDescScan)
@@ -180,24 +182,37 @@ namespace inVtero.net
             {
                 var dump = new CrashDump(MemFile);
                 if (dump.IsSupportedFormat(this))
+                {
                     DetectedDesc = dump.PhysMemDesc;
-
+                    SpaceDetector = typeof(CrashDump);
+                }
             } else if (MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
             {
                 var dump = new VMWare(MemFile);
-                if (dump.IsSupportedFormat())
+                if (dump.IsSupportedFormat(this))
                 {
                     DetectedDesc = dump.PhysMemDesc;
 
                     MemFile = dump.MemFile;
+                    SpaceDetector = typeof(VMWare);
                 }
             }
+
+            // try XEN!
+            if(DetectedDesc == null)
+            {
+                var xen = new XEN(MemFile);
+                if(xen != null && xen.IsSupportedFormat(this))
+                    DetectedDesc = xen.PhysMemDesc;
+
+                SpaceDetector = null;
+            }
+
             if (DetectedDesc == null || DetectedDesc.NumberOfPages < 1)
                 // if the memory run is defined as 0 count then it's implicitly 1
                 DetectedDesc = new MemoryDescriptor(FileSize);
 
-
-            Mem.InitMem(MemFile, null, DetectedDesc);
+            Mem.InitMem(MemFile, null, DetectedDesc, SpaceDetector);
         }
 
         public string CheckpointSaveState(string OverrideName = null, string DirSpec = null)
@@ -231,6 +246,27 @@ namespace inVtero.net
             scan.ScanMode = PTType.VALUE;
 
             return scan.BackwardsValueScan(ScanOnlyFor);
+        }
+
+        /// <summary>
+        /// VOLATILITY ADDRESS SPACE SUPPORT
+        /// 
+        /// VOLA get_available_pages gives us back a list of virtual addresses that
+        /// are able to be used with a 'task' (we just call that a CR3:)
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public List<long> get_available_pages()
+        {
+            List<long> rv = new List<long>();
+
+
+            return rv;
+        }
+
+        public ulong read_long_long_phys(ulong addr)
+        {
+            return 0;
         }
 
         public int ProcDetectScan(PTType Modes, int DetectOnly = 0)

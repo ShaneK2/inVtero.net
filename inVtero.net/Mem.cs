@@ -28,6 +28,7 @@ using RaptorDB;
 using System.Collections.Concurrent;
 using inVtero.net.Support;
 using ProtoBuf;
+using inVtero.net.Specialties;
 
 // Details on this struct can be found here and likely many other sources
 // Microsoft published this originally on the singularity project's codeplex (along with some other ingerestiVng things)
@@ -57,6 +58,8 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Mem : IDisposable
     {
+        public Type MemSpaceDetector;
+
         MemoryDescriptor ddes;
         /// <summary>
         /// DetectedDescriptor is meant for the user to assign when they have an override
@@ -72,7 +75,7 @@ namespace inVtero.net
         /// MD actually gets used for extracting memory
         /// </summary>
         [ProtoMember(1)]
-        ThreadLocal<MemoryDescriptor> MD { get; set; }
+        public ThreadLocal<MemoryDescriptor> MD { get; set; }
 
 
         public long StartOfMemory; // adjust for .DMP headers or something
@@ -184,16 +187,19 @@ namespace inVtero.net
         }
 #endif
 
-        public static void InitMem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null) //: this()
+        public static void InitMem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null, Type Detector = null) //: this()
         {
+            
             if (Global == null)
             {
                 Global = new Mem();
                 Global.MD = new ThreadLocal<MemoryDescriptor>();
             }
 
-
             Global.StartOfMemory = Override != null ? Override.StartOfMemmory : 0;
+
+            if(Detector != null)
+                Global.MemSpaceDetector = Detector;
 
             if (Override != null)
             {
@@ -232,53 +238,66 @@ namespace inVtero.net
         public static ulong cntInAccessor = 0;
         public static ulong cntOutAccsor = 0;
 
+        /// <summary>
+        /// Get a pagesized block that contains the data from the byte offset specified
+        /// </summary>
+        /// <param name="FileOffset">byte offset of long aligned page block</param>
+        /// <param name="block">to be filled on return optionally</param>
+        /// <param name="DataRead">signals success</param>
+        /// <returns>long value from fileoffset</returns>
         public long GetPageFromFileOffset(long FileOffset, ref long[] block, ref bool DataRead)
         {
             var rv = 0L;
-            var NewMapViewBase = MapViewBase;
-            var NewMapViewSize = MapViewSize;
+            var NewMapViewBase = MapViewBase.Value;
+            var NewMapViewSize = MapViewSize.Value;
             DataRead = false;
 
 
             var CheckBase = FileOffset / MapViewSize.Value;
             if (MapViewBase.Value != CheckBase * MapViewSize.Value)
-                NewMapViewBase.Value = CheckBase * MapViewSize.Value;
+                NewMapViewBase = CheckBase * MapViewSize.Value;
 
             if (FileOffset > FileSize)
                 return 0;
 
-            if (FileOffset < NewMapViewBase.Value)
+            if (FileOffset < NewMapViewBase)
                 throw new OverflowException("FileOffset must be >= than base");
 
-            var AbsOffset = FileOffset - NewMapViewBase.Value;
+            var AbsOffset = FileOffset - NewMapViewBase;
             var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
 
             try
             {
-                if (NewMapViewBase != MapViewBase)
+                if (NewMapViewBase != MapViewBase.Value)
                 {
                     cntInAccessor++;
 
-                    if (NewMapViewBase.Value + MapViewSize.Value > FileSize)
-                        NewMapViewSize.Value = FileSize - NewMapViewBase.Value;
+                    if (NewMapViewBase + MapViewSize.Value > FileSize)
+                        NewMapViewSize= FileSize - NewMapViewBase;
                     else
-                        NewMapViewSize.Value = MapViewSize.Value;
+                        NewMapViewSize = MapViewSize.Value;
 
                     mappedAccess.Value = mappedFile.Value.CreateViewAccessor(
-                        NewMapViewBase.Value,
-                        NewMapViewSize.Value,
+                        NewMapViewBase,
+                        NewMapViewSize,
                         MemoryMappedFileAccess.Read);
 
-                    MapViewBase = NewMapViewBase;
+                    MapViewBase.Value = NewMapViewBase;
 
                 }
                 else
                     cntOutAccsor++;
 
-                if(block != null)
+                if (block != null)
+                {
                     UnsafeHelp.ReadBytes(mappedAccess.Value, BlockOffset, ref block);
-
-                rv = mappedAccess.Value.ReadInt64(AbsOffset & ~7L);
+                    rv = block[((AbsOffset >> 3) & 0x1ff)];
+                }
+                // FIX: ReadInt64 uses byte address so when we use it must adjust, check for other callers
+                // assumptions since we changed this from array<long>[] maybe expecting old behavior, however
+                // caller from getpageforphysaddr passes valid block usually so that's the main one from V2P
+                else 
+                    rv = mappedAccess.Value.ReadInt64(BlockOffset | (AbsOffset & 0x1ff));
                 DataRead = true;
 
             }
@@ -292,20 +311,21 @@ namespace inVtero.net
         public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = false)
         {
             // convert PAddr to PFN
-            var PFN = PAddr.NextTable_PFN;
+            var aPFN = PAddr.NextTable_PFN;
             GotData = false;
+            NoCache = true;
 
-            if (!NoCache && PageCache.ContainsKey(PFN))
+            if (!NoCache && PageCache.ContainsKey(aPFN))
             {
                 do
-                    PageCache.TryGetValue(PFN, out block);
+                    PageCache.TryGetValue(aPFN, out block);
                 while (block == null);
-
-                return block[PAddr & 0x1ff];
+                // shift down since were loading a long[]
+                return block[(PAddr >> 3) & 0x1ff];
             }
 
             // record our access attempt to the pfnIndex
-            if (PFN > int.MaxValue || PFN > MD.Value.MaxAddressablePageNumber)
+            if (aPFN > int.MaxValue || aPFN > MD.Value.MaxAddressablePageNumber)
                 return 0;
 #if USE_BITMAP
             if(pfnTableIdx != null)
@@ -313,13 +333,13 @@ namespace inVtero.net
 #endif
             // paranoid android setting
             var Fail = true;
-
-            long IndexedPFN = 0;
+            
+            long IndexedPFN = 0, rv;
             for (int i = 0; i < MD.Value.NumberOfRuns; i++)
             {
-                if (PFN >= MD.Value.Run[i].BasePage && PFN < (MD.Value.Run[i].BasePage + MD.Value.Run[i].PageCount))
+                if (aPFN >= MD.Value.Run[i].BasePage && aPFN < (MD.Value.Run[i].BasePage + MD.Value.Run[i].PageCount))
                 {
-                    var currBaseOffset = PFN - MD.Value.Run[i].BasePage;
+                    var currBaseOffset = aPFN - MD.Value.Run[i].BasePage;
                     IndexedPFN += currBaseOffset;
                     Fail = false;
                     break;
@@ -327,28 +347,41 @@ namespace inVtero.net
                 IndexedPFN += MD.Value.Run[i].PageCount;
             }
             if (Fail)
-                throw new MemoryRunMismatchException(PAddr.PTE);
+            {
+                GotData = false;
+                rv = MagicNumbers.BAD_RUN_CONFIG_READ;
+                return rv;
+            //    throw new MemoryRunMismatchException(PAddr.PTE);
+            }
 
             // Determine file offset based on indexed/gap adjusted PFN and page size
             var FileOffset = StartOfMemory + (IndexedPFN * PAGE_SIZE);
 
+            if (FileOffset < 0)
+                FileOffset = 0;
+
             // add back in the file offset for possible exact byte lookup
-            var rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
+            rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
 
-
-            if(!NoCache && GotData)
-                PageCache.TryAdd(PFN, block);
-
-            else if (!GotData)
+            if (!GotData || Fail)
                 rv = MagicNumbers.BAD_VALUE_READ;
+
+            if (!NoCache && GotData)
+                PageCache.TryAdd(aPFN, block);
+
+            
 
             return rv;
 
         }
 
-        // Extract a single page of data from a physical address in source dump
-        // account for memory gaps/run layout
-        // TODO: Add windowing currently uses naïve single-page-at-a-time view
+        /// <summary>
+        /// Extract a single page of data from a physical address in source dump
+        /// accounts for memory gaps/run layout
+        /// </summary>
+        /// <param name="PAddr">byte address an address contained in the block</param>
+        /// <param name="block">array to be filled</param>
+        /// <returns>specific return value for long value at </returns>
         public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
         {
             bool GoodRead = false;
@@ -356,6 +389,11 @@ namespace inVtero.net
         }
 
 
+        /// <summary>
+        /// Get a long back for the address specified
+        /// </summary>
+        /// <param name="PAddr">physical address (byte address)</param>
+        /// <returns>value</returns>
         public long GetValueAtPhysicalAddr(HARDWARE_ADDRESS_ENTRY PAddr)
         {
 
@@ -380,13 +418,14 @@ namespace inVtero.net
             // PML4E
             try
             {
-                Attempted = (HARDWARE_ADDRESS_ENTRY) aCR3.NextTableAddress | va.PML4;
+                Attempted = (HARDWARE_ADDRESS_ENTRY) aCR3.NextTableAddress | (va.PML4 << 3);
+                
                 var PML4E = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                 //Console.WriteLine($"PML4E = {PML4E.PTE:X16}");
                 ConvertedV2P.Add(PML4E);
                 if (PML4E.Valid)
                 {
-                    Attempted = PML4E.NextTableAddress | va.DirectoryPointerOffset;
+                    Attempted = PML4E.NextTableAddress | (va.DirectoryPointerOffset << 3);
                     var PDPTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                     ConvertedV2P.Add(PDPTE);
                     //Console.WriteLine($"PDPTE = {PDPTE.PTE:X16}");
@@ -395,7 +434,7 @@ namespace inVtero.net
                     {
                         if (!PDPTE.LargePage)
                         {
-                            Attempted = PDPTE.NextTableAddress | va.DirectoryOffset;
+                            Attempted = PDPTE.NextTableAddress | (va.DirectoryOffset << 3);
                             var PDE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                             ConvertedV2P.Add(PDE);
                             //Console.WriteLine($"PDE = {PDE.PTE:X16}");
@@ -404,7 +443,7 @@ namespace inVtero.net
                             {
                                 if (!PDE.LargePage)
                                 {
-                                    Attempted = PDE.NextTableAddress | va.TableOffset;
+                                    Attempted = PDE.NextTableAddress | (va.TableOffset << 3);
                                     var PTE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                     ConvertedV2P.Add(PTE);
                                     //Console.WriteLine($"PTE = {PTE.PTE:X16}");
@@ -487,7 +526,7 @@ namespace inVtero.net
                 var hPML4E = VirtualToPhysical(eptp, gPML4E.NextTableAddress);
                 if (EPTP.IsValid(hPML4E.PTE) && EPTP.IsValid2(hPML4E.PTE) && HARDWARE_ADDRESS_ENTRY.IsBadEntry(hPML4E))
                 { 
-                    Attempted = (hPML4E.NextTableAddress - GapSize) | va.DirectoryPointerOffset;
+                    Attempted = (hPML4E.NextTableAddress - GapSize) | (va.DirectoryPointerOffset << 3);
                     var gPDPTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                     ConvertedV2hP.Add(gPDPTE);
                     var hPDPTE = VirtualToPhysical(eptp, gPDPTE.NextTableAddress);
@@ -498,7 +537,7 @@ namespace inVtero.net
                         {
                             if (EPTP.IsValid2(hPDPTE.PTE))
                             {
-                                Attempted = (hPDPTE.NextTableAddress - GapSize) | va.DirectoryOffset;
+                                Attempted = (hPDPTE.NextTableAddress - GapSize) | (va.DirectoryOffset << 3);
                                 var gPDE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                 ConvertedV2hP.Add(gPDE);
                                 var hPDE = VirtualToPhysical(eptp, gPDE.NextTableAddress);
@@ -509,7 +548,7 @@ namespace inVtero.net
                                     {
                                         if (EPTP.IsValid2(hPDE.PTE))
                                         {
-                                            Attempted = (hPDE.NextTableAddress - GapSize) | va.TableOffset;
+                                            Attempted = (hPDE.NextTableAddress - GapSize) | (va.TableOffset << 3);
                                             var gPTE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                             ConvertedV2hP.Add(gPTE);
                                             var hPTE = VirtualToPhysical(eptp, gPTE.NextTableAddress);

@@ -26,11 +26,11 @@ namespace inVtero.net.Specialties
     /// <summary>
     /// Turn's out VMWare 11 & 12 support is very easy given the current model
     /// </summary>
-    public class VMWare
+    public class VMWare : IMemAwareChecking
     {
-        public MemoryDescriptor PhysMemDesc;
-        public string vDeviceFile;
-        public string MemFile;
+        public MemoryDescriptor PhysMemDesc { get; set; }
+        public string vDeviceFile { get; set; }
+        public string MemFile { get; set; }
 
         /// <summary>
         /// OK need to double check later but even though there are 64 bits available in the field
@@ -38,7 +38,7 @@ namespace inVtero.net.Specialties
         /// physical addresses and not page numbers.
         /// </summary>
         /// <returns></returns>
-        public bool IsSupportedFormat()
+        public bool IsSupportedFormat(Vtero vtero)
         {
             bool rv = false;
             if (!File.Exists(vDeviceFile) || !File.Exists(MemFile))
