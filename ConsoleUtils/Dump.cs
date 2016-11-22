@@ -43,7 +43,7 @@ namespace inVtero.net
         {
             var Version = vtero.Version;
 
-            Mem.InitMem(co.FileName, null, vtero.DetectedDesc);
+            Mem.InitMem(co.FileName, vtero.MRD);
 
             // Extract Address Spaces verifies the linkages between
             // process<->CR3<->EPTP(if there is one)

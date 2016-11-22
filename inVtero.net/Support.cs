@@ -31,18 +31,21 @@ namespace inVtero.net
     public static class EnvLimits
     {
         public const int PageCacheMaxEntries = 100000;
-        public const long BufferingMaxInputSize = (20L * 1024 * 1024 * 1024); // If the input is larger than 20GB were not going to buffer load it 
-        public const long MAX_PageTableEntriesToScan = 10 * 1000000; // more than 10Million page table entries in a single address space, somethings going on 
+        // more than 10Million page table entries in a single address space, somethings going on ?
+        public const long MAX_PageTableEntriesToScan = 10 * 1000000; 
     }
  
     public static class MagicNumbers
-    { 
+    {
+        public const int KERNEL_PT_INDEX_START_USUALLY = 256;
         public const int PAGE_SHIFT = 12;
-        public const long BAD_VALUE_READ = 0x7bafcafe000f00d0;
-        public const long BAD_RUN_CONFIG_READ = 0x7bafcafe000f00d1;
+        public const long BAD_VALUE_READ = -0xbad00;
+        public const long BAD_RUN_CONFIG_READ = -0xbad01;
+        public const long PAGE_REQUESTED_IS_IN_RUN_GAP = -0xbad02;
 
         public static int[] Each { get { return new int[] { Windows_SelfPtr, FreeBSD_RecursiveEntry, OpenBSD_RecursiveEntry }; } }
 
+        // Self ptr's not relevant after Win10 + 2016 update.
         public static long Windows_SelfAsVA = 0xFFFF6FB7DBEDF68;
         public static int Windows_SelfPtr          = 0x1ED;
         public static int FreeBSD_RecursiveEntry   = 0x100;
@@ -64,8 +67,6 @@ namespace inVtero.net
         {
             return ((N << (~S)) << 1) | (N >> S);
         }
-
-
 
         public static void WriteColor(string var)
         {
@@ -353,6 +354,7 @@ namespace inVtero.net
         public long BasePage;
         public long PageCount;
         public long regionPPN;
+        public long SkipCount;
 
         public override string ToString()
         {
@@ -375,10 +377,10 @@ namespace inVtero.net
         public long MaxAddressablePageNumber { get {
 
                 if (maxAddressablePageNumber != 0)
-                    return maxAddressablePageNumber;
+                    return maxAddressablePageNumber + (StartOfMemmory >> MagicNumbers.PAGE_SHIFT);
 
                 maxAddressablePageNumber = Run.Count > 0 ? Run[Run.Count - 1].BasePage + Run[Run.Count - 1].PageCount : NumberOfPages;
-                return maxAddressablePageNumber;
+                return maxAddressablePageNumber + (StartOfMemmory >> MagicNumbers.PAGE_SHIFT);
             } }
         public List<MemoryRun> Run;
 

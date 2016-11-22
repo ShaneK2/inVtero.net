@@ -111,6 +111,8 @@
     <Compile Include="PhysicalMemoryStream.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Scanner.cs" />
+    <Compile Include="Specialties\AMemoryRunDetector.cs" />
+    <Compile Include="Specialties\BasicRunDetector.cs" />
     <Compile Include="Specialties\CrashDump.cs" />
     <Compile Include="Specialties\IMemAwareChecking.cs" />
     <Compile Include="Specialties\ProgressBar.cs" />

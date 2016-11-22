@@ -31,11 +31,6 @@ namespace inVtero.net
     /// Maintain a cached representation of scanned results from analysis
     /// Group regions and address spaces
     /// 
-    /// ~~TODO: Enumerate and expose available virtual addresses for a given page table~~
-    ///  ~~- probably just do a recursive routine to descend/enum all available virtual addresses~~
-    /// 
-    /// ~~TODO: Implement join-on-shared-kernel-spaces~~
-    /// 
     /// TODO: Convert all of the names into tee http://www.pagetable.com/?p=308 convention :)
     /// </summary>
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
@@ -64,41 +59,11 @@ namespace inVtero.net
         public int DepthParsed;
         public long EntriesParsed;
 
-
-
         public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true, int DepthToGo = 4)
         {
             if(Vtero.DiagOutput)
                 WriteLine($"PT analysis of {dp}");
 
-#if KLUDGE_WHEN_WE_HAVE_NO_RU
-            long IndexedPFN = 0, aPFN = dp.CR3Value >> MagicNumbers.PAGE_SHIFT;
-            bool fail = false;
-            //BUGBUG: when detector has not figured out run's yet
-            if (mem.MemSpaceDetector == typeof(XEN))
-            {
-                for (int i = 0; i < mem.MD.Value.NumberOfRuns; i++)
-                {
-                    if (aPFN >= mem.MD.Value.Run[i].BasePage && aPFN < (mem.MD.Value.Run[i].BasePage + mem.MD.Value.Run[i].PageCount))
-                    {
-                        var currBaseOffset = aPFN - mem.MD.Value.Run[i].BasePage;
-                        IndexedPFN += currBaseOffset;
-                        fail = false;
-                        break;
-                    }
-                    IndexedPFN += mem.MD.Value.Run[i].PageCount;
-                }
-
-
-                long xen_adjust_start = dp.FileOffset - (IndexedPFN << MagicNumbers.PAGE_SHIFT);
-                Mem.Instance.StartOfMemory = xen_adjust_start;
-                mem.StartOfMemory = xen_adjust_start;
-
-                // optimize out this code...
-                mem.MemSpaceDetector = null;
-            }
-#endif
-            //dp.vmcs = null;
             var rv = new PageTable
             {
                 Root = new PageTableRoot() { SLAT = dp.vmcs != null ? dp.vmcs.EPTP : 0, CR3 = dp.CR3Value, Entries = new PFN() },
@@ -122,8 +87,7 @@ namespace inVtero.net
                     WriteLine($"BAD EPTP/DirectoryTable Base {dp.vmcs.EPTP:X12}, try a different candidate or this dump may lack a hypervisor. Recommend attempt PT walk W/O SLAT");
                 else
                     WriteLine($"Decoding failed for {dp.CR3Value:X12}");
-                /*cnt = rv.FillTable(new VIRTUAL_ADDRESS(Address), AddressIndex, dp.CR3Value, OnlyUserSpace);
-                WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");*/
+                //WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");*/
             }
 
             dp.PT = rv;
@@ -351,7 +315,7 @@ namespace inVtero.net
 
             for (int i = 0; i < 512; i++)
             {
-                if (!RedundantKernelSpaces && i >= 256)
+                if (!RedundantKernelSpaces && i >= MagicNumbers.KERNEL_PT_INDEX_START_USUALLY)
                     continue;
 
                 if (page[i] == 0)

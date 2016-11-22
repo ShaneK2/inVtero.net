@@ -47,6 +47,26 @@ namespace inVtero.net
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
+#if false
+        /// <summary>
+        /// VOLATILITY ADDRESS SPACE SUPPORT
+        /// 
+        /// VOLA get_available_pages gives us back a list of virtual addresses that
+        /// are able to be used with a 'task' (we just call that a CR3:)
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public List<long> get_available_pages()
+        {
+            var flattend = PageTable.Flatten(PT.Root.Entries.SubTables, 4);
+        }
+
+        public ulong read_long_long_phys(ulong addr)
+        {
+            return GetUValue(addr);
+        }
+#endif
+
         public long GetValue(long VA)
         {
            var data = VGetBlock(VA);

@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.24720.0
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVtero.net", "inVtero.net\inVtero.net.csproj", "{BBA65FAD-57B1-4B78-B262-E542A88440D6}"
 EndProject
@@ -26,6 +26,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Volatility", "Volatility\Vo
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{92143A5B-B728-4B44-BA13-317A8A2F6184}"
 	ProjectSection(SolutionItems) = preProject
+		Scripts\Basic.py = Scripts\Basic.py
 		Scripts\List.py = Scripts\List.py
 		Scripts\Scan.py = Scripts\Scan.py
 	EndProjectSection

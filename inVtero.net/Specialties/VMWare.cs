@@ -26,20 +26,19 @@ namespace inVtero.net.Specialties
     /// <summary>
     /// Turn's out VMWare 11 & 12 support is very easy given the current model
     /// </summary>
-    public class VMWare : IMemAwareChecking
+    public class VMWare : AMemoryRunDetector, IMemAwareChecking
     {
-        public MemoryDescriptor PhysMemDesc { get; set; }
-        public string vDeviceFile { get; set; }
-        public string MemFile { get; set; }
-
         /// <summary>
         /// OK need to double check later but even though there are 64 bits available in the field
         /// only 32bits are seemingly being used.  Otherwise the values have to be interpreted as
         /// physical addresses and not page numbers.
         /// </summary>
         /// <returns></returns>
-        public bool IsSupportedFormat(Vtero vtero)
+        public override bool IsSupportedFormat(Vtero vtero)
         {
+            // use abstract implementation & scan for internal 
+            LogicalPhysMemDesc = ExtractMemDesc(vtero);
+
             bool rv = false;
             if (!File.Exists(vDeviceFile) || !File.Exists(MemFile))
                 return rv;
@@ -109,8 +108,7 @@ namespace inVtero.net.Specialties
                 var regionSize = BitConverter.ToInt64(stateData, i) >> 20 >> 12;
                 i += 8; i += 2;
 
-                TotalPages += (regionSize >> 12);
-
+                TotalPages += regionSize;
 
                 MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = ppnVal, PageCount = regionSize, regionPPN = basePage });
             }
@@ -122,28 +120,23 @@ namespace inVtero.net.Specialties
         }
 
         /// <summary>
-        /// Sort of a pain extracting the names properly, anyhow...
-        /// We expect to be passed a virtual machine saved state file (not the vmem)
-        /// The vmem is implied given the save state name.
         /// 
-        /// If however we get the vmem, we try our best to figure out if it's from a snapshot or a suspend.
+        /// INPUT IS VMEM
+        /// 
+        /// MATCHING VMSS OR VMSN MUST BE IN SAME FOLDER
+        /// 
         /// </summary>
-        /// <param name="vMss">The path to the virtual machine save state data</param>
-        public VMWare(string vMss)
+        /// <param name="VMEM">The path to the virtual machine MEMORY</param>
+        public VMWare(string VMEM)
         {
-            if (vMss.EndsWith(".vmss") || vMss.EndsWith(".vmsn"))
+            if (VMEM.EndsWith(".vmem"))
             {
-                MemFile = Path.Combine(Path.Combine(Path.GetDirectoryName(vMss)), Path.GetFileNameWithoutExtension(vMss) + ".vmem");
-                vDeviceFile = vMss;
-            }
-            else if (vMss.EndsWith(".vmem"))
-            {
-                MemFile = vMss;
-                var GuessName = Path.Combine(Path.Combine(Path.GetDirectoryName(vMss)), Path.GetFileNameWithoutExtension(vMss) + ".vmss");
+                MemFile = VMEM;
+                var GuessName = Path.Combine(Path.Combine(Path.GetDirectoryName(VMEM)), Path.GetFileNameWithoutExtension(VMEM) + ".vmss");
                 if (File.Exists(GuessName))
                     vDeviceFile = GuessName;
                 else
-                    vDeviceFile = Path.Combine(Path.Combine(Path.GetDirectoryName(vMss)), Path.GetFileNameWithoutExtension(vMss) + ".vmsn");
+                    vDeviceFile = Path.Combine(Path.Combine(Path.GetDirectoryName(VMEM)), Path.GetFileNameWithoutExtension(VMEM) + ".vmsn");
             }
         }
 

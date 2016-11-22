@@ -27,7 +27,7 @@ copts = ConfigOptions()
 copts.IgnoreSaveData = True
 #proc.GetUValue(0xfffff80104a86000)
 #copts.FileName = "c:\\temp\\memory.dmp"
-copts.FileName = "c:\\temp\\2012R2.xendump"   
+copts.FileName = "c:\\temp\\MC.dmp"   
 #copts.FileName = "c:\\temp\\win10.64.xendump"
 #copts.FileName = "C:\\Users\\files\\VMs\\Windows 1511\\Windows 1511-1b05a6a0.vmem"
 # support scanning for these targets
@@ -40,22 +40,16 @@ copts.VersionsToEnable = PTType.Windows
 copts.VerboseOutput = True
 copts.VerboseLevel = 1
 
-# since we are not ignoring SaveData, this just get's our state from
-# the underlying protobuf, pretty fast
-vtero = Scan.Scanit(copts)
+vtero = Vtero(copts.FileName)
 
-mem = Mem.Instance;
+check = 0x01AA
+fs_offset = vtero.MemAccess.OffsetToMemIndex(check) / 4096
+print "check " + check.ToString("X") + " is at " + fs_offset.ToString("X")
+delta = check - fs_offset
+print "delta " + delta.ToString("X")
 
-
-proc = vtero.FlattenASGroups[0]
-CollectKernel = True
-pt = PageTable.AddProcess(proc, mem, CollectKernel, 4)
-ranges = PageTable.Flatten(pt.Root.Entries.SubTables, 4)
-print "Process %s, ranges %d, entries %d" % (proc.ShortName, ranges.Count, pt.EntriesParsed)
-    
-
-# blah test stuff
-#
-
-proc.GetUValue(0xFFFFF80268674000)
-proc.GetUValue(0xfffff80104a86000)
+check = 0x102846
+fs_offset = vtero.MemAccess.OffsetToMemIndex(check) / 4096
+print "check " + check.ToString("X") + " is at " + fs_offset.ToString("X")
+delta = check - fs_offset
+print "delta " + delta.ToString("X")

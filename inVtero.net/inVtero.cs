@@ -80,6 +80,7 @@ namespace inVtero.net
         //WAHBitArray PFNdb;
         public ConcurrentDictionary<int, ConcurrentBag<DetectedProc>> ASGroups;
 
+        public Mem MemAccess;
 
         /// <summary>
         /// Flatten the ConcurrentDictionary/ConcurrentBag to a simple List.
@@ -115,14 +116,16 @@ namespace inVtero.net
         }
 
         public int Phase;
-        public MemoryDescriptor DetectedDesc;
-        bool ForceDescScan;
+
+        [ProtoMember(42)]
+        public AMemoryRunDetector MRD;
 
         /// <summary>
         /// Set OverRidePhase to force a re-run of a stage
         /// </summary>
         public bool OverRidePhase;
 
+        // Scanner is the first pass 
         [ProtoMember(99)]
         Scanner scan;
 
@@ -149,70 +152,67 @@ namespace inVtero.net
         }
         
 
-        public Vtero(string MemoryDump, bool SetForceDescScan = false) :this()
+        public Vtero(string MemoryDump) :this()
         {
             MemFile = MemoryDump.ToLower();
 
             scan = new Scanner(MemFile);
             FileSize = new FileInfo(MemFile).Length;
-            ForceDescScan = SetForceDescScan;
 
             DeriveMemoryDescriptors();
         }
 
-        public Vtero(string MemoryDump, MemoryDescriptor MD) : this(MemoryDump)
+        public Vtero(string MemoryDump, AMemoryRunDetector MD) : this(MemoryDump)
         {
-            DetectedDesc = MD;
+            MRD = MD;
         }
 
         [ProtoAfterDeserialization]
         void DeriveMemoryDescriptors()
         {
-            Type SpaceDetector = typeof(object);
-
             if (ProgressBarz.BaseMessage == null || string.IsNullOrWhiteSpace(ProgressBarz.BaseMessage.ToString()))
                 ProgressBarz.BaseMessage = new ConsoleString("Value Scan for memory descriptors in progress");
 
-            if (ForceDescScan)
-            {
-                var dump = new CrashDump(MemFile);
-                DetectedDesc = dump.ExtractMemDesc(this);
+            AMemoryRunDetector Detected = null;
 
-            } else  if (MemFile.EndsWith(".dmp"))
+            if (MemFile.EndsWith(".dmp"))
             {
-                var dump = new CrashDump(MemFile);
-                if (dump.IsSupportedFormat(this))
-                {
-                    DetectedDesc = dump.PhysMemDesc;
-                    SpaceDetector = typeof(CrashDump);
-                }
-            } else if (MemFile.EndsWith(".vmss") || MemFile.EndsWith(".vmsn") || MemFile.EndsWith(".vmem"))
-            {
-                var dump = new VMWare(MemFile);
-                if (dump.IsSupportedFormat(this))
-                {
-                    DetectedDesc = dump.PhysMemDesc;
+                Detected = new CrashDump(MemFile);
+                Detected.IsSupportedFormat(this);
 
-                    MemFile = dump.MemFile;
-                    SpaceDetector = typeof(VMWare);
-                }
+            } else if (MemFile.EndsWith(".vmem"))
+            {
+                Detected = new VMWare(MemFile);
+                if (Detected.IsSupportedFormat(this))
+                    MemFile = Detected.MemFile;
             }
 
             // try XEN!
-            if(DetectedDesc == null)
+            if(Detected == null)
             {
-                var xen = new XEN(MemFile);
-                if(xen != null && xen.IsSupportedFormat(this))
-                    DetectedDesc = xen.PhysMemDesc;
-
-                SpaceDetector = null;
+                Detected = new XEN(MemFile);
+                if (Detected != null)
+                    Detected.IsSupportedFormat(this);
             }
 
-            if (DetectedDesc == null || DetectedDesc.NumberOfPages < 1)
-                // if the memory run is defined as 0 count then it's implicitly 1
-                DetectedDesc = new MemoryDescriptor(FileSize);
+            // if the memory run is defined as 0 count then it's implicitly 1
+            if (Detected == null || Detected.PhysMemDesc.NumberOfPages < 1)
+            {
+                Detected = new BasicRunDetector(MemFile);
+                if (Detected != null)
+                    Detected.IsSupportedFormat(this);
+            }
 
-            Mem.InitMem(MemFile, null, DetectedDesc, SpaceDetector);
+            if (Vtero.VerboseOutput)
+            {
+                if (Detected.LogicalPhysMemDesc != null)
+                    WriteColor(ConsoleColor.Yellow, $"Windows/Logical Memory Run: {Detected.LogicalPhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
+                else if (Detected.PhysMemDesc != null)
+                    WriteColor(ConsoleColor.Green, $"HW Memory Run: {Detected.PhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
+            }
+
+            MRD = Detected;
+            MemAccess = Mem.InitMem(MemFile, Detected);
         }
 
         public string CheckpointSaveState(string OverrideName = null, string DirSpec = null)
@@ -248,27 +248,7 @@ namespace inVtero.net
             return scan.BackwardsValueScan(ScanOnlyFor);
         }
 
-        /// <summary>
-        /// VOLATILITY ADDRESS SPACE SUPPORT
-        /// 
-        /// VOLA get_available_pages gives us back a list of virtual addresses that
-        /// are able to be used with a 'task' (we just call that a CR3:)
-        /// 
-        /// </summary>
-        /// <returns></returns>
-        public List<long> get_available_pages()
-        {
-            List<long> rv = new List<long>();
-
-
-            return rv;
-        }
-
-        public ulong read_long_long_phys(ulong addr)
-        {
-            return 0;
-        }
-
+        
         public int ProcDetectScan(PTType Modes, int DetectOnly = 0)
         {
             if (Phase >= 1 && OverRidePhase)

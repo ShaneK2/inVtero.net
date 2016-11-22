@@ -9,90 +9,26 @@ using System.IO;
 
 namespace inVtero.net.Specialties
 {
-    public class XEN : IMemAwareChecking
+    public class XEN : AMemoryRunDetector, IMemAwareChecking
     {
         ELF<long> Elf;
         Section<long> ELFInfo, ELFPages, ELFPfn;
-        bool SupportedStatus = false, GoodDesc = false;
-        long StartOfMem = 0;
+        bool SupportedStatus = false;
 
         Dictionary<long, long> DetectedRuns = new Dictionary<long, long>();
-
-        public MemoryDescriptor PhysMemDesc { get; set; }
-        public string vDeviceFile { get; set; }
-        public string MemFile { get; set; }
-
-        /// <summary>
-        /// Extract memory extents info from the guest memory
-        /// </summary>
-        /// <param name="vtero"></param>
-        /// <returns></returns>
-        MemoryDescriptor ExtractMemDesc(Vtero vtero)
-        {
-            MemoryDescriptor MemRunDescriptor = null;
-            var off = vtero.ScanValue(false, 0x6c4d6d4d, 4);
-
-            using (var dstream = File.OpenRead(vtero.MemFile))
-            {
-                var MemSize = dstream.Length;
-                long totPageCnt = 0;
-                using (var dbin = new BinaryReader(dstream))
-                {
-                    foreach (var xoff in off)
-                    {
-                        //WriteLine($"Checking Memory Descriptor @{(xoff + 28):X}");
-                        if (xoff > vtero.FileSize)
-                        {
-                            //    WriteLine($"offset {xoff:X} > FileSize {vtero.FileSize:X}");
-                            continue;
-                        }
-
-                        dstream.Position = xoff + 20; // TODO: double check we ma need to do a sub loop step range 8,16,20,24,28,32 -- ensure we scan hard'r
-                        MemRunDescriptor = new MemoryDescriptor();
-                        MemRunDescriptor.NumberOfRuns = dbin.ReadInt64();
-                        MemRunDescriptor.NumberOfPages = dbin.ReadInt64();
-
-                        Console.WriteLine($"Runs: {MemRunDescriptor.NumberOfRuns}, Pages: {MemRunDescriptor.NumberOfPages} ");
-
-                        if (MemRunDescriptor.NumberOfRuns >= 0 && MemRunDescriptor.NumberOfRuns < 32)
-                        {
-                            for (int i = 0; i < MemRunDescriptor.NumberOfRuns; i++)
-                            {
-                                var basePage = dbin.ReadInt64();
-                                var pageCount = dbin.ReadInt64();
-                                totPageCnt += pageCount;
-                                MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
-                            }
-                        }
-                        // if we have counted more pages than we have in disk
-                        // or
-                        // if we have less than 1/4 the pages we need (this is fudge factor should be precise right!)
-                        if (totPageCnt > (((MemSize - StartOfMem) >> MagicNumbers.PAGE_SHIFT) & 0xffffff00) ||
-                            totPageCnt < (((MemSize - StartOfMem) >> MagicNumbers.PAGE_SHIFT) & 0xffffff00) / 4
-                            )
-                        {
-                            Console.WriteLine($"odd/bad memory run, skipping");
-                            continue;
-                        }
-
-                        //WriteLine($"MemoryDescriptor {MemRunDescriptor}");
-                        return MemRunDescriptor;
-                    }
-                }
-            }
-            //WriteLine("Finished VALUE scan.");
-            return MemRunDescriptor;
-        }
 
         /// <summary>
         /// This pulls info from the hypervisor areas regarding memory extents
         /// </summary>
         /// <param name="vtero"></param>
         /// <returns></returns>
-        public bool IsSupportedFormat(Vtero vtero)
+        public override bool IsSupportedFormat(Vtero vtero)
         {
             long InfoCnt;
             long nr_vcpu, nr_pages = 0, page_size = 0, pfn_LAST, pfn_VAL;
+
+            // use abstract implementation & scan for internal 
+            LogicalPhysMemDesc = ExtractMemDesc(vtero);
 
             using (var dstream = File.OpenRead(vtero.MemFile))
             {
@@ -128,7 +64,6 @@ namespace inVtero.net.Specialties
                         ELFPfn = Elf.GetSection(".xen_pfn");
                         ebin.BaseStream.Position = ELFPfn.Offset;
 
-
                         // base page, length
                         
                         long CurrBasePage = 0;
@@ -145,7 +80,6 @@ namespace inVtero.net.Specialties
                                 pfn_LAST = pfn_VAL;
                                 continue;
                             }
-
                             // add run
                             DetectedRuns.Add(CurrBasePage, CurrRunLen);
 
@@ -164,7 +98,6 @@ namespace inVtero.net.Specialties
             if (ELFPages != null)
                 StartOfMem = ELFPages.Offset;
 
-
             PhysMemDesc = new MemoryDescriptor(nr_pages * page_size);
             PhysMemDesc.NumberOfRuns = DetectedRuns.Count;
             PhysMemDesc.NumberOfPages = nr_pages;
@@ -173,7 +106,6 @@ namespace inVtero.net.Specialties
 
             foreach (var kvp in DetectedRuns)
                 PhysMemDesc.Run.Add(new MemoryRun() { BasePage = kvp.Key, PageCount = kvp.Value });
-
 
             return SupportedStatus;
         }

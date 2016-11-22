@@ -30,6 +30,8 @@ using inVtero.net.Support;
 using ProtoBuf;
 using inVtero.net.Specialties;
 
+using System.Diagnostics;
+
 // Details on this struct can be found here and likely many other sources
 // Microsoft published this originally on the singularity project's codeplex (along with some other ingerestiVng things)
 //
@@ -58,14 +60,12 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Mem : IDisposable
     {
-        public Type MemSpaceDetector;
-
-        MemoryDescriptor ddes;
+        AMemoryRunDetector ddes;
         /// <summary>
         /// DetectedDescriptor is meant for the user to assign when they have an override
         /// </summary>
         [ProtoMember(2)]
-        public MemoryDescriptor DetectedDescriptor { get { return ddes; } set { ddes = value; if(value != null) MD.Value = value; } }
+        public AMemoryRunDetector MD { get { return ddes; } set { ddes = value; } }
         
         public bool BufferLoadInput { get { return OverrideBufferLoadInput ? true : FileSize < BufferLoadMax; } }
         [ProtoMember(4)]
@@ -74,14 +74,17 @@ namespace inVtero.net
         /// <summary>
         /// MD actually gets used for extracting memory
         /// </summary>
-        [ProtoMember(1)]
-        public ThreadLocal<MemoryDescriptor> MD { get; set; }
+        //[ProtoMember(1)]
+        //public ThreadLocal<MemoryDescriptor> MD { get; set; }
 
-
+        // there is a static for this also we can inherit from
         public long StartOfMemory; // adjust for .DMP headers or something
         public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
-        const long BufferLoadMax = EnvLimits.BufferingMaxInputSize;
+
+        public long MaxLimit { get { if (MD.PhysMemDesc != null) return MD.PhysMemDesc.MaxAddressablePageNumber; return 0; } }
+
+
         const int PageCacheMax = EnvLimits.PageCacheMaxEntries;
 
         IDictionary<long, long> DiscoveredGaps;
@@ -152,10 +155,14 @@ namespace inVtero.net
             }
         }
 
+        /// <summary>
+        /// TODO: CloseStreams ;)
+        /// </summary>
         void SetupStreams()
         {
             var lmindex = Interlocked.Increment(ref mindex);
-            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString() + Thread.CurrentThread.ManagedThreadId.ToString();
+            // we want a process/thread private name for our mapped view
+            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString() + Process.GetCurrentProcess().Id.ToString() + Thread.CurrentThread.ManagedThreadId.ToString();
 
             Global.mapStream = new ThreadLocal<FileStream>(() => new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
             Global.mappedFile = new ThreadLocal<MemoryMappedFile>(() => MemoryMappedFile.CreateFromFile(mapStream.Value,
@@ -187,24 +194,18 @@ namespace inVtero.net
         }
 #endif
 
-        public static void InitMem(String mFile, uint[] BitmapArray = null, MemoryDescriptor Override = null, Type Detector = null) //: this()
+        public static Mem InitMem(String mFile, AMemoryRunDetector Detector, uint[] BitmapArray = null) //: this()
         {
             
             if (Global == null)
-            {
                 Global = new Mem();
-                Global.MD = new ThreadLocal<MemoryDescriptor>();
-            }
 
-            Global.StartOfMemory = Override != null ? Override.StartOfMemmory : 0;
+            Global.StartOfMemory = Detector != null ? Detector.StartOfMem : 0;
 
-            if(Detector != null)
-                Global.MemSpaceDetector = Detector;
-
-            if (Override != null)
+            if (Detector != null)
             {
-                Global.StartOfMemory = Override.StartOfMemmory;
-                Global.MD.Value = Override;
+                Global.StartOfMemory = Detector.StartOfMem;
+                Global.MD = Detector;
             }
 #if USE_BITMAP
             // maybe there's a bit map we can use from a DMP file
@@ -222,16 +223,13 @@ namespace inVtero.net
                 Global.MemoryDump = mFile;
                 Global.FileSize = new FileInfo(Global.MemoryDump).Length;
 
-                if (Override != null)
-                    Global.MD.Value = Override;
-                else {
-                    Global.MD.Value = new MemoryDescriptor(Global.FileSize);
-                    if (Global.DetectedDescriptor != null)
-                        Global.MD.Value = Global.DetectedDescriptor;
-                }
+                if (Detector != null)
+                    Global.MD = Detector;
             }
 
             Global.SetupStreams();
+
+            return Global;
         }
 
 
@@ -308,12 +306,90 @@ namespace inVtero.net
             return rv;
         }
 
+
+        public long RawOffsetToPFN(long offset)
+        {
+            long rv = 0;
+
+            var aPFN = offset >> MagicNumbers.PAGE_SHIFT;
+
+            for (int i = 0; i < MD.PhysMemDesc.NumberOfRuns; i++)
+            {
+                if (aPFN >= MD.PhysMemDesc.Run[i].BasePage &&
+                    aPFN < (MD.PhysMemDesc.Run[i].BasePage + MD.PhysMemDesc.Run[i].PageCount))
+                {
+                    var currBaseOffset = aPFN - MD.PhysMemDesc.Run[i].BasePage;
+                    rv += currBaseOffset;
+                    break;
+                }
+
+                // if the page is not in a run, it does not exist!
+
+                if(aPFN >= MD.PhysMemDesc.Run[i].BasePage)
+                    rv += MD.PhysMemDesc.Run[i].PageCount;
+            }
+
+            return rv;
+        }
+
+
+        /// <summary>
+        /// Code to convert a PFN, which is based on file offset >> PAGE_SHIFT,
+        /// into an indexed PFN.
+        /// 
+        /// Physical memory is meant to have "gaps" historically reserved for hw interactions.
+        /// 
+        /// This means we need to adjust the byte offset into an index accounting for gaps.
+        /// 
+        /// TODO: Something similar is needed to natively support "extent" based sources. 
+        /// </summary>
+        /// <param name="aPFN">PFN (PAGE NUMBER)</param>
+        /// <param name="MD">MemoryDescriptor with a configured Runs</param>
+        /// <returns>adjusted file byte offset from backing storage (file)</returns>
+        public long OffsetToMemIndex(long aPFN)
+        {
+            var NeedAdjLastBaseOffset = true;
+            long IndexedPFN = 0, bIndexedPFN = 0, bPFN = aPFN;
+            bool Good = false;
+
+            if (aPFN > MD.PhysMemDesc.MaxAddressablePageNumber)
+                return -2;
+            if (MD.PhysMemDesc == null)
+                return -3;
+
+            // step 2: physical mapping (e.g. VM device memory acquired)
+            int i = 0;
+            for (i=0; i < MD.PhysMemDesc.NumberOfRuns; i++)
+            {
+                if (bPFN >= MD.PhysMemDesc.Run[i].BasePage &&
+                    bPFN < (MD.PhysMemDesc.Run[i].BasePage + MD.PhysMemDesc.Run[i].PageCount))
+                {
+                    var currBaseOffset = bPFN - MD.PhysMemDesc.Run[i].BasePage;
+                    bIndexedPFN += currBaseOffset;
+                    Good = true;
+                    break;
+                }
+                if(bPFN >= MD.PhysMemDesc.Run[i].BasePage)
+                    bIndexedPFN += MD.PhysMemDesc.Run[i].PageCount;
+            }
+            // failed run lookup
+            if (!Good)
+                return -1;
+
+            // Determine file offset based on indexed/gap adjusted PFN and page size
+            var FileOffset = StartOfMemory + (bIndexedPFN << MagicNumbers.PAGE_SHIFT);
+
+            return FileOffset;
+
+        }
+
         public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = false)
         {
+            long rv = 0;
             // convert PAddr to PFN
             var aPFN = PAddr.NextTable_PFN;
             GotData = false;
-            NoCache = true;
+            //NoCache = true;
 
             if (!NoCache && PageCache.ContainsKey(aPFN))
             {
@@ -324,52 +400,27 @@ namespace inVtero.net
                 return block[(PAddr >> 3) & 0x1ff];
             }
 
-            // record our access attempt to the pfnIndex
-            if (aPFN > int.MaxValue || aPFN > MD.Value.MaxAddressablePageNumber)
+            // should return with - error_value
+            if (aPFN > int.MaxValue || aPFN < 0)
                 return 0;
 #if USE_BITMAP
             if(pfnTableIdx != null)
                 pfnTableIdx.Set((int)PFN, true);
 #endif
             // paranoid android setting
-            var Fail = true;
-            
-            long IndexedPFN = 0, rv;
-            for (int i = 0; i < MD.Value.NumberOfRuns; i++)
-            {
-                if (aPFN >= MD.Value.Run[i].BasePage && aPFN < (MD.Value.Run[i].BasePage + MD.Value.Run[i].PageCount))
-                {
-                    var currBaseOffset = aPFN - MD.Value.Run[i].BasePage;
-                    IndexedPFN += currBaseOffset;
-                    Fail = false;
-                    break;
-                }
-                IndexedPFN += MD.Value.Run[i].PageCount;
-            }
-            if (Fail)
-            {
-                GotData = false;
-                rv = MagicNumbers.BAD_RUN_CONFIG_READ;
-                return rv;
-            //    throw new MemoryRunMismatchException(PAddr.PTE);
-            }
 
-            // Determine file offset based on indexed/gap adjusted PFN and page size
-            var FileOffset = StartOfMemory + (IndexedPFN * PAGE_SIZE);
-
+            var FileOffset = OffsetToMemIndex(aPFN);
             if (FileOffset < 0)
-                FileOffset = 0;
-
+                rv = MagicNumbers.BAD_RUN_CONFIG_READ;
+            else
             // add back in the file offset for possible exact byte lookup
-            rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
+                rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
 
-            if (!GotData || Fail)
+            if (!GotData)
                 rv = MagicNumbers.BAD_VALUE_READ;
 
             if (!NoCache && GotData)
                 PageCache.TryAdd(aPFN, block);
-
-            
 
             return rv;
 

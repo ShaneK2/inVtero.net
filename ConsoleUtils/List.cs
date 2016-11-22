@@ -12,7 +12,7 @@ namespace inVtero.net.ConsoleUtils
         {
             var Version = vtero.Version;
 
-            Mem.InitMem(co.FileName, null, vtero.DetectedDesc);
+            Mem.InitMem(co.FileName, vtero.MRD);
 
 
         }

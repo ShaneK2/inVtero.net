@@ -54,23 +54,16 @@ namespace inVtero.net.Specialties
     /// 
     /// Amazingly simple to support the basic CrashDump format (Thank you MicroSoft)
     /// </summary>
-    public class CrashDump : IMemAwareChecking
+    public class CrashDump : AMemoryRunDetector, IMemAwareChecking
     {
 
         // TODO: All these things that do file I/O need to be better at closing resources down / ISTREAM
-
-
-        public MemoryDescriptor PhysMemDesc { get; set; }
-        public string vDeviceFile { get; set; }
-        public string MemFile { get; set; }
-
         string DumpFile;
-        uint StartOfMem;
-        public bool GoodDesc;
         long MemSize;
         FileInfo finfo;
         long MaxNumPages;
 
+#if OLD_CODE
         public MemoryDescriptor ExtractMemDesc(Vtero vtero)
         {
             MemoryDescriptor MemRunDescriptor = null;
@@ -121,19 +114,17 @@ namespace inVtero.net.Specialties
             WriteLine("Finished VALUE scan.");
             return MemRunDescriptor;
         }
-
-        private void WriteColor(ConsoleColor cyan, string v)
-        {
-            throw new NotImplementedException();
-        }
-
-        public bool IsSupportedFormat(Vtero vtero)
+#endif
+        public override bool IsSupportedFormat(Vtero vtero)
         {
             bool rv = false;
             if (!File.Exists(DumpFile))
                 return rv;
 
-            using(var dstream = File.OpenRead(DumpFile))
+            // use abstract implementation & scan for internal 
+            LogicalPhysMemDesc = ExtractMemDesc(vtero);
+
+            using (var dstream = File.OpenRead(DumpFile))
             {
                 MemSize = dstream.Length;
 
@@ -159,20 +150,16 @@ namespace inVtero.net.Specialties
                     {
                         // TODO: in this case we have to de-patchguard the KDDEBUGGER_DATA block
                         // before resulting to that... implemented a memory scanning mode to extract the runs out via struct detection
-                        PhysMemDesc = ExtractMemDesc(vtero);
-                        if (PhysMemDesc != null)
-                        {
-                            rv = true;
-                            GoodDesc = true;
-                            PhysMemDesc.StartOfMemmory = StartOfMem;
-                        }
+                        PhysMemDesc = LogicalPhysMemDesc;
+                        PhysMemDesc.StartOfMemmory = StartOfMem;
+                        // physmem is preferred place to load from so if we have only 1 run move it to phys.
+                        LogicalPhysMemDesc = null;
                     }
                     else
                     {
                         // in this case StartOfMem is 0x2000
                         MemRunDescriptor.StartOfMemmory = 0x2000;
 
-                        rv = true;
                         // we have an embedded RUN in the DMP file that appears to conform to the rules we know
                         for (int i = 0; i < MemRunDescriptor.NumberOfRuns; i++)
                         {
@@ -181,18 +168,32 @@ namespace inVtero.net.Specialties
 
                             MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
                         }
-
                         PhysMemDesc = MemRunDescriptor;
                     } 
-
+                    rv = true;
                 }
             }
+
+            long aSkipCount = 0;
+
+            for (int i = 0; i < PhysMemDesc.NumberOfRuns; i++)
+            {
+                var RunSkip = PhysMemDesc.Run[i].BasePage - aSkipCount;
+                PhysMemDesc.Run[i].SkipCount = RunSkip;
+                aSkipCount = PhysMemDesc.Run[i].BasePage + PhysMemDesc.Run[i].PageCount;
+            }
+
+
             return rv;
         }
 
 
-
+        /// <summary>
         // extract initialization values from FilePath to derive memory RUN/base
+        /// 
+        /// TODO: Other Crashdump formats (bitmap assisted etc).
+        /// </summary>
+        /// <param name="FilePath"></param>
         public CrashDump(string FilePath)
         {
             MemFile = DumpFile = FilePath;

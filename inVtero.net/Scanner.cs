@@ -696,8 +696,9 @@ namespace inVtero.net
             return Candidate;
         }
 
-        // scanner related
-        //static long offset;
+
+        // TODO: Stop using static's
+
         static long CurrMapBase;
         static long CurrWindowBase;
         static long mapSize = (64 * 1024 * 1024);
@@ -714,6 +715,7 @@ namespace inVtero.net
         {
             CurrWindowBase = 0;
             mapSize = (64 * 1024 * 1024);
+            long RunShift = 0;
 
             if (File.Exists(Filename))
             {
@@ -732,6 +734,8 @@ namespace inVtero.net
                         if (FileSize == 0)
                             FileSize = new FileInfo(Filename).Length;
 
+                        // TODO: Clean up all the shifts
+
                         while (CurrWindowBase < FileSize)
                         {
                             using (var reader = mmap.CreateViewAccessor(CurrWindowBase, mapSize, MemoryMappedFileAccess.Read))
@@ -741,11 +745,37 @@ namespace inVtero.net
 
                                 while (CurrMapBase < mapSize)
                                 {
+                                    // Adjust for known memory run / extents mappings.
                                     var offset = CurrWindowBase + CurrMapBase;
-
+                                    var offset_pfn = offset >> MagicNumbers.PAGE_SHIFT;
                                     // next page, may be faster with larger chunks but it's simple to view 1 page at a time
-                                    CurrMapBase += 4096;
+                                    long IndexedOffset_pfn = 0;
 
+                                    do
+                                    {
+                                        IndexedOffset_pfn = Mem.Instance.OffsetToMemIndex(offset_pfn + RunShift);
+                                        if (IndexedOffset_pfn == -1)
+                                        {
+                                            RunShift++;
+                                            continue;
+                                        }
+                                        if (IndexedOffset_pfn == -2)
+                                            return DetectedProcesses.Count();
+
+                                    } while (IndexedOffset_pfn < 0);
+
+                                    // found shift, accumulate indexes
+                                    CurrMapBase += 4096;
+                                    offset_pfn += RunShift;
+                                    IndexedOffset_pfn = IndexedOffset_pfn >> MagicNumbers.PAGE_SHIFT; 
+
+                                    // Calculate DIFF
+                                    var diff_off_pfn = offset < IndexedOffset_pfn ? IndexedOffset_pfn - offset_pfn : offset_pfn - IndexedOffset_pfn;
+
+                                    // Skew Offset
+                                    offset += (diff_off_pfn << MagicNumbers.PAGE_SHIFT);
+
+                                    // setup buffers for parallel load/read
                                     block = buffers[filled];
                                     filled ^= 1;
 
@@ -753,7 +783,6 @@ namespace inVtero.net
                                     Parallel.Invoke(() =>
                                     Parallel.ForEach<Func<long, bool>>(CheckMethods, (check) =>
                                     {
-
                                         check(offset);
 
                                     }), () =>
@@ -817,12 +846,20 @@ namespace inVtero.net
         }
 
 
+        /// <summary>
+        /// Scan for a class configured variable "HexScanDword"
+        /// 
+        /// This is a specialized thing we are trying to avoid over scanning
+        /// Turns out the physical memory run data maintained by the OS is typically very deep physically
+        /// So in start-up we may use this depending on input file
+        /// </summary>
+        /// <param name="ExitAfter"></param>
+        /// <returns></returns>
         public IEnumerable<long> BackwardsValueScan(int ExitAfter = 0)
         {
             if (FileSize == 0)
                 FileSize = new FileInfo(Filename).Length;
 
-            // each processor will ValueReadCount
             long ReadSize = 1024 * 1024 * 8;
             var ValueReadCount = (int)ReadSize / 4;
             var RevMapSize = ReadSize;
@@ -835,6 +872,9 @@ namespace inVtero.net
                 var found = MapScanFile(Filename, ShortFirstChunkBase, (int)HexScanDword, ShortFirstChunkSize / 4);
                 foreach (var offset in found)
                     yield return offset;
+
+                if(ShortFirstChunkBase == 0)
+                    yield break;
             }
 
             var RevCurrWindowBase = FileSize - ShortFirstChunkSize;
@@ -848,11 +888,6 @@ namespace inVtero.net
 
             for (long i = ChunkCount; i > 0; i--)
             {
-                // testing if to For.Parallel this inner loop
-                //for (int j = 0; j < Environment.ProcessorCount; j++)
-                //{
-
-
                 if (!StopRunning)
                 {
 
@@ -883,7 +918,6 @@ namespace inVtero.net
                     }
                 }
             }
-            //}
             yield break;
         }
 
