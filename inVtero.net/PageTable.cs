@@ -404,7 +404,7 @@ namespace inVtero.net
                     if(depth > 2 && !DirectoryPointerOffset.PTE.LargePage)
                     foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level-1))
                     {
-                        if (DirectoryOffset == null || !mem.BufferLoadInput) continue;
+                        if (DirectoryOffset == null) continue;
 
                         if(depth > 3 && !DirectoryOffset.PTE.LargePage && EnvLimits.MAX_PageTableEntriesToScan > entries)
                         foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))

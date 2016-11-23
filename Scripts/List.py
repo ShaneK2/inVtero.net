@@ -27,7 +27,7 @@ copts = ConfigOptions()
 copts.IgnoreSaveData = True
 #proc.GetUValue(0xfffff80104a86000)
 #copts.FileName = "c:\\temp\\memory.dmp"
-copts.FileName = "c:\\temp\\2012R2.xendump"   
+copts.FileName = "d:\\temp\\2012R2.xendump"   
 #copts.FileName = "c:\\temp\\win10.64.xendump"
 #copts.FileName = "C:\\Users\\files\\VMs\\Windows 1511\\Windows 1511-1b05a6a0.vmem"
 # support scanning for these targets
@@ -57,5 +57,5 @@ print "Process %s, ranges %d, entries %d" % (proc.ShortName, ranges.Count, pt.En
 # blah test stuff
 #
 
-proc.GetUValue(0xFFFFF80268674000)
-proc.GetUValue(0xfffff80104a86000)
+#proc.GetUValue(0xFFFFF80268674000)
+#proc.GetUValue(0xfffff80104a86000)

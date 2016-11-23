@@ -67,7 +67,6 @@ namespace inVtero.net
         [ProtoMember(2)]
         public AMemoryRunDetector MD { get { return ddes; } set { ddes = value; } }
         
-        public bool BufferLoadInput { get { return OverrideBufferLoadInput ? true : FileSize < BufferLoadMax; } }
         [ProtoMember(4)]
         public bool OverrideBufferLoadInput { get; set; }
 

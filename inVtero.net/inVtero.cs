@@ -1290,6 +1290,9 @@ DoubleBreak:
         /// </summary>
         static WAHBitArray SISmap;
 
+        // TODO: Figure out if MemoryCopy or BlockCopy ...
+
+
         public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null, bool SinglePFNStore = true, bool DumpNULL = false)
         {
             if (SinglePFNStore && SISmap == null)
