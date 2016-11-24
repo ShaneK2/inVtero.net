@@ -67,6 +67,7 @@ namespace inVtero.net
         }
 #endif
 
+
         public long GetValue(long VA)
         {
            var data = VGetBlock(VA);

@@ -16,7 +16,7 @@ from System.IO import Directory, File, FileInfo, Path
 
 # Basic option handling
 copts = ConfigOptions()
-copts.IgnoreSaveData = True
+copts.IgnoreSaveData = False
 copts.FileName = "d:\\temp\\2012R2.DMP"   
 copts.VersionsToEnable = PTType.Windows 
 # To get some additional output 
@@ -47,20 +47,8 @@ for proc in vtero.FlattenASGroups:
     currProcBase = newdir + "\\Group-" + proc.ASGroup.ToString() + "-Process-" + proc.CR3Value.ToString("X")
     if Directory.Exists(currProcBase):
         continue
+    Directory.CreateDirectory(currProcBase)
     pt = PageTable.AddProcess(proc, mem, CollectKernel, 4)
     # only one time get Kernel
     CollectKernel = False
-    # If we are good to go with PT traversal 
-    if pt and pt.Root and pt.Root.Entries and pt.Root.Entries.SubTables:
-        ranges = PageTable.Flatten(pt.Root.Entries.SubTables, 4)
-        # Were ready to go with a process & set of ranges
-        print "Process %s, ranges %d, entries %d" % (proc.ShortName, ranges.Count, pt.EntriesParsed)
-        for entry in ranges:
-            if not Directory.Exists(currProcBase):
-                dirz = Directory.CreateDirectory(currProcBase)
-            #for entry in ranges:
-                #print "VA: " + entry.Value.VA.ToString()
-                #print "PTE: " + entry.Value.PTE.ToString()
-            # Dump ranges into a process specific directory
-            outFile = vtero.WriteRange(entry.Key, entry.Value, "%s\\%s-" % (currProcBase, proc.ShortName), mem)
-
+    vtero.DumpProc(currProcBase + "\\", proc)

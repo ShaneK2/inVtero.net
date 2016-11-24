@@ -35,6 +35,9 @@ using System.Diagnostics;
 using PowerArgs;
 using RaptorDB;
 
+// TODO: MemoryCopy / unsafe version performance testing
+
+
 namespace inVtero.net
 {
 
@@ -525,36 +528,46 @@ namespace inVtero.net
             return VS.Artifacts;
         }
 
-        /// <summary>
-        /// Group address spaces into related buckets
-        /// 
-        /// We will assign an address space ID to each detected proc so we know what process belongs with who
-        /// After AS grouping we will know what EPTP belongs to which AS since one of the DP's will have it's CR3 in the VMCS 
-        /// 
-        /// Yes it's a bit complicated.  
-        /// 
-        /// The overall procedure however is straight forward in that; 
-        /// 
-        /// * For every detected process
-        ///       Bucket into groups which are the "Address spaces" that initially are 
-        ///       
-        ///       (a) based on kernel address space similarities 
-        ///       and then 
-        ///       (b) based on what VMCS value was found pointing to that group
-        ///              
-        /// This ensures that if we have several hypervisors with a possibly identical kernel grouping (i.e. the PFN's
-        /// were used by each kernel were identical), they are disambiguated by the VMCS.  (Which can be validated later)
-        /// 
-        /// The benefit here is that brute forcing at this stage is fairly expensive and can lead to significant overhead, there does
-        /// tend to be some outliers for large systems that need to be looked at more to determine who they belong too.  Nevertheless, it's 
-        /// inconsequential if they are grouped with the appropriate AS since even if they are isolated into their own 'AS' this is an artificial 
-        /// construct for our book keeping.  The net result is that even if some process is grouped by itself due to some aggressive variation in
-        /// kernel PFN' use (lots of dual mapped memory/MDL's or something), it's still able to be dumped and analyzed.
-        /// 
-        /// 
-        /// </summary>
-        /// <param name="pTypes">Types to scan for, this is of the already detected processes list so it's already filtered really</param>
-        public void GroupAS(PTType pTypes = PTType.UNCONFIGURED)
+        public void DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false)
+        {
+            var entries = PageTable.Flatten(Proc.PT.Root.Entries.SubTables, 4);
+            foreach (var entry in entries)
+            {
+                if(IncludeData == entry.Value.PTE.NoExecute)
+                    WriteRange(entry.Key, entry.Value, Folder, MemAccess);
+            }
+        }
+
+    /// <summary>
+    /// Group address spaces into related buckets
+    /// 
+    /// We will assign an address space ID to each detected proc so we know what process belongs with who
+    /// After AS grouping we will know what EPTP belongs to which AS since one of the DP's will have it's CR3 in the VMCS 
+    /// 
+    /// Yes it's a bit complicated.  
+    /// 
+    /// The overall procedure however is straight forward in that; 
+    /// 
+    /// * For every detected process
+    ///       Bucket into groups which are the "Address spaces" that initially are 
+    ///       
+    ///       (a) based on kernel address space similarities 
+    ///       and then 
+    ///       (b) based on what VMCS value was found pointing to that group
+    ///              
+    /// This ensures that if we have several hypervisors with a possibly identical kernel grouping (i.e. the PFN's
+    /// were used by each kernel were identical), they are disambiguated by the VMCS.  (Which can be validated later)
+    /// 
+    /// The benefit here is that brute forcing at this stage is fairly expensive and can lead to significant overhead, there does
+    /// tend to be some outliers for large systems that need to be looked at more to determine who they belong too.  Nevertheless, it's 
+    /// inconsequential if they are grouped with the appropriate AS since even if they are isolated into their own 'AS' this is an artificial 
+    /// construct for our book keeping.  The net result is that even if some process is grouped by itself due to some aggressive variation in
+    /// kernel PFN' use (lots of dual mapped memory/MDL's or something), it's still able to be dumped and analyzed.
+    /// 
+    /// 
+    /// </summary>
+    /// <param name="pTypes">Types to scan for, this is of the already detected processes list so it's already filtered really</param>
+    public void GroupAS(PTType pTypes = PTType.UNCONFIGURED)
         {
             var PT2Scan = pTypes == PTType.UNCONFIGURED ? PTType.ALL : pTypes;
 
@@ -1293,7 +1306,7 @@ DoubleBreak:
         // TODO: Figure out if MemoryCopy or BlockCopy ...
 
 
-        public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null, bool SinglePFNStore = true, bool DumpNULL = false)
+        public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null, bool SinglePFNStore = false, bool DumpNULL = false)
         {
             if (SinglePFNStore && SISmap == null)
                 SISmap = new WAHBitArray();
@@ -1339,36 +1352,26 @@ DoubleBreak:
 
                     if (VALUE.PTE.LargePage)
                     {
-                        // 0x200 * 4kb = 2MB
-                        // TODO: Large pages properly
-                        for (int i = 0; i < 0x200; i++)
+                        bool GoodRead = false;
+                        using (var lsavefile = File.OpenWrite(saveLoc))
                         {
-                            try { PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
-                            VALUE.PTE.PTE += 0x1000;
-                            if (block == null)
-                                break;
-
-                            if (!DumpNULL && UnsafeHelp.IsZero(block))
+                            // 0x200 * 4kb = 2MB
+                            // TODO: Large pages properly
+                            for (int i = 0; i < 0x200; i++)
                             {
-                                ContigSize = 0;
-                                // reset lastLoc for next run since were -0x1000 from the actual start, were going to go up this time
-                                lastLoc = BaseFileName + KEY.Address.ToString("X") + ".bin";
-                                continue;
-                            }
-                            Buffer.BlockCopy(block, 0, bpage, 0, 4096);
-                            //Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                                PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead); 
+                                VALUE.PTE.PTE += 0x1000;
+                                if(!GoodRead)
+                                    block = new long[0x200];
 
-                            using (var lsavefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
+                                Buffer.BlockCopy(block, 0, bpage, 0, 4096);
+                                //Buffer.MemoryCopy(lp, bp, 4096, 4096);
                                 lsavefile.Write(bpage, 0, 4096);
-                            //lsavefile.Write(bpage, 0, 4096);
+                                //lsavefile.Write(bpage, 0, 4096);
 
+                            }
+                            return lastLoc;
                         }
-                        if (File.Exists(lastLoc) && new FileInfo(lastLoc).Length == 0)
-                        {
-                            File.Delete(lastLoc);
-                            return string.Empty;
-                        }
-                        return lastLoc;
                     }
                     else
                     {
@@ -1380,7 +1383,7 @@ DoubleBreak:
                             {
                                 Buffer.BlockCopy(block, 0, bpage, 0, 4096);
                                //Buffer.MemoryCopy(lp, bp, 4096, 4096);
-
+                                
                                 using (var savefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
                                     savefile.Write(bpage, 0, 4096);
 
