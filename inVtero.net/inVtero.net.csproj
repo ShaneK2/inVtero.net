@@ -104,6 +104,8 @@
     <Compile Include="DetectedProc.cs" />
     <Compile Include="Extensions.cs" />
     <Compile Include="extract.cs" />
+    <Compile Include="Hashing\tigerhash.cs" />
+    <Compile Include="Hashing\tigersbox.cs" />
     <Compile Include="inVtero.cs" />
     <Compile Include="Mem.cs" />
     <Compile Include="PageTable.cs" />

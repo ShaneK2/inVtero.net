@@ -25,11 +25,8 @@ copts = ConfigOptions()
 # !!if you have _STALE_ data try changing this to True!!! (normally False is going to save time)
 ## currently the save state is missing for a few fields
 copts.IgnoreSaveData = True
-#proc.GetUValue(0xfffff80104a86000)
-#copts.FileName = "c:\\temp\\memory.dmp"
-copts.FileName = "d:\\temp\\2012R2.xendump"   
-#copts.FileName = "c:\\temp\\win10.64.xendump"
-#copts.FileName = "C:\\Users\\files\\VMs\\Windows 1511\\Windows 1511-1b05a6a0.vmem"
+copts.FileName = "d:\\temp\\2012R2.debug.MEMORY.DMP"   
+copts.VersionsToEnable = PTType.Windows
 # support scanning for these targets
 # use PTType.VMCS when your suspect VM's or nested VM/hypervisors in use
 # PTType can also include HyperV, FreeBSD, OpenBSD, NetBSD and Linux
@@ -52,7 +49,11 @@ CollectKernel = True
 pt = PageTable.AddProcess(proc, mem, CollectKernel, 4)
 ranges = PageTable.Flatten(pt.Root.Entries.SubTables, 4)
 print "Process %s, ranges %d, entries %d" % (proc.ShortName, ranges.Count, pt.EntriesParsed)
-    
+
+#for range in ranges:
+#    print f.write(range.Key.ToString() + "\t" + range.Value.ToString() + "\n")
+
+proc.GetUValue(0xfffff80176688000)
 
 # blah test stuff
 #

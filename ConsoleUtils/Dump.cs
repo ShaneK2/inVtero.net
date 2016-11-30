@@ -87,7 +87,8 @@ namespace inVtero.net
                     foreach (var p in grpz.Value)
                     {
                         WriteLine($"Proc: {p.CR3Value:X}");
-                        Detections = Detections.Concat(vtero.ModuleScan(p, null, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
+                        Detections = Detections.Concat(
+                            vtero.ModuleScan(p, null, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
                             .ToDictionary(x => x.Key, x => x.Value);
 
                         if (Detections.Count() > 0)

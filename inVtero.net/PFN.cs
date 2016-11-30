@@ -53,6 +53,8 @@ namespace inVtero.net
             get { return SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).LongCount(); }
         }
 
-        public PFN() { SubTables = new Dictionary<VIRTUAL_ADDRESS, PFN>(); } 
+        public PFN() { SubTables = new Dictionary<VIRTUAL_ADDRESS, PFN>(); }
+
+        public override string ToString() => $"HW: {PTE}  SW: {VA}";
     }
 }

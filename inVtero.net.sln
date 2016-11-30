@@ -8,6 +8,9 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "quickdumps", "quickdumps\quickdumps.csproj", "{BAA7175A-C661-40F9-833B-DDDE1826A1F2}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "3rdParty", "3rdParty", "{9482F2E8-FF68-4A4F-9126-EED6D12D26EB}"
+	ProjectSection(SolutionItems) = preProject
+		gpl-2.0.License.txt = gpl-2.0.License.txt
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{EF3B2869-477B-4D26-804F-C62C34F00B03}"
 	ProjectSection(SolutionItems) = preProject
@@ -26,6 +29,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Volatility", "Volatility\Vo
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{92143A5B-B728-4B44-BA13-317A8A2F6184}"
 	ProjectSection(SolutionItems) = preProject
+		Scripts\Analyze.py = Scripts\Analyze.py
 		Scripts\Basic.py = Scripts\Basic.py
 		Scripts\Dump.py = Scripts\Dump.py
 		Scripts\List.py = Scripts\List.py

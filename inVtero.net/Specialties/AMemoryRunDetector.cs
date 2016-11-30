@@ -70,7 +70,7 @@ namespace inVtero.net.Specialties
                             var RunCnt = MemRunDescriptor.NumberOfRuns;
                             var PageCnt = MemRunDescriptor.NumberOfPages;
 
-                            Console.WriteLine($"Runs: {RunCnt}, Pages: {MemRunDescriptor.NumberOfPages} ");
+                            //Console.WriteLine($"Runs: {RunCnt}, Pages: {MemRunDescriptor.NumberOfPages} ");
                             long lastBasePage = 0;
 
                             if (RunCnt > 0 && MemRunDescriptor.NumberOfRuns < 32)
@@ -114,6 +114,7 @@ namespace inVtero.net.Specialties
                     }
                 }
             }
+#if OLD_CODE
             long aSkipCount = 0;
 
             for (int i=0; i < MemRunDescriptor.NumberOfRuns; i++)
@@ -122,7 +123,7 @@ namespace inVtero.net.Specialties
                 MemRunDescriptor.Run[i].SkipCount = RunSkip;
                 aSkipCount = MemRunDescriptor.Run[i].PageCount;
             }
-
+#endif
             //WriteLine("Finished VALUE scan.");
             return MemRunDescriptor;
         }

@@ -75,7 +75,7 @@ namespace inVtero.net
             if (dp.MemAccess == null)
                 dp.MemAccess = mem;
 
-
+            /* Commenting out this block so we defer the table enumeration
             // any output is error/warning output
 
             var cnt = rv.FillTable(RedundantKernelEntries, DepthToGo);
@@ -87,9 +87,9 @@ namespace inVtero.net
                     WriteLine($"BAD EPTP/DirectoryTable Base {dp.vmcs.EPTP:X12}, try a different candidate or this dump may lack a hypervisor. Recommend attempt PT walk W/O SLAT");
                 else
                     WriteLine($"Decoding failed for {dp.CR3Value:X12}");
-                //WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");*/
+                //WriteLine($"Physical walk w/o SLAT yielded {cnt} entries");
             }
-
+            */
             dp.PT = rv;
             return rv;
         }
@@ -294,12 +294,11 @@ namespace inVtero.net
                     yield break;
             }
 
-            // if it's LP then just return the same entry rather than emulating 4k everywhere
             if (PageContext.PTE.LargePage && Level <= 1)
             {
                 // cyclic 
                 PageContext.SubTables.Add(PageContext.VA, PageContext);
-                yield return PageContext;
+                yield break;
             }
 
             long[] page = new long[512];  
@@ -401,12 +400,12 @@ namespace inVtero.net
                 foreach(var DirectoryPointerOffset in ExtractNextLevel(pfn, KernelSpace, level))
                 {
                     if (DirectoryPointerOffset == null) continue;
-                    if(depth > 2 && !DirectoryPointerOffset.PTE.LargePage)
+                    if(depth > 2 /* && !DirectoryPointerOffset.PTE.LargePage */)
                     foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level-1))
-                    {
+                    {   
                         if (DirectoryOffset == null) continue;
 
-                        if(depth > 3 && !DirectoryOffset.PTE.LargePage && EnvLimits.MAX_PageTableEntriesToScan > entries)
+                        if(depth > 3 /* && !DirectoryOffset.PTE.LargePage && EnvLimits.MAX_PageTableEntriesToScan > entries */)
                         foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
                         {
                             if (TableOffset == null) continue;

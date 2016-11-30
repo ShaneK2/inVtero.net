@@ -189,15 +189,10 @@ namespace inVtero.net
                 throw new NullReferenceException("Entered VMCS callback w/o having found any VMCS, this is a second pass Func");
 
             // this might be a bit micro-opt-pointless ;)
-            //Parallel.Invoke(() =>
-            //{
             KnownRevision = typeof(REVISION_ID).GetEnumValues().Cast<REVISION_ID>().Any(x => x == RevID);
-            //}, () =>
-            //{
             KnownAbortCode = typeof(VMCS_ABORT).GetEnumValues().Cast<VMCS_ABORT>().Any(x => x == Acode);
-            //});
 
-            // TODO: Link pointer may not always be needed, evaluate removing this constraint
+            // TODO: Relax link pointer check. Possible when VMCS is shadow, then the link pointer is configured, retest this detection/nesting etc..
             // Find a 64bit value for link ptr
             for (int l = 0; l < block.Length; l++)
             {
@@ -357,8 +352,8 @@ namespace inVtero.net
                 }
 
                 // load DP 
-                var dp = new DetectedProc { CR3Value = offset, FileOffset = offset, Diff = 0, Mode = 2, Group = group, PageTableType = PTType.LinuxS };
-                for (int p = 0; p < 0x200; p++)
+                var dp = new DetectedProc { CR3Value = offset, FileOffset = offset, Diff = 0, Mode = 2, Group = group, PageTableType = PTType.LinuxS, TrueOffset = TrueOffset };
+                    for (int p = 0; p < 0x200; p++)
                     if (block[p] != 0)
                         dp.TopPageTablePage.Add(p, block[p]);
 
@@ -392,7 +387,7 @@ namespace inVtero.net
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
-                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.NetBSD };
+                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.NetBSD, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
                             if (block[p] != 0)
@@ -434,7 +429,7 @@ namespace inVtero.net
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
-                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.OpenBSD };
+                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.OpenBSD, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
                             if (block[p] != 0)
@@ -471,7 +466,7 @@ namespace inVtero.net
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
-                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.FreeBSD };
+                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.FreeBSD, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
                             if (block[p] != 0)
@@ -493,8 +488,9 @@ namespace inVtero.net
         /// best match, I currently use the value with the lowest diff, which can be correct
         /// 
         /// This will find a self pointer in the first memory run for a non-sparse memory dump.
-        /// After you locate the kernel in this first range, determine the memory run topology,
-        /// and then you can extract/identify the remaining entries.
+        ///
+        /// The calling code is expected to adjust offset around RUN gaps.
+        ///
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
@@ -530,7 +526,7 @@ namespace inVtero.net
                                     bestOffset = offset;
                                 }
 
-                                var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.GENERIC };
+                                var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.GENERIC, TrueOffset = TrueOffset };
 
                                 // BUGBUG: Need to K-Means this or something cluster values to help detection of processes in sparse format
                                 // this could be better 
@@ -582,7 +578,7 @@ namespace inVtero.net
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
-                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.HyperV };
+                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.HyperV, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
                             if (block[p] != 0)
@@ -632,7 +628,7 @@ namespace inVtero.net
 #endif
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
-                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.Windows };
+                        var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.Windows, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
                             if (block[p] != 0)
@@ -697,8 +693,8 @@ namespace inVtero.net
         }
 
 
-        // TODO: Stop using static's
-
+        // TODO: Stop using static's ? perf?
+        static long TrueOffset;
         static long CurrMapBase;
         static long CurrWindowBase;
         static long mapSize = (64 * 1024 * 1024);
@@ -746,7 +742,8 @@ namespace inVtero.net
                                 while (CurrMapBase < mapSize)
                                 {
                                     // Adjust for known memory run / extents mappings.
-                                    var offset = CurrWindowBase + CurrMapBase;
+                                    
+                                    var offset = TrueOffset = CurrWindowBase + CurrMapBase;
                                     var offset_pfn = offset >> MagicNumbers.PAGE_SHIFT;
                                     // next page, may be faster with larger chunks but it's simple to view 1 page at a time
                                     long IndexedOffset_pfn = 0;
@@ -906,8 +903,6 @@ namespace inVtero.net
                     var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
                     if (progress != ProgressBarz.Progress)
                         ProgressBarz.RenderConsoleProgress(progress);
-
-                    //}
 
                     localOffset -= RevMapSize;
                     if (localOffset < 0 && !StopRunning)

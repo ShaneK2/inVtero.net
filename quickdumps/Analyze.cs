@@ -70,6 +70,8 @@ namespace inVtero.net
             string input = string.Empty;
             var GloalView = new ConcurrentDictionary<DetectedProc, ConcurrentDictionary<long, Extract>>();
 
+            //Mem.InitMem(vtero.MemFile, vtero.MRD);
+
             if (vtero.VMCSs.Count < 1)
             {
                 // scan bare metal

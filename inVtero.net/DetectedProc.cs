@@ -37,7 +37,8 @@ namespace inVtero.net
         public List<VMCS> CandidateList;
         public PageTable PT;    // extracted page table
         public long CR3Value;
-        public long FileOffset; 
+        public long FileOffset;
+        public long TrueOffset;
         public long Diff;
         public int Mode; // 1 or 2
         public PTType PageTableType;

@@ -63,58 +63,6 @@ namespace inVtero.net.Specialties
         FileInfo finfo;
         long MaxNumPages;
 
-#if OLD_CODE
-        public MemoryDescriptor ExtractMemDesc(Vtero vtero)
-        {
-            MemoryDescriptor MemRunDescriptor = null;
-            var off = vtero.ScanValue(false, 0x6c4d6d4d, 4);
-            
-            using (var dstream = File.OpenRead(vtero.MemFile))
-            {
-                using (var dbin = new BinaryReader(dstream))
-                {
-                    foreach (var xoff in off)
-                    {
-                        //WriteLine($"Checking Memory Descriptor @{(xoff + 28):X}");
-                        if (xoff > vtero.FileSize)
-                        {
-                        //    WriteLine($"offset {xoff:X} > FileSize {vtero.FileSize:X}");
-                            continue;
-                        }
-
-                        dstream.Position = xoff + 20; // TODO: double check we ma need to do a sub loop step range 8,16,20,24,28,32 -- ensure we scan hard'r
-                        MemRunDescriptor = new MemoryDescriptor();
-                        MemRunDescriptor.NumberOfRuns = dbin.ReadInt64();
-                        MemRunDescriptor.NumberOfPages = dbin.ReadInt64();
-
-                        Console.WriteLine($"Runs: {MemRunDescriptor.NumberOfRuns}, Pages: {MemRunDescriptor.NumberOfPages} ");
-
-                        if (MemRunDescriptor.NumberOfRuns >= 0 && MemRunDescriptor.NumberOfRuns < 32
-                            &&
-                            // this means the descriptor covers our input
-                            (((MemSize - StartOfMem) >> MagicNumbers.PAGE_SHIFT) & 0xffffff00) == (MemRunDescriptor.NumberOfPages & 0xffffff00))
-                            GoodDesc = true;
-
-                        if (GoodDesc)
-                        {
-                            for (int i = 0; i < MemRunDescriptor.NumberOfRuns; i++)
-                            {
-                                var basePage = dbin.ReadInt64();
-                                var pageCount = dbin.ReadInt64();
-
-                                MemRunDescriptor.Run.Add(new MemoryRun() { BasePage = basePage, PageCount = pageCount });
-                            }
-                            WriteLine($"MemoryDescriptor {MemRunDescriptor}");
-
-                            return MemRunDescriptor;
-                        }
-                    }
-                }
-            }
-            WriteLine("Finished VALUE scan.");
-            return MemRunDescriptor;
-        }
-#endif
         public override bool IsSupportedFormat(Vtero vtero)
         {
             bool rv = false;
@@ -174,6 +122,7 @@ namespace inVtero.net.Specialties
                 }
             }
 
+#if OLD_CODE
             long aSkipCount = 0;
 
             for (int i = 0; i < PhysMemDesc.NumberOfRuns; i++)
@@ -182,8 +131,7 @@ namespace inVtero.net.Specialties
                 PhysMemDesc.Run[i].SkipCount = RunSkip;
                 aSkipCount = PhysMemDesc.Run[i].BasePage + PhysMemDesc.Run[i].PageCount;
             }
-
-
+#endif
             return rv;
         }
 

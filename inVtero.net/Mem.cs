@@ -162,20 +162,31 @@ namespace inVtero.net
             var lmindex = Interlocked.Increment(ref mindex);
             // we want a process/thread private name for our mapped view
             var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString() + Process.GetCurrentProcess().Id.ToString() + Thread.CurrentThread.ManagedThreadId.ToString();
+            MemoryMappedFile ExistingMapp = null;
 
-            Global.mapStream = new ThreadLocal<FileStream>(() => new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-            Global.mappedFile = new ThreadLocal<MemoryMappedFile>(() => MemoryMappedFile.CreateFromFile(mapStream.Value,
-                    mapName,
-                    0,
-                    MemoryMappedFileAccess.Read,
-                    null,
-                    HandleInheritability.Inheritable,
-                    false));
 
-            Global.mappedAccess = new ThreadLocal<MemoryMappedViewAccessor>(() => mappedFile.Value.CreateViewAccessor(
-                MapViewBase.Value,
-                MapViewSize.Value,
-                MemoryMappedFileAccess.Read));
+            try
+            {
+                ExistingMapp = MemoryMappedFile.OpenExisting(mapName, MemoryMappedFileRights.Read, HandleInheritability.Inheritable);
+            }
+            catch (Exception e){ }
+
+            if (ExistingMapp == null)
+            {
+                Global.mapStream = new ThreadLocal<FileStream>(() => new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+                Global.mappedFile = new ThreadLocal<MemoryMappedFile>(() => MemoryMappedFile.CreateFromFile(mapStream.Value,
+                        mapName,
+                        0,
+                        MemoryMappedFileAccess.Read,
+                        null,
+                        HandleInheritability.Inheritable,
+                        true));
+
+                Global.mappedAccess = new ThreadLocal<MemoryMappedViewAccessor>(() => mappedFile.Value.CreateViewAccessor(
+                    MapViewBase.Value,
+                    MapViewSize.Value,
+                    MemoryMappedFileAccess.Read));
+            }
         }
 
 
@@ -382,7 +393,7 @@ namespace inVtero.net
 
         }
 
-        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = false)
+        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = true)
         {
             long rv = 0;
             // convert PAddr to PFN
@@ -396,6 +407,7 @@ namespace inVtero.net
                     PageCache.TryGetValue(aPFN, out block);
                 while (block == null);
                 // shift down since were loading a long[]
+                GotData = true;
                 return block[(PAddr >> 3) & 0x1ff];
             }
 
@@ -531,7 +543,6 @@ namespace inVtero.net
             {
                 //foreach(var paddr in ConvertedV2P)
                 //{
-
                 //}
             }
             //Console.WriteLine($"return from V2P {rv:X16}");

@@ -34,6 +34,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using PowerArgs;
 using RaptorDB;
+using softwareunion;
 
 // TODO: MemoryCopy / unsafe version performance testing
 
@@ -170,6 +171,9 @@ namespace inVtero.net
             MRD = MD;
         }
 
+        /// <summary>
+        /// Part of initialization used to carve up / figure out which underlying memory space were looking at
+        /// </summary>
         [ProtoAfterDeserialization]
         void DeriveMemoryDescriptors()
         {
@@ -528,14 +532,51 @@ namespace inVtero.net
             return VS.Artifacts;
         }
 
-        public void DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false)
+        public long DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false)
         {
-            var entries = PageTable.Flatten(Proc.PT.Root.Entries.SubTables, 4);
-            foreach (var entry in entries)
+            //var entries = PageTable.Flatten(Proc.PT.Root.Entries.SubTables, 4);
+            VIRTUAL_ADDRESS VA;
+            VA.Address = 0;
+            var PageTables = new Dictionary<VIRTUAL_ADDRESS, PFN>();
+            int depth = 4;
+            int level = 3;
+            long entries = 0;
+            bool KernelSpace = true;
+            foreach (var kvp in Proc.TopPageTablePage)
             {
-                if(IncludeData == entry.Value.PTE.NoExecute)
-                    WriteRange(entry.Key, entry.Value, Folder, MemAccess);
+                // were at the top level (4th)
+                VA.PML4 = kvp.Key;
+                var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4 << 39) };
+
+                // Top level for page table
+                PageTables.Add(VA, pfn);
+
+                foreach (var DirectoryPointerOffset in Proc.PT.ExtractNextLevel(pfn, true, level))
+                {
+                    if (DirectoryPointerOffset == null) continue;
+                    if (depth > 2 /* && !DirectoryPointerOffset.PTE.LargePage */)
+                        foreach (var DirectoryOffset in Proc.PT.ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level - 1))
+                        {
+                            if (DirectoryOffset == null) continue;
+
+                            if (depth > 3 /* && !DirectoryOffset.PTE.LargePage && EnvLimits.MAX_PageTableEntriesToScan > entries */)
+                                foreach (var TableOffset in Proc.PT.ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
+                                {
+                                    if (TableOffset == null) continue;
+
+                                    entries++;
+                                    if (IncludeData == TableOffset.PTE.NoExecute)
+                                        WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess, true);
+                                }
+                            entries++;
+                            if (IncludeData == DirectoryOffset.PTE.NoExecute)
+                                WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess, true);
+                        }
+                    entries++;
+                }
+
             }
+            return entries;
         }
 
     /// <summary>
@@ -723,6 +764,8 @@ namespace inVtero.net
             Phase = 4;
             // were good, all Processes should have a VMCS if applicable and be identifiable by AS ID
         }
+
+        #region Origional Custom CLI support code
 
         /// <summary>
         /// This routine is fairly expensive, maybe unnecessary as well but it demo's walking the page table + EPT.
@@ -935,7 +978,7 @@ namespace inVtero.net
             }
              return rvList;
         }
-
+        #endregion
         public void DumpFailList()
         {
             var totFails = (from f in Processes
@@ -1303,8 +1346,10 @@ DoubleBreak:
         /// </summary>
         static WAHBitArray SISmap;
 
-        // TODO: Figure out if MemoryCopy or BlockCopy ...
 
+
+        // TODO: Figure out if MemoryCopy or BlockCopy ...
+         
 
         public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null, bool SinglePFNStore = false, bool DumpNULL = false)
         {
@@ -1356,10 +1401,11 @@ DoubleBreak:
                         using (var lsavefile = File.OpenWrite(saveLoc))
                         {
                             // 0x200 * 4kb = 2MB
-                            // TODO: Large pages properly
+                            // TODO: Large pages properly?
+                            // TODO: PageCache is still broken in some cases... disable for now here
                             for (int i = 0; i < 0x200; i++)
                             {
-                                PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead); 
+                                PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead, true); 
                                 VALUE.PTE.PTE += 0x1000;
                                 if(!GoodRead)
                                     block = new long[0x200];
@@ -1398,5 +1444,60 @@ DoubleBreak:
             //}
         }
         #endregion
+
+
+        public byte[] HashRange(VIRTUAL_ADDRESS KEY, PFN VALUE)
+        {
+            var rv = new byte[1];
+
+            var block = new long[0x200]; // 0x200 * 8 = 4k
+            var bpage = new byte[0x1000];
+
+            var tigger = new Tiger();
+            tigger.Initialize();
+
+
+            //fixed (void* lp = block, bp = bpage)
+            //{
+
+            if (DiagOutput)
+                WriteColor(VALUE.PTE.Valid ? ConsoleColor.Cyan : ConsoleColor.Red, $"VA: {KEY:X12}  \t PFN: {VALUE.PTE}");
+
+            // if we have invalid (software managed) page table entries
+            // the data may be present, or a prototype or actually in swap.
+            // for the moment were only going to dump hardware managed data
+            // or feel free to patch this up ;)
+            if (!VALUE.PTE.Valid)
+                return rv;
+
+            if (VALUE.PTE.LargePage)
+            {
+                bool GoodRead = false;
+                // 0x200 * 4kb = 2MB
+                for (int i = 0; i < 0x200; i++)
+                {
+                    MemAccess.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead);
+                    VALUE.PTE.PTE += 0x1000;
+                    if (!GoodRead)
+                        block = new long[0x200];
+
+                    Buffer.BlockCopy(block, 0, bpage, 0, 4096);
+                    rv = tigger.ComputeHash(bpage);
+                }
+                return rv;
+            }
+            else
+            {
+                try { MemAccess.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
+
+                if (block != null)
+                {
+                    Buffer.BlockCopy(block, 0, bpage, 0, 4096);
+                    rv = tigger.ComputeHash(bpage);
+                }
+            }
+
+            return rv;
+        }
     }
 }
