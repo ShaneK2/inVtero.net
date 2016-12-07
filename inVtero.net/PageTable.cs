@@ -24,6 +24,8 @@ using static System.Console;
 using ProtoBuf;
 using System.Linq;
 using inVtero.net.Specialties;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
 
 namespace inVtero.net
 {
@@ -72,7 +74,7 @@ namespace inVtero.net
                 mem = mem
             };
 
-            if (dp.MemAccess == null)
+            if (dp.MemAccess == null || mem != null)
                 dp.MemAccess = mem;
 
             /* Commenting out this block so we defer the table enumeration
@@ -301,13 +303,13 @@ namespace inVtero.net
                 yield break;
             }
 
-            long[] page = new long[512];  
-
+            long[] page = new long[512];
+            bool ReadData = false;
             // copy VA since were going to be making changes
 
-            try { mem.GetPageForPhysAddr(HW_Addr, ref page); } catch (Exception ex) { if (Vtero.DiagOutput) WriteLine($"Physical Address can not find {HW_Addr:X16}"); }
+            var valueRead = mem.GetPageForPhysAddr(HW_Addr, ref page, ref ReadData);
 
-            if (page == null)
+            if (!ReadData || page == null)
                 yield break;
 
             var dupVA = new VIRTUAL_ADDRESS(SubVA.Address);
@@ -355,17 +357,48 @@ namespace inVtero.net
         }
 
 
-        public IEnumerable<KeyValuePair<VIRTUAL_ADDRESS, PFN>> EnumerateVA(long StartingVA = 0, long EndingVA = 0xFFFFFFFFF000)
-        {
-            // if we haven't done any PageTabling or have been relatively shallow
-            if (DepthParsed == 0 || DepthParsed <= 2)
-            {
-                FillTable(KernelSpace, 4);
-                DepthParsed = 4;
-            }
+        public ConcurrentQueue<PFN> PageQueue;
 
-            return Root.Entries.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).Where(kvp => kvp.Key.Address >= StartingVA && kvp.Key.Address <= EndingVA).Concat(
-                Root.Entries.SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).Where(kvp => kvp.Key.Address >= StartingVA && kvp.Key.Address <= EndingVA));
+        public int FillPageQueue(bool OnlyLarge = false)
+        {
+            PageQueue = new ConcurrentQueue<PFN>();
+            VIRTUAL_ADDRESS VA;
+            VA.Address = 0;
+
+            if (DP.PT == null)
+                PageTable.AddProcess(DP, DP.MemAccess);
+
+            //Parallel.ForEach(DP.TopPageTablePage, (kvp) =>
+            foreach (var kvp in DP.TopPageTablePage)
+            {
+                // were at the top level (4th)
+                VA.PML4 = kvp.Key;
+                var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4 << 39) };
+
+                foreach (var DirectoryPointerOffset in DP.PT.ExtractNextLevel(pfn, true, 3))
+                {
+                    if (DirectoryPointerOffset == null) continue;
+                    foreach (var DirectoryOffset in DP.PT.ExtractNextLevel(DirectoryPointerOffset, KernelSpace, 2))
+                    {
+                        if (DirectoryOffset == null) continue;
+                        // if we have a large page we add it now
+                        if (DirectoryOffset.PTE.LargePage)
+                            PageQueue.Enqueue(DirectoryOffset);
+                        // otherwise were scanning lower level entries
+                        else if(!OnlyLarge)
+                        {
+                            foreach (var TableOffset in DP.PT.ExtractNextLevel(DirectoryOffset, KernelSpace, 1))
+                            {
+                                if (TableOffset == null) continue;
+
+                                PageQueue.Enqueue(TableOffset);
+                            }
+                        }
+                    }
+                }
+            }
+            //});
+            return PageQueue.Count();
         }
 
 

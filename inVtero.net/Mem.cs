@@ -78,19 +78,15 @@ namespace inVtero.net
 
         // there is a static for this also we can inherit from
         public long StartOfMemory; // adjust for .DMP headers or something
-        public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
-
+        //public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
         public long MaxLimit { get { if (MD.PhysMemDesc != null) return MD.PhysMemDesc.MaxAddressablePageNumber; return 0; } }
 
-
         const int PageCacheMax = EnvLimits.PageCacheMaxEntries;
 
-        IDictionary<long, long> DiscoveredGaps;
-
-        ThreadLocal<MemoryMappedViewAccessor> mappedAccess;
-        ThreadLocal<MemoryMappedFile> mappedFile;
-        ThreadLocal<FileStream> mapStream;
+        MemoryMappedViewAccessor mappedAccess;
+        MemoryMappedFile mappedFile;
+        FileStream mapStream;
 
         [ProtoMember(3)]
         string MemoryDump;
@@ -100,10 +96,9 @@ namespace inVtero.net
         public long Length { get { return FileSize; } }
 
         const long PAGE_SIZE = 0x1000;
-        static int mindex = 0;
 
-        ThreadLocal<long> MapViewBase;
-        ThreadLocal<long> MapViewSize;
+        long MapViewBase;
+        long MapViewSize;
 
         WAHBitArray pfnTableIdx;
         public void DumpPFNIndex()
@@ -124,77 +119,44 @@ namespace inVtero.net
             }
 #endif
         }
-        [ProtoIgnore]
-        static Mem Global;
-
-        [ProtoIgnore]
-        public static Mem Instance { get { return Global; } }
-
         Mem()
         {
-            if (Global == null)
-            {
-                // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
-                // PageCache may be better off than a huge window...
-                // PageCacheMax default is 100000 which is 390MB or so.
-                if (!PageCache.Initalized)
-                    PageCache.InitPageCache(Environment.ProcessorCount * 4, PageCacheMax);
+            // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
+            // PageCache may be better off than a huge window...
+            // PageCacheMax default is 100000 which is 390MB or so.
+            if (!PageCache.Initalized)
+                PageCache.InitPageCache(Environment.ProcessorCount * 4, PageCacheMax);
 
-                // not really used right now
-                GapScanSize = 0x10000000;
-
-                // common init
-                MapViewBase = new ThreadLocal<long>();
-
-                // 64MB
-                MapViewSize = new ThreadLocal<long>(() => 0x1000 * 0x1000 * 4);
-
-                DiscoveredGaps = new Dictionary<long, long>();
-                Global = this;
-            }
+            // common init
+            MapViewBase = 0;
+            // 64MB
+            MapViewSize = 0x1000 * 0x1000 * 4;
         }
 
-        /// <summary>
-        /// TODO: CloseStreams ;)
-        /// </summary>
         void SetupStreams()
         {
-            var lmindex = Interlocked.Increment(ref mindex);
             // we want a process/thread private name for our mapped view
-            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + lmindex.ToString() + Process.GetCurrentProcess().Id.ToString() + Thread.CurrentThread.ManagedThreadId.ToString();
+            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + "-" + Process.GetCurrentProcess().Id.ToString() + "-" + Thread.CurrentThread.ManagedThreadId.ToString();
             MemoryMappedFile ExistingMapp = null;
-
-
-            try
-            {
-                ExistingMapp = MemoryMappedFile.OpenExisting(mapName, MemoryMappedFileRights.Read, HandleInheritability.Inheritable);
-            }
-            catch (Exception e){ }
-
-            if (ExistingMapp == null)
-            {
-                Global.mapStream = new ThreadLocal<FileStream>(() => new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-                Global.mappedFile = new ThreadLocal<MemoryMappedFile>(() => MemoryMappedFile.CreateFromFile(mapStream.Value,
-                        mapName,
-                        0,
-                        MemoryMappedFileAccess.Read,
-                        null,
-                        HandleInheritability.Inheritable,
-                        true));
-
-                Global.mappedAccess = new ThreadLocal<MemoryMappedViewAccessor>(() => mappedFile.Value.CreateViewAccessor(
-                    MapViewBase.Value,
-                    MapViewSize.Value,
-                    MemoryMappedFileAccess.Read));
-            }
+           
+            mapStream = new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            mappedFile = MemoryMappedFile.CreateFromFile(mapStream,
+                null,
+                0,
+                MemoryMappedFileAccess.Read,
+                null,
+                HandleInheritability.Inheritable,
+                true);
+            mappedAccess = mappedFile.CreateViewAccessor(
+                MapViewBase,
+                MapViewSize,
+                MemoryMappedFileAccess.Read);
         }
 
 
-#if MEM_INSTANCE
         public Mem(Mem parent) : this()
         {
             MD = parent.MD;
-            DetectedDescriptor = parent.DetectedDescriptor;
 
             StartOfMemory = parent.StartOfMemory;
             MemoryDump = parent.MemoryDump;
@@ -202,20 +164,18 @@ namespace inVtero.net
 
             SetupStreams();
         }
-#endif
 
         public static Mem InitMem(String mFile, AMemoryRunDetector Detector, uint[] BitmapArray = null) //: this()
         {
             
-            if (Global == null)
-                Global = new Mem();
+            var thiz = new Mem();
 
-            Global.StartOfMemory = Detector != null ? Detector.StartOfMem : 0;
+            thiz.StartOfMemory = Detector != null ? Detector.StartOfMem : 0;
 
             if (Detector != null)
             {
-                Global.StartOfMemory = Detector.StartOfMem;
-                Global.MD = Detector;
+                thiz.StartOfMemory = Detector.StartOfMem;
+                thiz.MD = Detector;
             }
 #if USE_BITMAP
             // maybe there's a bit map we can use from a DMP file
@@ -230,16 +190,16 @@ namespace inVtero.net
 
             if (File.Exists(mFile))
             {
-                Global.MemoryDump = mFile;
-                Global.FileSize = new FileInfo(Global.MemoryDump).Length;
+                thiz.MemoryDump = mFile;
+                thiz.FileSize = new FileInfo(mFile).Length;
 
                 if (Detector != null)
-                    Global.MD = Detector;
+                    thiz.MD = Detector;
             }
 
-            Global.SetupStreams();
+            thiz.SetupStreams();
 
-            return Global;
+            return thiz;
         }
 
 
@@ -256,41 +216,41 @@ namespace inVtero.net
         public long GetPageFromFileOffset(long FileOffset, ref long[] block, ref bool DataRead)
         {
             var rv = 0L;
-            var NewMapViewBase = MapViewBase.Value;
-            var NewMapViewSize = MapViewSize.Value;
+            var NewMapViewBase = MapViewBase;
+            var NewMapViewSize = MapViewSize;
             DataRead = false;
 
 
-            var CheckBase = FileOffset / MapViewSize.Value;
-            if (MapViewBase.Value != CheckBase * MapViewSize.Value)
-                NewMapViewBase = CheckBase * MapViewSize.Value;
+            var CheckBase = FileOffset / MapViewSize;
+            if (MapViewBase != CheckBase * MapViewSize)
+                NewMapViewBase = CheckBase * MapViewSize;
 
             if (FileOffset > FileSize)
                 return 0;
 
             if (FileOffset < NewMapViewBase)
-                throw new OverflowException("FileOffset must be >= than base");
+                NewMapViewBase = CheckBase * MapViewSize;
 
             var AbsOffset = FileOffset - NewMapViewBase;
             var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
 
             try
             {
-                if (NewMapViewBase != MapViewBase.Value)
+                if (NewMapViewBase != MapViewBase)
                 {
                     cntInAccessor++;
 
-                    if (NewMapViewBase + MapViewSize.Value > FileSize)
+                    if (NewMapViewBase + MapViewSize > FileSize)
                         NewMapViewSize= FileSize - NewMapViewBase;
                     else
-                        NewMapViewSize = MapViewSize.Value;
+                        NewMapViewSize = MapViewSize;
 
-                    mappedAccess.Value = mappedFile.Value.CreateViewAccessor(
+                    mappedAccess = mappedFile.CreateViewAccessor(
                         NewMapViewBase,
                         NewMapViewSize,
                         MemoryMappedFileAccess.Read);
 
-                    MapViewBase.Value = NewMapViewBase;
+                    MapViewBase = NewMapViewBase;
 
                 }
                 else
@@ -298,14 +258,14 @@ namespace inVtero.net
 
                 if (block != null)
                 {
-                    UnsafeHelp.ReadBytes(mappedAccess.Value, BlockOffset, ref block);
+                    UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block);
                     rv = block[((AbsOffset >> 3) & 0x1ff)];
                 }
                 // FIX: ReadInt64 uses byte address so when we use it must adjust, check for other callers
                 // assumptions since we changed this from array<long>[] maybe expecting old behavior, however
                 // caller from getpageforphysaddr passes valid block usually so that's the main one from V2P
                 else 
-                    rv = mappedAccess.Value.ReadInt64(BlockOffset | (AbsOffset & 0x1ff));
+                    rv = mappedAccess.ReadInt64(BlockOffset | (AbsOffset & 0x1ff));
                 DataRead = true;
 
             }
@@ -367,7 +327,7 @@ namespace inVtero.net
             if (MD.PhysMemDesc == null)
                 return -3;
 
-            // step 2: physical mapping (e.g. VM device memory acquired)
+            // Deal with best memory run
             int i = 0;
             for (i=0; i < MD.PhysMemDesc.NumberOfRuns; i++)
             {
@@ -537,7 +497,7 @@ namespace inVtero.net
             }
             catch (Exception ex)
             {
-                throw new PageNotFoundException("V2P conversion error page not found", Attempted, ConvertedV2P, ex);
+                rv.Valid = false;
             }
             finally
             {

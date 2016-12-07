@@ -14,5 +14,8 @@ namespace ConsoleUtils
 
         [ArgShortcut("-n"), ArgDescription("folder/directory to save outputs when extracting binaries")]
         public bool PEScan { get; set; }
+
+        [ArgShortcut("-k"), ArgDescription("Only scan kernel")]
+        public bool KernelOnly { get; set; }
     }
 }

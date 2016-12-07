@@ -120,7 +120,7 @@ namespace inVtero.net.ConsoleUtils
             }
             // basic perf checking
             QuickOptions.Timer = Stopwatch.StartNew();
-
+                
             var procCount = vtero.ProcDetectScan(co.VersionsToEnable);
 
             if (!vtero.OverRidePhase)

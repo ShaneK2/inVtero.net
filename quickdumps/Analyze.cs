@@ -38,9 +38,12 @@ namespace inVtero.net
 
         public static void DumpDetected(Vtero vtero, DetectedProc p, long VAStart = 0, long VAEnd = 0xffffffff0000)
         {
-            var mods = vtero.ModuleScan(p, null, VAStart, VAEnd);
+            var mods = vtero.ModuleScan(p, VAStart, VAEnd);
 
-            Parallel.ForEach(mods, (detected) =>
+            // BUGBUG: TODO: Refactor the threadlocal stuff seems were re-entrant unsafe :(
+            //Parallel.ForEach(mods, (detected) =>
+            //{
+            foreach (var detected in mods)
             {
                 var cv_data = vtero.ExtractCVDebug(p, detected.Value, detected.Key);
 
@@ -54,7 +57,8 @@ namespace inVtero.net
                         vtero.GetKernelDebuggerData(p, detected.Value, cv_data, sympath);
 
                 }
-            });
+            }
+            //});
         }
 
         /// <summary>
@@ -70,16 +74,20 @@ namespace inVtero.net
             string input = string.Empty;
             var GloalView = new ConcurrentDictionary<DetectedProc, ConcurrentDictionary<long, Extract>>();
 
-            //Mem.InitMem(vtero.MemFile, vtero.MRD);
+            vtero.MemAccess = Mem.InitMem(vtero.MemFile, vtero.MRD);
 
             if (vtero.VMCSs.Count < 1)
             {
+                foreach (var p in vtero.FlattenASGroups)
+                {
+                    DumpDetected(vtero, p);
+                }
                 // scan bare metal
-                Parallel.ForEach(vtero.Processes, (p) =>
-               {
-                   WriteColor(ConsoleColor.Cyan, $"Scanning for modules addressable by: {p}");
-                   DumpDetected(vtero, p);
-               });
+                // Parallel.ForEach(vtero.Processes, (p) =>
+                //{
+                //    WriteColor(ConsoleColor.Cyan, $"Scanning for modules addressable by: {p}");
+                //    DumpDetected(vtero, p);
+                //});
             }
             else
             foreach (var grpz in vtero.ASGroups)

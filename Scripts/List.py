@@ -50,6 +50,10 @@ pt = PageTable.AddProcess(proc, mem, CollectKernel, 4)
 ranges = PageTable.Flatten(pt.Root.Entries.SubTables, 4)
 print "Process %s, ranges %d, entries %d" % (proc.ShortName, ranges.Count, pt.EntriesParsed)
 
+
+
+
+
 #for range in ranges:
 #    print f.write(range.Key.ToString() + "\t" + range.Value.ToString() + "\n")
 

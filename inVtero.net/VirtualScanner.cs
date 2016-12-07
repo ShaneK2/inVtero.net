@@ -117,74 +117,53 @@ namespace inVtero.net
         /// <returns>count of new detections since last Run</returns>
         public long Run(long Start=0, long Stop = 0xFFFFffffFFFF)
         {
-            long rv = DetectedFragments.Count();
-            bool StillGoing = true;
-
-            do
+            DetectedFragments = new ConcurrentDictionary<long, VAScanType>();
+            
+            // convert index to an address 
+            // then add start to it
+            long i = Start;
+            var block = new long[0x200]; // 0x200 * 8 = 4k
+            var bpage = new byte[0x1000];
+            while (i < Stop)
             {
-                //Parallel.For(0, Environment.ProcessorCount, (j) =>
-                for (int j = 0; j < 1; j++)
+                foreach (var scanner in CheckMethods)
                 {
-                    // convert index to an address 
-                    // then add start to it
-                    long i = Start + (j << 12);
+                    HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
+                    if (DPContext.vmcs != null)
+                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                    else
+                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
+                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.CR3Value, i);
 
-                    var block = new long[0x200]; // 0x200 * 8 = 4k
-                    var bpage = new byte[0x1000];
-                    //unsafe
+                    var Curr = i;
+                    i += 0x1000;
+
+                    if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
+                        continue;
+
+                    //unsafe fixed (void* lp = block, bp = bpage)
                     //{
-                        while (i < Stop)
-                        {
-                            foreach (var scanner in CheckMethods)
-                            {
-                                HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
-                                try
-                                {
-                                    if (DPContext.vmcs != null)
-                                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                                    else
-                                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
-                                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.CR3Value, i);
-                                }
-                                catch (Exception ex)
-                                { }
+                    bool GotData = false;
+                    BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData);
+                    if (!GotData)
+                        continue;
 
-                                if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
-                                    continue;
+                    Buffer.BlockCopy(block, 0, bpage, 0, 4096);
+                        //Buffer.MemoryCopy(lp, bp, 4096, 4096);
+                    //}
 
-                                //fixed (void* lp = block, bp = bpage)
-                                //{
-                                    bool GotData = false;
-                                    try
-                                    {
-                                        BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData);
-                                        Buffer.BlockCopy(block, 0, bpage, 0, 4096);
-                                        //Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                                    }
-                                    catch (Exception ex) { }
-                                //}
-
-                                    var scan_detect = scanner(i, bpage);
-                                if (scan_detect != VAScanType.UNDETERMINED)
-                                {
-                                    DetectedFragments.TryAdd(i, scan_detect);
-                                    if (Vtero.VerboseOutput)
-                                        Console.WriteLine($"Detected PE @ VA {i:X}");
-                                }
-                            }
-                            //i += Environment.ProcessorCount << 12;
-                            // for easier debugging if your not using Parallel loop
-                            i += 1 << 12;
-                        //}
-                        StillGoing = false;
+                    var scan_detect = scanner(Curr, bpage);
+                    if (scan_detect != VAScanType.UNDETERMINED)
+                    {
+                        DetectedFragments.TryAdd(Curr, scan_detect);
+                        if (Vtero.VerboseOutput)
+                            Console.WriteLine($"Detected PE @ VA {Curr:X}");
                     }
-                //});
                 }
+            }
 
-            } while (StillGoing);
-
-            return DetectedFragments.Count() - rv;
+            return DetectedFragments.Count();
         }
     }
 }

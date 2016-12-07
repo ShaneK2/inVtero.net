@@ -88,7 +88,7 @@ namespace inVtero.net
                     {
                         WriteLine($"Proc: {p.CR3Value:X}");
                         Detections = Detections.Concat(
-                            vtero.ModuleScan(p, null, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
+                            vtero.ModuleScan(p, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
                             .ToDictionary(x => x.Key, x => x.Value);
 
                         if (Detections.Count() > 0)

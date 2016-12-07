@@ -45,6 +45,8 @@ namespace inVtero.net
         // for diagnostic printf's
         int MAX_LINE_WIDTH = Console.WindowWidth;
 
+        Vtero vtero;
+
         // using bag since it has the same collection interface as List
         [ProtoIgnore]
         public ConcurrentDictionary<long, DetectedProc> DetectedProcesses;
@@ -57,8 +59,7 @@ namespace inVtero.net
         public ulong HexScanUlong;
         [ProtoIgnore]
         public bool Scan64;
-        [ProtoIgnore]
-        public List<long> FoundValueOffsets;
+
 
         #region class instance variables
         public string Filename;
@@ -120,15 +121,16 @@ namespace inVtero.net
             FileSize = 0;
             Gaps = new List<MemoryRun>();
             CheckMethods = new List<Func<long, bool>>();
-            FoundValueOffsets = new List<long>();
         }
 
-        public Scanner(string InputFile) : this()
+        public Scanner(string InputFile, Vtero vTero) : this()
         {
             Filename = InputFile;
+            vtero = vTero;
         }
 
-        public bool HexScan(long offset, long[] ValueBlock, int ValueReadCount)
+#if TESTONLY
+        public static bool HexScan(List<long> FoundValueOffsets, long offset, long[] ValueBlock, int ValueReadCount)
         {
             if (Scan64)
                 for (int i = 0; i < ValueReadCount; i++)
@@ -166,7 +168,7 @@ namespace inVtero.net
                 }
             return false;
         }
-
+#endif
 
         /// <summary>
         /// The VMCS scan is based on the LINK pointer, abort code and CR3 register
@@ -750,7 +752,7 @@ namespace inVtero.net
 
                                     do
                                     {
-                                        IndexedOffset_pfn = Mem.Instance.OffsetToMemIndex(offset_pfn + RunShift);
+                                        IndexedOffset_pfn = vtero.MemAccess.OffsetToMemIndex(offset_pfn + RunShift);
                                         if (IndexedOffset_pfn == -1)
                                         {
                                             RunShift++;
@@ -788,7 +790,7 @@ namespace inVtero.net
                                             UnsafeHelp.ReadBytes(reader, CurrMapBase, ref buffers[filled]);
                                     }
                                     );
-                                    if (ExitAfter > 0 && (ExitAfter == DetectedProcesses.Count() || FoundValueOffsets.Count() >= ExitAfter))
+                                    if (ExitAfter > 0 && (ExitAfter == DetectedProcesses.Count())) // || FoundValueOffsets.Count() >= ExitAfter))
                                         return DetectedProcesses.Count();
 
                                     var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
@@ -852,10 +854,10 @@ namespace inVtero.net
         /// </summary>
         /// <param name="ExitAfter"></param>
         /// <returns></returns>
-        public IEnumerable<long> BackwardsValueScan(int ExitAfter = 0)
+        public static IEnumerable<long> BackwardsValueScan(String Filename, int ScanFor, int ExitAfter = 0)
         {
-            if (FileSize == 0)
-                FileSize = new FileInfo(Filename).Length;
+            List<long> FoundValueOffsets = new List<long>();
+            var FileSize = new FileInfo(Filename).Length;
 
             long ReadSize = 1024 * 1024 * 8;
             var ValueReadCount = (int)ReadSize / 4;
@@ -866,7 +868,7 @@ namespace inVtero.net
 
             if (ShortFirstChunkSize != 0)
             {
-                var found = MapScanFile(Filename, ShortFirstChunkBase, (int)HexScanDword, ShortFirstChunkSize / 4);
+                var found = MapScanFile(Filename, ShortFirstChunkBase, ScanFor, ShortFirstChunkSize / 4);
                 foreach (var offset in found)
                     yield return offset;
 
@@ -891,13 +893,10 @@ namespace inVtero.net
                     if(Vtero.VerboseLevel > 1)
                         WriteColor($"Scanning From {localOffset:X} To {(localOffset + ReadSize):X} bytes");
 
-                    var results = MapScanFile(Filename, localOffset, (int)HexScanDword, ValueReadCount);
+                    var results = MapScanFile(Filename, localOffset, ScanFor, ValueReadCount);
 
                     foreach (var offset in results)
                         yield return offset;
-
-                    if (ExitAfter > 0 && FoundValueOffsets.Count() >= ExitAfter)
-                        StopRunning = true;
 
                     CurrWindowBase += (1 * ReadSize);
                     var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
@@ -915,6 +914,5 @@ namespace inVtero.net
             }
             yield break;
         }
-
     }
 }

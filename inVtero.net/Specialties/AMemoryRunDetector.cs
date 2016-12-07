@@ -42,7 +42,7 @@ namespace inVtero.net.Specialties
         {
             MemoryDescriptor MemRunDescriptor = null;
             // rarely used pool tag
-            var off = vtero.ScanValue(false, 0x6c4d6d4d);
+            var off = Scanner.BackwardsValueScan(vtero.MemFile, 0x6c4d6d4d);
 
             using (var dstream = File.OpenRead(vtero.MemFile))
             {

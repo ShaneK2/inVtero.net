@@ -84,7 +84,7 @@ namespace inVtero.net
         //WAHBitArray PFNdb;
         public ConcurrentDictionary<int, ConcurrentBag<DetectedProc>> ASGroups;
 
-        public Mem MemAccess;
+        public Mem MemAccess { get; set; }
 
         /// <summary>
         /// Flatten the ConcurrentDictionary/ConcurrentBag to a simple List.
@@ -159,11 +159,10 @@ namespace inVtero.net
         public Vtero(string MemoryDump) :this()
         {
             MemFile = MemoryDump.ToLower();
-
-            scan = new Scanner(MemFile);
             FileSize = new FileInfo(MemFile).Length;
-
             DeriveMemoryDescriptors();
+            scan = new Scanner(MemFile, this);
+
         }
 
         public Vtero(string MemoryDump, AMemoryRunDetector MD) : this(MemoryDump)
@@ -245,17 +244,6 @@ namespace inVtero.net
             return ThisInstance;
         }
 
-        public IEnumerable<long> ScanValue(bool Is64, ulong Value, int ScanOnlyFor = 0)
-        {
-            scan.Scan64 = Is64;
-            scan.HexScanDword = (uint) Value;
-            scan.HexScanUlong = Value;
-            scan.ScanMode = PTType.VALUE;
-
-            return scan.BackwardsValueScan(ScanOnlyFor);
-        }
-
-        
         public int ProcDetectScan(PTType Modes, int DetectOnly = 0)
         {
             if (Phase >= 1 && OverRidePhase)
@@ -308,7 +296,7 @@ namespace inVtero.net
                 Proc = Procz;
 
                 if (Proc.PT == null)
-                    PageTable.AddProcess(Proc, Mem.Instance, true, 4);
+                    PageTable.AddProcess(Proc, MemAccess, true, 4);
 
                 if (Proc.PT.EntriesParsed < 512)
                     continue;
@@ -326,10 +314,10 @@ namespace inVtero.net
 
         public CODEVIEW_HEADER ExtractCVDebug(DetectedProc dp, Extract Ext, long VA)
         {
+            uint SizeData=0, RawData=0, PointerToRawData=0;
+
             var _va = VA + Ext.DebugDirPos;
-
             var block = dp.VGetBlock(_va);
-
             var TimeDate2 = BitConverter.ToUInt32(block, ((int) Ext.DebugDirPos & 0xfff) + 4);
 
             if(TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
@@ -341,9 +329,15 @@ namespace inVtero.net
             if(Vtero.VerboseOutput)
                 WriteColor(ConsoleColor.Green, $"Locked on to CV Debug info.  Time2 = {TimeDate2:X} Time1 = {Ext.TimeStamp:X}");
 
-            var SizeData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 16);
-            var RawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 20);
-            var PointerToRawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 24);
+            var max_offset = (int)(_va & 0xfff) + 28;
+            if (max_offset > 0x1000)
+            {
+                if (Vtero.VerboseOutput)
+                    WriteColor(ConsoleColor.Yellow, "CV block seems too straddle into next block (too large)"); return null;
+            }
+            SizeData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 16);
+            RawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 20);
+            PointerToRawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 24);
 
             _va = VA + RawData;
 
@@ -362,7 +356,7 @@ namespace inVtero.net
             var age = block[((int)_va & 0xfff) + 20];
 
             // char* at end
-            var str = System.Text.Encoding.Default.GetString(block, (((int)_va & 0xfff) + 24), 32).Trim();
+            var str = Encoding.Default.GetString(block, (((int)_va & 0xfff) + 24), 32).Trim();
 
             if (Vtero.VerboseOutput)
             {
@@ -435,6 +429,12 @@ namespace inVtero.net
             return decoded;
         }
 
+        /// <summary>
+        /// TODO: Make better for all types
+        /// </summary>
+        /// <param name="dp"></param>
+        /// <param name="SymName"></param>
+        /// <returns>Currently a single byte for the address resolved from the Name</returns>
         public long GetSymValue(DetectedProc dp, string SymName)
         {
             DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
@@ -448,7 +448,7 @@ namespace inVtero.net
                 WriteColor(ConsoleColor.Red, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
                 return MagicNumbers.BAD_VALUE_READ;
             }
-            return dp.GetValue(symInfo.Address);
+             return dp.GetValue(symInfo.Address);
         }
 
         public bool TryLoadSymbols(DetectedProc dp, Extract ext, CODEVIEW_HEADER cv_data, long BaseVA, string SymPath)
@@ -498,50 +498,44 @@ namespace inVtero.net
             return symStatus;
         }
 
-        public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, Mem mem, long Start, long End)
+        public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, long StartingVA = 0, long EndingVA = 0xFFFFFFFFF000)
         {
-            Mem localMem = Mem.Instance;
+            if (dp.PT == null)
+                PageTable.AddProcess(dp, new Mem(MemAccess));
 
-            /// TODO: uhhhhh move mem up into DP
-            if (mem != null)
-                localMem = mem;
-            else if (dp.PT != null && dp.PT.mem != null)
-                localMem = dp.PT.mem;
-            else if (dp.MemAccess != null)
-                localMem = dp.MemAccess;
-            else {
-                //localMem = new Mem(MemFile, null, DetectedDesc); 
-                localMem = Mem.Instance;
-                if (dp.PT == null)
-                    PageTable.AddProcess(dp, localMem, true, 4);
-            }
+            var cnt = dp.PT.FillPageQueue(true);
 
-            VirtualScanner VS = new VirtualScanner(dp, localMem);
-
+            VirtualScanner VS = new VirtualScanner(dp, new Mem(MemAccess));
             VS.ScanMode = VAScanType.PE_FAST;
 
-            ConcurrentDictionary<long, VAScanType> rv = new ConcurrentDictionary<long, VAScanType>();
-
-            foreach (var range in dp.PT.EnumerateVA(Start, End))
+            Parallel.For(0, cnt, i =>
+            //while (dp.PT.PageQueue.Count() > 0)
             {
-                VS.Run(range.Key.Address, range.Key.Address + (range.Value.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
-                foreach (var item in VS.DetectedFragments)
-                    rv.TryAdd(item.Key, item.Value);
-            }
+                PFN range;
+                if (dp.PT.PageQueue.TryDequeue(out range))
+                {
+                    if (range.PTE.Valid)
+                        VS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
+                }
+                //}
+            });
 
             return VS.Artifacts;
         }
 
-        public long DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false)
+        public long DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false, bool KernelSpace = true)
         {
             //var entries = PageTable.Flatten(Proc.PT.Root.Entries.SubTables, 4);
             VIRTUAL_ADDRESS VA;
             VA.Address = 0;
             var PageTables = new Dictionary<VIRTUAL_ADDRESS, PFN>();
-            int depth = 4;
             int level = 3;
             long entries = 0;
-            bool KernelSpace = true;
+
+
+            if (Proc.PT == null)
+                PageTable.AddProcess(Proc, MemAccess);
+
             foreach (var kvp in Proc.TopPageTablePage)
             {
                 // were at the top level (4th)
@@ -554,23 +548,21 @@ namespace inVtero.net
                 foreach (var DirectoryPointerOffset in Proc.PT.ExtractNextLevel(pfn, true, level))
                 {
                     if (DirectoryPointerOffset == null) continue;
-                    if (depth > 2 /* && !DirectoryPointerOffset.PTE.LargePage */)
                         foreach (var DirectoryOffset in Proc.PT.ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level - 1))
                         {
                             if (DirectoryOffset == null) continue;
 
-                            if (depth > 3 /* && !DirectoryOffset.PTE.LargePage && EnvLimits.MAX_PageTableEntriesToScan > entries */)
                                 foreach (var TableOffset in Proc.PT.ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
                                 {
                                     if (TableOffset == null) continue;
 
                                     entries++;
                                     if (IncludeData == TableOffset.PTE.NoExecute)
-                                        WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess, true);
+                                        WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess);
                                 }
                             entries++;
                             if (IncludeData == DirectoryOffset.PTE.NoExecute)
-                                WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess, true);
+                                WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess);
                         }
                     entries++;
                 }
@@ -810,7 +802,7 @@ namespace inVtero.net
             // overall it may blow the cache hit ratio but will tune a single task to see the larger/better cache
             // versus multicore, my suspicion is that multi-core is better
             //using (var memAxs = new Mem(MemFile, null, DetectedDesc))
-            var memAxs = Mem.Instance;
+            var memAxs = MemAccess;
             {
 
                 var sx = 0;
@@ -1041,7 +1033,7 @@ namespace inVtero.net
             int cntDumped = 0;
             WriteLine($"{Environment.NewLine} Address spaces resolved.  Dump method starting. {Environment.NewLine}");
             //using (var memAxs = new Mem(MemFile, null, DetectedDesc))
-            var memAxs = Mem.Instance;
+            var memAxs = MemAccess;
             {
                 memAxs.OverrideBufferLoadInput = true;
 

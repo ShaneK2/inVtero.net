@@ -33,9 +33,8 @@ for proc in vtero.FlattenASGroups:
     if Directory.Exists(currProcBase):
         continue
     Directory.CreateDirectory(currProcBase)
-    pt = PageTable.AddProcess(proc, mem, CollectKernel, 4)
     # only one time get Kernel
-    CollectKernel = True
-    entries = vtero.DumpProc(currProcBase + "\\", proc)
+    entries = vtero.DumpProc(currProcBase + "\\", proc, False, CollectKernel)
+    CollectKernel = False
     print "Dumped Process %s, entries %d" % (proc.ShortName, entries)
 
