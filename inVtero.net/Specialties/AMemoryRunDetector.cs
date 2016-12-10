@@ -68,7 +68,7 @@ namespace inVtero.net.Specialties
                             //    WriteLine($"offset {xoff:X} > FileSize {vtero.FileSize:X}");
                             continue;
                         }
-                        for (long doff = 16; doff <= 32; doff += 4)
+                        for (long doff = 4; doff <= 64; doff += 4)
                         {
                             dstream.Position = xoff + doff; 
                             MemRunDescriptor = new MemoryDescriptor();

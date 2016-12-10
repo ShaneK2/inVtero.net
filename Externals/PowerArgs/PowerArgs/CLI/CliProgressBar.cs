@@ -61,7 +61,7 @@ namespace PowerArgs.Cli
         {
             Console = ConsoleProvider.Current;
             Message = initialMessage;
-            Width = width.HasValue ? width.Value : Console.BufferWidth;
+            Width = width.HasValue ? width.Value : Console.BufferWidth / 3;
             BorderPen = new ConsoleCharacter(' ', null, ConsoleColor.DarkGray);
             FillColor = ConsoleColor.Green;
             MessageFillColor = ConsoleColor.Black;

@@ -45,6 +45,8 @@ namespace inVtero.net.Support
 
         public static void RenderConsoleProgress(int percentage)
         {
+            if (Progress == percentage)
+                return;
 
             CursorVisible = false;
             const int BarHeight = 3;

@@ -39,6 +39,7 @@ using Dia2Sharp;
 
 // TODO: MemoryCopy / unsafe version performance testing
 using System.Dynamic;
+using PowerArgs.Cli;
 
 namespace inVtero.net
 {
@@ -682,14 +683,23 @@ namespace inVtero.net
             KVS = new VirtualScanner(dp, new Mem(MemAccess));
             KVS.ScanMode = VAScanType.PE_FAST;
 
+            WriteColor(ConsoleColor.Cyan, "Scanning VA for Kernel... ");
+            ForegroundColor = ConsoleColor.Green;
+
             Parallel.For(0, cnt, i =>
             {
                 PFN range;
+
+                var curr = cnt - dp.PT.PageQueue.Count();
+                CursorLeft = 0;
+                var done = (int) (Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0) + 0.5;
+                Write($"{done} % done");
+
                 if (dp.PT.PageQueue.TryDequeue(out range))
                     if (range.PTE.Valid)
                         KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
             });
-
+            WriteLine("Done comprehensive VA scan");
             return KVS.Artifacts;
         }
 

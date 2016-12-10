@@ -147,7 +147,7 @@ namespace inVtero.net
                         continue;
 
                     bool GotData = false;
-                    BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData);
+                    BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData, false);
                     if (!GotData)
                         continue;
 

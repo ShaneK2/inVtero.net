@@ -217,20 +217,20 @@ namespace inVtero.net
         public long GetPageFromFileOffset(long FileOffset, ref long[] block, ref bool DataRead)
         {
             var rv = 0L;
-            var NewMapViewBase = MapViewBase;
+            //var NewMapViewBase = MapViewBase;
             var NewMapViewSize = MapViewSize;
             DataRead = false;
 
 
             var CheckBase = FileOffset / MapViewSize;
-            if (MapViewBase != CheckBase * MapViewSize)
-                NewMapViewBase = CheckBase * MapViewSize;
+            //if (MapViewBase != CheckBase * MapViewSize)
+            var NewMapViewBase = CheckBase * MapViewSize;
 
             if (FileOffset > FileSize)
                 return 0;
 
-            if (FileOffset < NewMapViewBase)
-                NewMapViewBase = CheckBase * MapViewSize;
+            //if (FileOffset < NewMapViewBase)
+            //    NewMapViewBase = CheckBase * MapViewSize;
 
             var AbsOffset = FileOffset - NewMapViewBase;
             var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
@@ -408,7 +408,7 @@ namespace inVtero.net
         public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
         {
             bool GoodRead = false;
-            return GetPageForPhysAddr(PAddr, ref block, ref GoodRead);
+            return GetPageForPhysAddr(PAddr, ref block, ref GoodRead, false);
         }
 
 
@@ -423,7 +423,7 @@ namespace inVtero.net
             bool Ignored = false;
             long[] block = new long[512];
 
-            return GetPageForPhysAddr(PAddr, ref block, ref Ignored);
+            return GetPageForPhysAddr(PAddr, ref block, ref Ignored, false);
 
             //return pageData[PAddr.AddressOffset >> 3];
         }

@@ -39,7 +39,9 @@ namespace inVtero.net.Specialties
         public override bool IsSupportedFormat(Vtero vtero)
         {
             // use abstract implementation & scan for internal 
-            LogicalPhysMemDesc = ExtractMemDesc(vtero);
+            // were actually not going to use this in VMWare since were so good at vmss
+            // this is sort of meaningless :( 
+            //LogicalPhysMemDesc = ExtractMemDesc(vtero);
 
             bool rv = false;
             if (!File.Exists(vDeviceFile) || !File.Exists(MemFile))

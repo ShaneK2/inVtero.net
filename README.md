@@ -1,4 +1,27 @@
 # inVtero.net
+
+# WOW Memory forensics
+
+No configuration needed, completely dynamic / duck typing
+
+## Windows 64 bit all versions
+
+### Use Quickdumps + python to automatically analyze any memory dump
+```
+quickdumps python Analyze.py
+```
+
+
+### Supported:
+
+* VMWARE 
+* XEN 
+* Crash dump (PAGEDUMP64 / Blue Screen dump files)
+* Symbolic type extraction / binding 
+  * DLR Scripting (Python)
+* Basic Linux (Primary support on: BSD, HyperV, Windows, Generic (Self pointer page tables)) 
+
+
 Find/Extract processes, hypervisors (including nested) in memory dumps using microarchitecture independent
 Virtual Machine Introspection techniques.  Cross platform, multi-architechture high performance physical memory analysis tools.
 
@@ -8,18 +31,13 @@ Virtual Machine Introspection techniques.  Cross platform, multi-architechture h
 
 ![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
 
-## Upcoming changes
-K2 is going to be commiting soon a major revamp of the console interface built around PowerArgs.  I'm not going to submodule again since that really didn't work out well for me with the Reloc project and I really want the latest fixes/snapshot (NuGet somewhat older also) from @adamabdelhamed/PowerArgs) I'll be importing a fork directly into the master branch here and manually maintaining the fork out side of a submodule.
-
-### NEW STUFF
-* XEN Support 
-  * (VMWare, XEN, MS CRASHDUMP & RAW)
-* New memory run detection
-* Windows kernel memory address randomization (including page table base self/entry)
-* Basic Linux (BSD, HyperV, Windows, Generic) 
-
 ## quickdumps
 Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
+
+### NEW STUFF
+* New memory run detection
+* Windows kernel memory address randomization (including page table base self/entry)
+
 
 ### Ideal circumstances
 The way we initialize our virtual to physical address translation, there are no dependencies on input file format.  Any .DMP,
