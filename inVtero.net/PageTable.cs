@@ -356,7 +356,7 @@ namespace inVtero.net
             yield break;
         }
 
-
+        [ProtoIgnore]
         public ConcurrentQueue<PFN> PageQueue;
 
         public int FillPageQueue(bool OnlyLarge = false)

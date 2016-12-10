@@ -146,31 +146,32 @@ namespace inVtero.net.ConsoleUtils
 
             if (SkipVMCS)
             {
-                vtero.GroupAS();
+                if (!vtero.OverRidePhase)
+                    vtero.GroupAS();
 
                 if (co.VerboseLevel > 1)
                     WriteColor(ConsoleColor.Yellow, "Skipping VMCS scan (as requested).");
-                return vtero;
             }
-
-            ProgressBarz.BaseMessage = new ConsoleString("Second pass, correlating for VMCS pages");
-
-            var VMCSCount = vtero.VMCSScan();
-            //Timer.Stop();
-
-            if (!vtero.OverRidePhase)
+            else
             {
-                WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"{VMCSCount} candidate VMCS pages. Time to process: {QuickOptions.Timer.Elapsed}, Data scanned: {vtero.FileSize:N}");
+                ProgressBarz.BaseMessage = new ConsoleString("Second pass, correlating for VMCS pages");
 
-                // second time 
-                WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"Second pass done. {QuickOptions.FormatRate(vtero.FileSize * 2, QuickOptions.Timer.Elapsed)}");
+                var VMCSCount = vtero.VMCSScan();
+                //Timer.Stop();
 
-                // each of these depends on a VMCS scan/pass having been done at the moment
-                WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, "grouping and joining all memory");
-            } 
-            // After this point were fairly functional
-            vtero.GroupAS();
+                if (!vtero.OverRidePhase)
+                {
+                    WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"{VMCSCount} candidate VMCS pages. Time to process: {QuickOptions.Timer.Elapsed}, Data scanned: {vtero.FileSize:N}");
 
+                    // second time 
+                    WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"Second pass done. {QuickOptions.FormatRate(vtero.FileSize * 2, QuickOptions.Timer.Elapsed)}");
+
+                    // each of these depends on a VMCS scan/pass having been done at the moment
+                    WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, "grouping and joining all memory");
+                }
+                // After this point were fairly functional
+                vtero.GroupAS();
+            }
             // sync-save state so restarting is faster
             if (!File.Exists(saveStateFile))
             {

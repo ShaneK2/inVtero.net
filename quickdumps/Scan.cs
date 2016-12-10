@@ -175,7 +175,6 @@ namespace inVtero.net
 #endif
             // basic perf checking
             QuickOptions.Timer = Stopwatch.StartNew();
-            inVtero.net
             var procCount = vtero.ProcDetectScan(Version);
 
             WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"{procCount} candidate process page tables. Time so far: {QuickOptions.Timer.Elapsed}, second pass starting. {QuickOptions.FormatRate(vtero.FileSize, QuickOptions.Timer.Elapsed)}");

@@ -129,11 +129,11 @@ namespace inVtero.net
     /// <summary>
     /// Using long for Virtual addresses
     /// </summary>
-    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
+    [ProtoContract]
     public struct VIRTUAL_ADDRESS
     {
+        [ProtoMember(800)]
         public long Address;
-
         public VIRTUAL_ADDRESS(long VA) { Address = VA; }
 
         public override string ToString() => $"VA: {((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X12}, PML4E {PML4:X3}, DPO:{DirectoryPointerOffset:X3}, DO:{DirectoryOffset:X3}, TO: {TableOffset:X3}, O: {Offset:X4}";
@@ -174,9 +174,10 @@ namespace inVtero.net
         public long PML4E { get { return (GPA >> 39) & 0x1ff; } }
     }
 
-    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
+    [ProtoContract(ImplicitFields = ImplicitFields.AllFields)]
     public struct HARDWARE_ADDRESS_ENTRY : IComparable
     {
+        [ProtoMember(99)]
         public long PTE; // should really be called 'value' or something
 
         public static readonly HARDWARE_ADDRESS_ENTRY MinAddr = new HARDWARE_ADDRESS_ENTRY(long.MinValue);

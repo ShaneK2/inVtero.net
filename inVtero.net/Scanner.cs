@@ -500,8 +500,8 @@ namespace inVtero.net
         {
             var Candidate = false;
             //var offset = CurrWindowBase + CurrMapBase;
-            long bestShift = long.MaxValue, bestDiff = long.MaxValue;
-            var bestOffset = long.MaxValue;
+            //long bestShift = long.MaxValue, bestDiff = long.MaxValue;
+            //var bestOffset = long.MaxValue;
             var i = 0x1ff;
 
             if (((block[0] & 0xff) == 0x63) || (block[0] & 0xfdf) == 0x847)
@@ -517,39 +517,26 @@ namespace inVtero.net
                         {
                             var shifted = (block[i] & 0xFFFFFFFFF000);
 
-                            if (shifted != 0 && shifted < FileSize)
+                            if (shifted == offset)
                             {
                                 var diff = offset - shifted;
-
-                                if (diff < bestDiff)
-                                {
-                                    bestShift = shifted;
-                                    bestDiff = diff;
-                                    bestOffset = offset;
-                                }
-
-                                var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.GENERIC, TrueOffset = TrueOffset };
-
                                 // BUGBUG: Need to K-Means this or something cluster values to help detection of processes in sparse format
                                 // this could be better 
-                                if (shifted == offset)
+                                var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.GENERIC, TrueOffset = TrueOffset };
+                                for (int p = 0; p < 0x200; p++)
                                 {
-                                    for (int p = 0; p < 0x200; p++)
-                                    {
-                                        if (block[p] != 0)
-                                            dp.TopPageTablePage.Add(p, block[p]);
-                                    }
-
-                                    DetectedProcesses.TryAdd(offset, dp);
-                                    if (Vtero.VerboseOutput)
-                                        WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
-                                    Candidate = true;
+                                    if (block[p] != 0)
+                                        dp.TopPageTablePage.Add(p, block[p]);
                                 }
+                                DetectedProcesses.TryAdd(offset, dp);
+                                if (Vtero.VerboseOutput)
+                                    WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
+                                Candidate = true;
                             }
                         }
                     }
                     i--;
-                } while (i > 0xFF && !Candidate);
+                } while (i > 0xFF);
             }
             // maybe some kernels keep more than 1/2 system memory 
             // wouldn't that be a bit greedy though!?
@@ -746,6 +733,7 @@ namespace inVtero.net
                                     // Adjust for known memory run / extents mappings.
                                     
                                     var offset = TrueOffset = CurrWindowBase + CurrMapBase;
+
                                     var offset_pfn = offset >> MagicNumbers.PAGE_SHIFT;
                                     // next page, may be faster with larger chunks but it's simple to view 1 page at a time
                                     long IndexedOffset_pfn = 0;

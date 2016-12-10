@@ -6,9 +6,11 @@ using System.Threading.Tasks;
 using ELFSharp.ELF;
 using ELFSharp.ELF.Sections;
 using System.IO;
+using ProtoBuf;
 
 namespace inVtero.net.Specialties
 {
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class XEN : AMemoryRunDetector, IMemAwareChecking
     {
         ELF<long> Elf;
@@ -109,6 +111,9 @@ namespace inVtero.net.Specialties
 
             return SupportedStatus;
         }
+
+        public XEN()
+        {}
 
         public XEN(string XenDump)
         {

@@ -26,12 +26,14 @@ using Reloc;
 using System.IO;
 using System.Collections.Concurrent;
 using RaptorDB;
+using ProtoBuf;
 
 namespace inVtero.net
 {
     /// <summary>
     /// Similar to the file/raw input version, but were now scanning Virtual Spaces
     /// </summary>
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class VirtualScanner
     {
         Mem BackingBlocks;
@@ -55,7 +57,7 @@ namespace inVtero.net
         // similar to the file based interface, we will only scan 1 page at a time 
         // but if we hit a signature in a check it's free to non-block the others while it completes 
         // a deeper scan
-        List<Func<long, byte[], VAScanType>> CheckMethods;
+        List<Func<long, long[], VAScanType>> CheckMethods;
 
         VAScanType scanMode;
         public VAScanType ScanMode
@@ -76,7 +78,7 @@ namespace inVtero.net
             DetectedFragments = new ConcurrentDictionary<long, VAScanType>();
             Artifacts = new ConcurrentDictionary<long, Extract>();
 
-            CheckMethods = new List<Func<long, byte[], VAScanType>>();
+            CheckMethods = new List<Func<long, long[], VAScanType>>();
             ScanList = new WAHBitArray(); 
         }
 
@@ -91,13 +93,16 @@ namespace inVtero.net
                 //MemoryBank[i] = new Mem(BackingBlocks);
         }
 
-        public VAScanType FastPE(long VA, byte[] Block)
+        public VAScanType FastPE(long VA, long[] Block)
         {
-            // magic check
-            if((Block[0] == 'M' && Block[1] == 'Z'))
+            // magic check before copying into byte[]
+            uint PEMagic = (uint)Block[0] & 0xffff;
+            if (PEMagic == 0x5a4d)
             {
+                var bpage = new byte[0x1000];
+                Buffer.BlockCopy(Block, 0, bpage, 0, 4096);
                 // TODO: improve/fix check
-                var extracted = Extract.IsBlockaPE(Block);
+                var extracted = Extract.IsBlockaPE(bpage);
                 if (extracted != null)
                 {
                     Artifacts.TryAdd(VA, extracted);
@@ -123,7 +128,6 @@ namespace inVtero.net
             // then add start to it
             long i = Start;
             var block = new long[0x200]; // 0x200 * 8 = 4k
-            var bpage = new byte[0x1000];
             while (i < Stop)
             {
                 foreach (var scanner in CheckMethods)
@@ -142,18 +146,12 @@ namespace inVtero.net
                     if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
                         continue;
 
-                    //unsafe fixed (void* lp = block, bp = bpage)
-                    //{
                     bool GotData = false;
                     BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData);
                     if (!GotData)
                         continue;
 
-                    Buffer.BlockCopy(block, 0, bpage, 0, 4096);
-                        //Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                    //}
-
-                    var scan_detect = scanner(Curr, bpage);
+                    var scan_detect = scanner(Curr, block);
                     if (scan_detect != VAScanType.UNDETERMINED)
                     {
                         DetectedFragments.TryAdd(Curr, scan_detect);

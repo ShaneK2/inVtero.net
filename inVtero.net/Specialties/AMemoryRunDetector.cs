@@ -4,9 +4,18 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ProtoBuf;
 
 namespace inVtero.net.Specialties
 {
+    [
+        ProtoContract(AsReferenceDefault = true, 
+            ImplicitFields = ImplicitFields.AllPublic), 
+            ProtoInclude(1001, typeof(XEN)),
+            ProtoInclude(1002, typeof(CrashDump)),
+            ProtoInclude(1003, typeof(VMWare)),
+            ProtoInclude(1004, typeof(BasicRunDetector))
+        ]
     public abstract class AMemoryRunDetector : IMemAwareChecking
     {
         /// <summary>
@@ -48,7 +57,6 @@ namespace inVtero.net.Specialties
             {
                 var MemSize = dstream.Length;
                 long totPageCnt = 0;
-                bool FoundRun = false;
 
                 using (var dbin = new BinaryReader(dstream))
                 {
@@ -82,6 +90,7 @@ namespace inVtero.net.Specialties
                                     // error check range too high/low
                                     if (basePage < lastBasePage || basePage < 0)
                                         break;
+
                                     lastBasePage = basePage;
 
                                     var pageCount = dbin.ReadInt64();
@@ -102,7 +111,7 @@ namespace inVtero.net.Specialties
                                     totPageCnt < (((MemSize - StartOfMem) >> MagicNumbers.PAGE_SHIFT) & 0xffffffff) / 2
                                     )
                                 {
-                                    Console.WriteLine($"odd/bad memory run, skipping");
+                                    //Console.WriteLine($"odd/bad memory run, skipping");
                                     continue;
                                 }
                                 else

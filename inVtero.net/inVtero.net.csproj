@@ -148,6 +148,10 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Dia2Sharp\Dia2Sharp.csproj">
+      <Project>{f2cd767a-d27b-44d6-a56e-363ab2de0c51}</Project>
+      <Name>Dia2Sharp</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Externals\PowerArgs\PowerArgs\PowerArgs.csproj">
       <Project>{35809fab-7fbd-4663-8409-2d6a312c8265}</Project>
       <Name>PowerArgs</Name>

@@ -25,14 +25,16 @@ using System.IO;
 using System.Text;
 using System.Diagnostics;
 using static System.Console;
+using ProtoBuf;
 
 namespace Reloc
 {
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public struct MiniSection
     {
         public string Name;
         public uint VirtualSize; // size in memory
-        public uint VirtualOffset; // offset to section base in memroy (from ImageBase)
+        public uint VirtualOffset; // offset to section base in memory (from ImageBase)
         public uint RawFileSize; // size on disk
         public uint RawFilePointer; // offset to section base on disk (from 0)
 
@@ -42,6 +44,7 @@ namespace Reloc
         }
     }
     // Extract compiles a local reloc set that can be used when dumping memory to recover identical files 
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Extract
     {
         public static int NewCnt;

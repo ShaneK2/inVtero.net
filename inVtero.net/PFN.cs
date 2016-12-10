@@ -41,14 +41,15 @@ namespace inVtero.net
     /// <summary>
     /// Basis for PFFN DB, generated first time loading the memory dump
     /// </summary>
-    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
+    [ProtoContract(AsReferenceDefault = false, ImplicitFields = ImplicitFields.AllPublic)]
     public class PFN
     {
         public HARDWARE_ADDRESS_ENTRY PTE;  // Virtualized if we have SLAT address or the real one for native
+        
         public VIRTUAL_ADDRESS VA;
         public Dictionary<VIRTUAL_ADDRESS, PFN> SubTables;
 
-
+        [ProtoIgnore]
         public long PFNCount {
             get { return SubTables.SelectMany(x => x.Value.SubTables).SelectMany(y => y.Value.SubTables).SelectMany(z => z.Value.SubTables).LongCount(); }
         }

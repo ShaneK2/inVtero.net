@@ -78,8 +78,9 @@ namespace inVtero.net
 
         // there is a static for this also we can inherit from
         public long StartOfMemory; // adjust for .DMP headers or something
-        //public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
+                                   //public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
+        [ProtoIgnore]
         public long MaxLimit { get { if (MD.PhysMemDesc != null) return MD.PhysMemDesc.MaxAddressablePageNumber; return 0; } }
 
         const int PageCacheMax = EnvLimits.PageCacheMaxEntries;

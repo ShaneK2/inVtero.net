@@ -17,6 +17,7 @@
 // Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
 
 using ProtoBuf;
+using Reloc;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -29,7 +30,10 @@ namespace inVtero.net
     {
         public DetectedProc()
         {
+            SymbolStore = new Dictionary<string, long>();
             TopPageTablePage = new Dictionary<int, long>();
+            PDBFiles = new List<string>();
+            LogicalProcessList = new List<dynamic>();
         }
         public int ASGroup;
         public int Group;       // linux only 
@@ -43,8 +47,29 @@ namespace inVtero.net
         public int Mode; // 1 or 2
         public PTType PageTableType;
         public CODEVIEW_HEADER DebugData;
+        public Extract ext;
+        public List<string> PDBFiles;
         public Dictionary<int, long> TopPageTablePage;
 
+        [ProtoIgnore]
+        public Dictionary<string, long> SymbolStore;
+
+        [ProtoIgnore]
+        public List<dynamic> LogicalProcessList;
+
+
+
+        /*
+        // cache symbol lookups 
+        public ushort NtBuildNumber;
+        // PointerDecodeNeeded?
+        public byte KdpDataBlockEncoded;
+        public long KdDebuggerDataBlockAddress;
+        public ulong KiWaitAlways;
+        public ulong KiWaitNever;
+        public long PsLoadedModuleList;
+        public long PsActiveProcessHead;
+        */
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
@@ -67,19 +92,35 @@ namespace inVtero.net
             return GetUValue(addr);
         }
 #endif
-
-
-        public long GetValue(long VA)
+        public byte GetByteValue(long VA)
         {
-           var data = VGetBlock(VA);
+            var data = VGetBlock(VA);
             return data[VA & 0xfff];
         }
 
+        public uint GetUIntValue(long VA)
+        {
+            var data = VGetBlock(VA);
+            return BitConverter.ToUInt32(data, (int)(VA & 0xfff));
+        }
 
-        public ulong GetUValue(ulong VA)
+        public int GetIntValue(long VA)
+        {
+            var data = VGetBlock(VA);
+            return BitConverter.ToInt32(data, (int)(VA & 0xfff));
+        }
+
+        public long GetLongValue(long VA)
+        {
+           var data = VGetBlock(VA);
+           return BitConverter.ToInt64(data, (int) (VA & 0xfff));
+        }
+
+
+        public ulong GetULongValue(long VA)
         {
             var data = VGetBlock((long) VA);
-            return data[VA & 0xfff];
+            return BitConverter.ToUInt64(data, (int)(VA & 0xfff));
         }
 
         public byte[] VGetBlock(long VA)
@@ -106,6 +147,56 @@ namespace inVtero.net
                 //}
             //}
             return buffer;
+        }
+
+        public long[] VGetBlockLong(long VA, ref bool GotData)
+        {
+            long[] rv = new long[512];
+
+            var _va = VA & ~0xfff;
+
+            HARDWARE_ADDRESS_ENTRY hw;
+            if (vmcs == null)
+                hw = MemAccess.VirtualToPhysical(CR3Value, _va);
+            else
+                hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
+
+            MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData, true);
+
+            return rv;
+        }
+
+        public long[] GetVirtualLong(long VA, ref bool GotData)
+        {
+            // offset to index
+            long startIndex = (VA & 0xfff) / 8;
+            long count = 512 - startIndex;
+            // get data
+            var block = VGetBlockLong(VA, ref GotData);
+
+            // adjust into return array 
+            var rv = new long[count+512];
+            Array.Copy(block, startIndex, rv, 0, count);
+
+            VA += 4096;
+            var block2 = VGetBlockLong(VA, ref GotData);
+            Array.Copy(block2, 0, rv, count, 512);
+
+            return rv;
+        }
+
+
+        public byte[] GetVirtualByte(long VA, ref bool GotData)
+        {
+            long startIndex = VA & 0xfff;
+            long count = 4096 - startIndex;
+
+            var block = VGetBlock(VA);
+
+            var rv = new byte[count];
+
+            Array.Copy(block, startIndex, rv, 0, count);
+            return rv;
         }
 
         [ProtoIgnore]

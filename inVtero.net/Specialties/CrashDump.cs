@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 using static System.Console;
 using inVtero.net;
 using static inVtero.net.Misc;
-
+using ProtoBuf;
 
 /// <summary>
 /// Adding some specialties for practical purposes.
@@ -54,6 +54,7 @@ namespace inVtero.net.Specialties
     /// 
     /// Amazingly simple to support the basic CrashDump format (Thank you MicroSoft)
     /// </summary>
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class CrashDump : AMemoryRunDetector, IMemAwareChecking
     {
 
@@ -149,6 +150,6 @@ namespace inVtero.net.Specialties
             MaxNumPages = finfo.Length >> MagicNumbers.PAGE_SHIFT;
             MemSize = finfo.Length;
         }
-
+        public CrashDump() { }
     }
 }

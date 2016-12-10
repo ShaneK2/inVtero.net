@@ -20,12 +20,14 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
+using ProtoBuf;
 
 namespace inVtero.net.Specialties
 {
     /// <summary>
     /// Turn's out VMWare 11 & 12 support is very easy given the current model
     /// </summary>
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class VMWare : AMemoryRunDetector, IMemAwareChecking
     {
         /// <summary>
@@ -150,6 +152,7 @@ namespace inVtero.net.Specialties
             vDeviceFile = vDeviceState;
             MemFile = VMEM;
         }
+        public VMWare() { }
 
     }
 }

@@ -35,9 +35,10 @@ using System.Diagnostics;
 using PowerArgs;
 using RaptorDB;
 using softwareunion;
+using Dia2Sharp;
 
 // TODO: MemoryCopy / unsafe version performance testing
-
+using System.Dynamic;
 
 namespace inVtero.net
 {
@@ -57,7 +58,15 @@ namespace inVtero.net
         public string MemFile;
         public long FileSize;
         public double GroupThreshold;
+
+        // Do not think debughelp api is MT safe really so careful
         public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
+
+
+        // Preserve detected results to avoid aggressive kernel / symbol scanning loading
+        public DetectedProc KernelProc;
+        public VirtualScanner KVS;
+        
 
         public PTType Version { get; set; }
 
@@ -312,9 +321,14 @@ namespace inVtero.net
             return Proc;
         }
 
+        // TODO: MOVE below to DetectedProc class
+
         public CODEVIEW_HEADER ExtractCVDebug(DetectedProc dp, Extract Ext, long VA)
         {
             uint SizeData=0, RawData=0, PointerToRawData=0;
+
+            if (dp.MemAccess == null)
+                dp.MemAccess = new Mem(MemAccess);
 
             var _va = VA + Ext.DebugDirPos;
             var block = dp.VGetBlock(_va);
@@ -351,7 +365,6 @@ namespace inVtero.net
             Array.ConstrainedCopy(block, (((int) _va & 0xfff) + 4), bytes, 0, 16);
             var gid = new Guid(bytes);
 
-
             // after GUID
             var age = block[((int)_va & 0xfff) + 20];
 
@@ -367,14 +380,21 @@ namespace inVtero.net
             return new CODEVIEW_HEADER { VSize = (int) Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
         }
 
-        // see http://uninformed.org/index.cgi?v=3&a=3&t=sumry by skape & Skywing
+        /// <summary>
+        /// Prefer symbol loading.
+        /// </summary>
+        /// <param name="dp"></param>
+        /// <param name="ext"></param>
+        /// <param name="cv_data"></param>
+        /// <param name="SymbolCache"></param>
+        /// <returns></returns>
         public bool GetKernelDebuggerData(DetectedProc dp, Extract ext, CODEVIEW_HEADER cv_data, string SymbolCache)
         {
             DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
             bool rv = false;
+            bool GotData = false;
 
             // Locate and extract some data points
-            long KiWaitAlways, KiWaitNever, KdDebuggerDataBlock, KdpDataBlockEncoded;
 
             symInfo.SizeOfStruct = 0x58;
             symInfo.MaxNameLen = 1024;
@@ -385,47 +405,175 @@ namespace inVtero.net
                 return rv;
             }
 
+            KernelProc = dp;
+
             // at this point we should return true if it's encoded or not
             rv = true;
+            return rv;
+#if FALSE
 
 
-            KdpDataBlockEncoded = dp.GetValue(symInfo.Address);
-            KdDebuggerDataBlock = GetSymValue(dp, "KdDebuggerDataBlock");
+
+            var KdpDataBlockEncoded = dp.GetByteValue(symInfo.Address);
+            // Convention is to use *Address for addresses or the simple name is the value it is assumed to be a pointer
+
+            dp.SymbolStore["KdDebuggerDataBlockAddress"] = GetSymAddress(dp, "KdDebuggerDataBlock");
 
             if (KdpDataBlockEncoded == 0)
-                WriteColor(ConsoleColor.Green, $"Kernel KdDebuggerDataBlock {KdDebuggerDataBlock:X16} not encoded.");
+                WriteColor(ConsoleColor.Green, $"Kernel KdDebuggerDataBlock @ {dp.SymbolStore["KdDebuggerDataBlockAddress"]:X16} not encoded.");
             else
             {
-                KiWaitNever = GetSymValue(dp, "KiWaitNever");
-                KiWaitAlways = GetSymValue(dp, "KiWaitAlways");
+#if FALSE_NOT_NEEDED_IF_WE_USE_SYMBOLS
+                var KdDebuggerDataBlock = dp.VGetBlockLong(dp.KdDebuggerDataBlockAddress, ref GotData);
+                if (!GotData)
+                    WriteColor(ConsoleColor.Red, "Unable to read debuggerdatablock array");
 
                 // Windbg tells us the diff for loaded modules is 0x48 and active proc is 0x50
-                var EncLoadedModuleList = KdDebuggerDataBlock + 0x48;
-                var EncActiveProcessList = KdDebuggerDataBlock + 0x50;
+                var EncLoadedModuleList = KdDebuggerDataBlock[9];
+                var EncActiveProcessList = KdDebuggerDataBlock[0xA];
 
-                var PsLoadedModuleList = DecodePointer(KdDebuggerDataBlock, KiWaitAlways, KiWaitNever, EncLoadedModuleList);
-                var PsActiveProcessHead = DecodePointer(KdDebuggerDataBlock, KiWaitAlways, KiWaitNever, EncActiveProcessList);
+                var PsLoadedModuleList = (long) DecodePointer((ulong) dp.KdDebuggerDataBlockAddress, (ulong)dp.KiWaitAlways, (ulong)dp.KiWaitNever,(ulong) EncLoadedModuleList);
+                var PsActiveProcessHead = (long) DecodePointer((ulong) dp.KdDebuggerDataBlockAddress, (ulong)dp.KiWaitAlways, (ulong)dp.KiWaitNever, (ulong) EncActiveProcessList);
 
-                WriteLine($"Decoded LoadedModuleList {PsLoadedModuleList}, ActiveProcessList {PsActiveProcessHead}");
+                WriteColor(ConsoleColor.Cyan, $"Decoded LoadedModuleList {PsLoadedModuleList}, ActiveProcessList {PsActiveProcessHead}");
+#endif
             }
             return rv;
+#endif
         }
 
-        public long DecodePointer(long BlockAddress, long Always, long Never, long Value)
+        public dynamic[] WalkProcList(DetectedProc dp)
         {
-            long decoded = 0;
+            bool GotData = false;
+            var PsHeadAddr = GetSymValueLong(dp, "PsActiveProcessHead");
+            // TODO: Build out symbol system / auto registration into DLR for DIA2
+            // expected kernel hardcoded
+
+            var pdbFile = (from kern in dp.PDBFiles
+                           where kern.ToLower().Contains("ntkrnlmp")
+                           select kern).FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(pdbFile))
+                return null;
+
+            // this is for DIA API SDK... 
+            // TODO:remove
+            var symz = Sym.Initalize(pdbFile);
+            long[] memRead = null;
+            // figure out OFFSET_OF the process LIST_ENTRY
+            // MemberInfo returned is Byte Position, Length
+            var aplinks = symz.StructMemberInfo(pdbFile, "_EPROCESS", "ActiveProcessLinks.Flink");
+            var offset_of = aplinks.Item1;
+            var sym_dtb = symz.StructMemberInfo(pdbFile, "_EPROCESS", "Pcb.DirectoryTableBase");
+            var sym_ImagePathPtr = symz.StructMemberInfo(pdbFile, "_EPROCESS", "SeAuditProcessCreationInfo.ImageFileName");
+            var sym_procID = symz.StructMemberInfo(pdbFile, "_EPROCESS", "UniqueProcessId");
+            var sym_vadRoot = symz.StructMemberInfo(pdbFile, "_EPROCESS", "VadRoot");
+
+            // adjust the first link through 
+            //var flink = dp.GetLongValue(PsHeadAddr);
+
+            var typeDefs = from typeDef in symz.StructInfo
+                            where typeDef.Key.StartsWith("_EPROCESS")
+                            select typeDef;
+
+            var flink = PsHeadAddr;
+            do 
+            {
+                // walk the offset back to the head of the _EPROCESS
+                // this needs to adjsut since we get the entire block here based to the page not offset 
+                memRead = dp.GetVirtualLong((flink - offset_of), ref GotData);
+                if (!GotData)
+                    break;
+
+                // memRead is a long array so we have to divide the length by 8
+                var EprocCR3 = memRead[sym_dtb.Item1 / 8];
+                var ProcessID = memRead[sym_procID.Item1 / 8];
+                var VadRootPtr = memRead[sym_vadRoot.Item1 / 8];
+
+                // ImagePath here is a pointer to a struct, get ptr
+                var ImagePathPtr = memRead[sym_ImagePathPtr.Item1 / 8];
+                // +0x10 in this unicode string object
+                var ImagePathArr = dp.GetVirtualByte(ImagePathPtr+0x10, ref GotData);
+                var ImagePath = Encoding.Unicode.GetString(ImagePathArr);
+                var pathTrim = ImagePath.Split('\x0');
+                ImagePath = pathTrim[0];
+
+                dynamic lproc = new ExpandoObject();
+                var dproc = (IDictionary<string, object>)lproc;
+
+                var staticDict = new Dictionary<string, object>();
+                lproc.Dictionary = staticDict;
+
+                foreach (var def in typeDefs)
+                {
+                    // custom types are not fitted this way
+                    // we just recuse into basic types
+                    if (def.Value.Item2 > 8)
+                        continue;
+
+                    // TODO: expand on this dynamic object stuff
+                    var defName = def.Key.Substring("_EPROCESS".Length + 1); //.Replace('.', '_');
+
+                    switch (def.Value.Item2)
+                    {
+                        case 4:
+                            var ival = (int)(memRead[def.Value.Item1 / 8] & 0xffffffffff);
+                            dproc.Add(defName, ival);
+                            staticDict.Add(defName, ival);
+                            break;
+                        case 2:
+                            var sval = (short)(memRead[def.Value.Item1 / 8] & 0xffffff);
+                            dproc.Add(defName, sval);
+                            staticDict.Add(defName, sval);
+                            break;
+                        case 1:
+                            var bval = (byte)(memRead[def.Value.Item1 / 8] & 0xff);
+                            dproc.Add(defName, bval);
+                            staticDict.Add(defName, bval);
+                            break;
+                        default:
+                            var lval = memRead[def.Value.Item1 / 8];
+                            dproc.Add(defName, lval);
+                            staticDict.Add(defName, lval);
+                            break;
+                    }
+                } 
+
+                lproc.ImagePath = ImagePath;
+
+                dp.LogicalProcessList.Add(lproc);
+
+                // move flink to next list entry
+                flink = memRead[offset_of / 8];
+
+            } while (PsHeadAddr != flink);
+            return dp.LogicalProcessList.ToArray();
+        }
+
+        /// <summary>
+        /// You only need this if you can't get symbols.  
+        /// see http://uninformed.org/index.cgi?v=3&a=3&t=sumry by skape & Skywing
+        /// </summary>
+        /// <param name="BlockAddress"></param>
+        /// <param name="Always"></param>
+        /// <param name="Never"></param>
+        /// <param name="Value"></param>
+        /// <returns></returns>
+        public ulong DecodePointer(ulong BlockAddress, ulong Always, ulong Never, ulong Value)
+        {
+            ulong decoded = 0;
 
             decoded = Value ^ Never;
-            decoded = (long) Misc.RotL((ulong) decoded, (int) Never & 0xff);
+            decoded = Misc.RotL(decoded, (int) Never & 0xff);
             decoded = decoded ^ BlockAddress;
 
             var bytes = BitConverter.GetBytes(decoded);
             Array.Reverse(bytes, 0, 8);
-            decoded = BitConverter.ToInt64(bytes, 0);
+            decoded = BitConverter.ToUInt64(bytes, 0);
 
             decoded = decoded ^ Always;
 
-            decoded = (long) ((ulong) BlockAddress & 0xffffffff00000000) | (decoded & 0xffffffff);
+            decoded = (BlockAddress & 0xffffffff00000000) | (decoded & 0xffffffff);
             return decoded;
         }
 
@@ -435,8 +583,25 @@ namespace inVtero.net
         /// <param name="dp"></param>
         /// <param name="SymName"></param>
         /// <returns>Currently a single byte for the address resolved from the Name</returns>
-        public long GetSymValue(DetectedProc dp, string SymName)
+        public long GetSymValueLong(DetectedProc dp, string SymName)
         {
+            long value = 0;
+
+            if (dp.SymbolStore.ContainsKey(SymName))
+                return dp.SymbolStore[SymName];
+
+            value = dp.GetLongValue(GetSymAddress(dp, SymName));
+            dp.SymbolStore.Add(SymName, value);
+
+            return value;
+        }
+
+        public long GetSymAddress(DetectedProc dp, string SymName)
+        {
+            var AddrName = SymName + "Address";
+            if (dp.SymbolStore.ContainsKey(AddrName))
+                return dp.SymbolStore[AddrName];
+
             DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
 
             symInfo.SizeOfStruct = 0x58;
@@ -448,12 +613,21 @@ namespace inVtero.net
                 WriteColor(ConsoleColor.Red, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
                 return MagicNumbers.BAD_VALUE_READ;
             }
-             return dp.GetValue(symInfo.Address);
+
+            dp.SymbolStore.Add(AddrName, symInfo.Address);
+
+            return symInfo.Address;
         }
 
         public bool TryLoadSymbols(DetectedProc dp, Extract ext, CODEVIEW_HEADER cv_data, long BaseVA, string SymPath)
         {
-            
+            ulong KernRange = 0xffff000000000000;
+
+            // sign extend BaseVA for kernel ranges
+            if ((BaseVA & 0xf00000000000) != 0)
+                BaseVA |= (long)KernRange;
+
+
             DebugHelp.SymSetOptions(DebugHelp.SymOptions.SYMOPT_DEBUG);
 
             bool symStatus = DebugHelp.SymInitialize(hCurrentProcess, SymPath, false);
@@ -469,9 +643,8 @@ namespace inVtero.net
             if (!symStatus)
                 symStatus = DebugHelp.SymFindFileInPathW(hCurrentProcess, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
 
-            if(symStatus)
+            if (symStatus)
                 WriteColor(ConsoleColor.Cyan, $"Symbols found: {sbx.ToString()}");
-            
             if (!symStatus)
             {
                 WriteLine($"Symbol returned {symStatus}: {new Win32Exception(Marshal.GetLastWin32Error()).Message }, attempting less precise request.");
@@ -483,18 +656,19 @@ namespace inVtero.net
 
                 symStatus = DebugHelp.SymFindFileInPath(hCurrentProcess, null, cv_data.PdbName, pointer, (int)ext.SizeOfImage, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
                 pinnedArray.Free();
-                if(!symStatus)
+                if (!symStatus)
                     WriteColor(ConsoleColor.Red, $"Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
-
             }
-
             if (symStatus)
             {
                 var symLoaded = DebugHelp.SymLoadModuleEx(hCurrentProcess, IntPtr.Zero, sbx.ToString(), null, BaseVA, (int)ext.SizeOfImage, IntPtr.Zero, 0);
                 if (symLoaded == 0)
                     WriteColor(ConsoleColor.Red, $"Load Failed: [{new Win32Exception(Marshal.GetLastWin32Error()).Message }]");
+
+
+                dp.PDBFiles.Add(sbx.ToString());
             }
-            
+
             return symStatus;
         }
 
@@ -505,22 +679,18 @@ namespace inVtero.net
 
             var cnt = dp.PT.FillPageQueue(true);
 
-            VirtualScanner VS = new VirtualScanner(dp, new Mem(MemAccess));
-            VS.ScanMode = VAScanType.PE_FAST;
+            KVS = new VirtualScanner(dp, new Mem(MemAccess));
+            KVS.ScanMode = VAScanType.PE_FAST;
 
             Parallel.For(0, cnt, i =>
-            //while (dp.PT.PageQueue.Count() > 0)
             {
                 PFN range;
                 if (dp.PT.PageQueue.TryDequeue(out range))
-                {
                     if (range.PTE.Valid)
-                        VS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
-                }
-                //}
+                        KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
             });
 
-            return VS.Artifacts;
+            return KVS.Artifacts;
         }
 
         public long DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false, bool KernelSpace = true)
@@ -570,6 +740,8 @@ namespace inVtero.net
             }
             return entries;
         }
+
+        // TODO: Move above into DetectedProc class methods
 
     /// <summary>
     /// Group address spaces into related buckets
@@ -757,7 +929,7 @@ namespace inVtero.net
             // were good, all Processes should have a VMCS if applicable and be identifiable by AS ID
         }
 
-        #region Origional Custom CLI support code
+#region Origional Custom CLI support code
 
         /// <summary>
         /// This routine is fairly expensive, maybe unnecessary as well but it demo's walking the page table + EPT.
@@ -970,7 +1142,7 @@ namespace inVtero.net
             }
              return rvList;
         }
-        #endregion
+#endregion
         public void DumpFailList()
         {
             var totFails = (from f in Processes
@@ -994,7 +1166,7 @@ namespace inVtero.net
             //        WriteLine($"extracted {proc.PageTableType} PTE from process {proc.vmcs.EPTP:X16}:{proc.CR3Value:X16}, high phys address was {proc.PT.HighestFound}");
         }
 
-        #region Dumper
+#region Dumper
 
         // TODO: Move this to Dumper.cs
 
@@ -1435,7 +1607,7 @@ DoubleBreak:
                 //}
             //}
         }
-        #endregion
+#endregion
 
 
         public byte[] HashRange(VIRTUAL_ADDRESS KEY, PFN VALUE)

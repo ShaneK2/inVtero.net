@@ -4,12 +4,14 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
+using ProtoBuf;
 
 namespace inVtero.net.Specialties
 {
     /// <summary>
     /// Default single memory run
     /// </summary>
+    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class BasicRunDetector : AMemoryRunDetector, IMemAwareChecking
     {
         bool SupportedStatus = true;
@@ -35,5 +37,7 @@ namespace inVtero.net.Specialties
 
             PhysMemDesc = new MemoryDescriptor(fi.Length);
         }
+        public BasicRunDetector()
+        { }
     }
 }
