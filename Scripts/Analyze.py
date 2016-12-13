@@ -17,9 +17,9 @@
 #
 #
 #MemoryDump = "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem"   
-MemoryDump = "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem"   
-#MemoryDump = "c:\\temp\MC.dmp"
-#MemoryDump = "d:\\temp\\2012R2.DMP"
+#MemoryDump = "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem"   
+MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
+#MemoryDump = "d:\\temp\\server2016.xendump"
 import clr,sys
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
@@ -136,16 +136,37 @@ print "TOTAL RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP S
 print "SPEED: " + ((MemoryDumpSize / 1024) / ((runTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
 print "ALL DONE... Please explore!"
 
+# Get detected symbol file to use for loaded vtero
+symFile = ""
+for pdb in vtero.KernelProc.PDBFiles:
+    if pdb.Contains("ntkrnlmp"):
+        symFile = pdb
+
+def ListVAD(VadRoot):
+    if VadRoot == 0:
+        return
+    #print "Analyzing VAD ROOT: 0x" + VadRoot.ToString("X")
+    pMMVadArr = vtero.KernelProc.GetVirtualLong(VadRoot)
+    mmvad = vtero.SymForKernel.xStructInfo(symFile,"_MMVAD", pMMVadArr)
+    subsect = vtero.SymForKernel.xStructInfo(symFile,"_SUBSECTION", vtero.KernelProc.GetVirtualLong(mmvad.Subsection.Value))
+    control_area = vtero.SymForKernel.xStructInfo(symFile,"_CONTROL_AREA", vtero.KernelProc.GetVirtualLong(subsect.ControlArea.Value))
+    segment = vtero.SymForKernel.xStructInfo(symFile,"_SEGMENT", vtero.KernelProc.GetVirtualLong(control_area.Segment.Value))
+    # look for file pointer
+    if control_area.FilePointer.Value != 0:
+        file_pointer = vtero.SymForKernel.xStructInfo(symFile,"_FILE_OBJECT", vtero.KernelProc.GetVirtualLong(control_area.FilePointer.Value & -16))
+        fileNameByteArr = vtero.KernelProc.GetVirtualByte(file_pointer.FileName.Buffer.Value)
+        fileNameString = Text.Encoding.Unicode.GetString(fileNameByteArr).Split('\x00')[0]
+        print "Mapped File: " + fileNameString 
+    #print "ListVAD going Left 0x" + mmvad.Core.VadNode.Left.Value.ToString("X")
+    ListVAD(mmvad.Core.VadNode.Left.Value)
+    #print "ListVAD going Right 0x" + mmvad.Core.VadNode.Left.Value.ToString("X")
+    ListVAD(mmvad.Core.VadNode.Right.Value)
+
 # Example of walking process list
 def WalkProcListExample():
     #
     #  WALK _EPROCESS LIST
     #
-    # Get detected symbol file to use for loaded vtero
-    symFile = ""
-    for pdb in vtero.KernelProc.PDBFiles:
-        if pdb.Contains("ntkrnlmp"):
-            symFile = pdb
     # Get a typedef 
     x = vtero.SymForKernel.xStructInfo(symFile,"_EPROCESS")
     ProcListOffsetOf = x.ActiveProcessLinks.Flink.OffsetPos
@@ -160,7 +181,7 @@ def WalkProcListExample():
         ImagePtrIndex = _EPROC.SeAuditProcessCreationInfo.ImageFileName.OffsetPos / 8
         ImagePathPtr = memRead[ImagePtrIndex];
         if ImagePathPtr != 0:
-            ImagePathArr =  vtero.KernelProc.GetVirtualByte(ImagePathPtr + 0x10); 
+            ImagePathArr =  vtero.KernelProc.GetVirtualByte(ImagePathPtr + 0x10)
             ImagePath = Text.Encoding.Unicode.GetString(ImagePathArr).Split('\x00')[0]
         else:
             ImagePath = ""
@@ -169,4 +190,6 @@ def WalkProcListExample():
         print "] CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"
         if _EPROC_ADDR == psHead:
             break
-
+        if _EPROC.VadRoot.Value != 0:
+            ListVAD(_EPROC.VadRoot.Value)
+            

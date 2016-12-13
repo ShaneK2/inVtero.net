@@ -181,7 +181,6 @@ namespace inVtero.net
 
         public long[] GetVirtualLong(long VA)
         {
-
             // offset to index
             long startIndex = (VA & 0xfff) / 8;
             long count = 512 - startIndex;
@@ -194,6 +193,26 @@ namespace inVtero.net
 
             VA += 4096;
             var block2 = VGetBlockLong(VA);
+            Array.Copy(block2, 0, rv, count, 512);
+
+            return rv;
+        }
+
+
+        public long[] GetVirtualULong(ulong VA)
+        {
+            // offset to index
+            ulong startIndex = (VA & 0xfff) / 8;
+            long count = 512 - (long) startIndex;
+            // get data
+            var block = VGetBlockLong((long) VA);
+
+            // adjust into return array 
+            var rv = new long[count + 512];
+            Array.Copy(block, (long) startIndex, rv, 0, count);
+
+            VA += 4096;
+            var block2 = VGetBlockLong((long) VA);
             Array.Copy(block2, 0, rv, count, 512);
 
             return rv;

@@ -13,7 +13,6 @@ namespace Dia2Sharp
     public class Sym
     {
         public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
-        IDiaSession Session = null;
         public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
 
         public static Sym Initalize(String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_DEBUG)
@@ -126,12 +125,12 @@ namespace Dia2Sharp
             } while (childrenFetched == 1);
         }
 
-
         public dynamic xStructInfo(string PDBFile, string Struct, long[] memRead = null)
         {
             dynamic Info = null;
             IDiaSymbol Master = null;
             IDiaEnumSymbols EnumSymbols = null;
+            IDiaSession Session;
             uint compileFetched = 0;
 
             var foo = new DiaSource();
@@ -302,6 +301,7 @@ namespace Dia2Sharp
 
         public Tuple<int, int> StructMemberInfo(string PDBFile, string Struct, string Member)
         {
+            IDiaSession Session;
             IDiaSymbol Master = null;
             IDiaEnumSymbols EnumSymbols = null;
             uint compileFetched = 0;
@@ -370,10 +370,6 @@ namespace Dia2Sharp
 #endif
                 if (!StructInfo.ContainsKey(currName))
                     StructInfo.Add(currName, Tuple.Create<int, int>(Pos, (int)sType.length));
-#if DEBUGX
-                ForegroundColor = ConsoleColor.Green;
-                WriteLine($"Type [{typeName}] Len [{sType.length}]");
-#endif
                 DumpStructs(sType, currName, typeName, Pos);
 
             } while (compileFetched == 1);
