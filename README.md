@@ -1,12 +1,22 @@
 # inVtero.net
 
-# WOW Memory forensics
+![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
+
+
+## Binary Setup package
+https://github.com/ShaneK2/inVtero.net/blob/master/quickdumps/publish.zip
+
+You do need to have msdia120.dll registered "regsvr32 msdia120.dll" (see zip)
 
 No configuration needed, completely dynamic / duck typing
 
 ## Windows 64 bit all versions
 
 ### Use Quickdumps + python to automatically analyze any memory dump
+
+Change MemoryDump string to point to a memory dump.  Example memory dump walking and type system
+explanation in analyze.py, see WalkProcListExample() 
+
 ```
 quickdumps python Analyze.py
 ```
@@ -29,7 +39,6 @@ Virtual Machine Introspection techniques.  Cross platform, multi-architechture h
 |:------------|
 |![Build status](https://ktwo.visualstudio.com/DefaultCollection/_apis/public/build/definitions/16d48273-682e-4b01-8392-1f83fc2c3bcd/4/badge)|
 
-![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
 
 ## quickdumps
 Quickdumps is an example of using the inVtero.net API to extract and validate physical memory.
