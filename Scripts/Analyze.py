@@ -5,16 +5,21 @@
 #
 # NO PROFILE CONFIG OR ANYTHING FOR ALL WINDOWS OS!
 #
-# make sure to have dia registered do "regsvr32 c:\\windows\system32\msdia120.dll"
-#
-# you also want symsrv.dll and dbghelp.dll in the current folder =)
-#
-# Play with the PTType and stuff for nested hypervisors =)
+# YOU DO NEED TO HAVE SYMBOLS CONFIGURED.
+# IF A GUID IS NOT FOUND, FIND IT MAY BE ON THE SYM CD WHICH IS NOT ON THE SERVER
 #
 # DLR reflected DIA symbols through physical memory
+# make sure to have dia registered do "regsvr32 c:\\windows\system32\msdia120.dll"
+# you also want symsrv.dll and dbghelp.dll in the current folder =)
 #
-
-MemoryDump = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem"   
+#
+# Play with the PTType and stuff for nested hypervisors =) (PTTYPE VMCS)
+#
+#
+#MemoryDump = "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem"   
+MemoryDump = "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem"   
+#MemoryDump = "c:\\temp\MC.dmp"
+#MemoryDump = "d:\\temp\\2012R2.DMP"
 import clr,sys
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
@@ -25,10 +30,12 @@ from inVtero.net.ConsoleUtils import *
 from ConsoleUtils import *
 from System.IO import Directory, File, FileInfo, Path
 from System import Environment, String, Console, ConsoleColor
+from System import Text
 from System.Diagnostics import Stopwatch
 
 MemoryDumpSize = FileInfo(MemoryDump).Length
 
+# This code fragment can be removed but it's a reminder you need symbols working
 sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH")
 if String.IsNullOrWhiteSpace(sympath):
     sympath = "SRV*http://msdl.microsoft.com/download/symbols"
@@ -39,7 +46,7 @@ if String.IsNullOrWhiteSpace(sympath):
 copts = ConfigOptions()
 copts.IgnoreSaveData = False
 copts.FileName = MemoryDump
-copts.VersionsToEnable = PTType.Windows
+copts.VersionsToEnable = PTType.GENERIC
 # To get some additional output 
 copts.VerboseOutput = True
 copts.VerboseLevel = 1
@@ -90,6 +97,7 @@ for pproc in proc_arr:
 print "Logical Proc Count: " + logicalList.Count.ToString()
 
 for proc in logicalList:
+    # This is due to a structure member name change pre win 8
     if proc.Dictionary.ContainsKey("VadRoot.BalancedRoot.RightChild"):
         proc.VadRoot = proc.Dictionary["VadRoot.BalancedRoot.RightChild"]
     print proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
@@ -121,8 +129,44 @@ for hwproc in proc_arr:
         if proc.VadRoot == 0:
             Console.ForegroundColor = ConsoleColor.Green;
             print "An expected, ",
-        print "physical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
+            print "physical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
  
+
 print "TOTAL RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP SIZE: " + MemoryDumpSize.ToString("N") + " bytes."
 print "SPEED: " + ((MemoryDumpSize / 1024) / ((runTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
 print "ALL DONE... Please explore!"
+
+# Example of walking process list
+def WalkProcListExample():
+    #
+    #  WALK _EPROCESS LIST
+    #
+    # Get detected symbol file to use for loaded vtero
+    symFile = ""
+    for pdb in vtero.KernelProc.PDBFiles:
+        if pdb.Contains("ntkrnlmp"):
+            symFile = pdb
+    # Get a typedef 
+    x = vtero.SymForKernel.xStructInfo(symFile,"_EPROCESS")
+    ProcListOffsetOf = x.ActiveProcessLinks.Flink.OffsetPos
+    ImagePath = ""
+    psHead = vtero.GetSymValueLong(vtero.KernelProc,"PsActiveProcessHead")
+    _EPROC_ADDR = psHead
+    while True:
+        memRead = vtero.KernelProc.GetVirtualLong(_EPROC_ADDR - ProcListOffsetOf)
+        _EPROC = vtero.SymForKernel.xStructInfo(symFile,"_EPROCESS", memRead)
+        # prep and acquire memory for strings
+        # TODO: We should scan structures for UNICODE_STRING automatically since extracting them is something * wants
+        ImagePtrIndex = _EPROC.SeAuditProcessCreationInfo.ImageFileName.OffsetPos / 8
+        ImagePathPtr = memRead[ImagePtrIndex];
+        if ImagePathPtr != 0:
+            ImagePathArr =  vtero.KernelProc.GetVirtualByte(ImagePathPtr + 0x10); 
+            ImagePath = Text.Encoding.Unicode.GetString(ImagePathArr).Split('\x00')[0]
+        else:
+            ImagePath = ""
+        _EPROC_ADDR = memRead[ProcListOffsetOf / 8]
+        print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] EXE [" + ImagePath,
+        print "] CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"
+        if _EPROC_ADDR == psHead:
+            break
+

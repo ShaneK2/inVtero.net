@@ -57,41 +57,9 @@ namespace inVtero.net
         [ProtoIgnore]
         public List<dynamic> LogicalProcessList;
 
-
-
-        /*
-        // cache symbol lookups 
-        public ushort NtBuildNumber;
-        // PointerDecodeNeeded?
-        public byte KdpDataBlockEncoded;
-        public long KdDebuggerDataBlockAddress;
-        public ulong KiWaitAlways;
-        public ulong KiWaitNever;
-        public long PsLoadedModuleList;
-        public long PsActiveProcessHead;
-        */
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
-#if false
-        /// <summary>
-        /// VOLATILITY ADDRESS SPACE SUPPORT
-        /// 
-        /// VOLA get_available_pages gives us back a list of virtual addresses that
-        /// are able to be used with a 'task' (we just call that a CR3:)
-        /// 
-        /// </summary>
-        /// <returns></returns>
-        public List<long> get_available_pages()
-        {
-            var flattend = PageTable.Flatten(PT.Root.Entries.SubTables, 4);
-        }
-
-        public ulong read_long_long_phys(ulong addr)
-        {
-            return GetUValue(addr);
-        }
-#endif
         public byte GetByteValue(long VA)
         {
             var data = VGetBlock(VA);
@@ -116,13 +84,17 @@ namespace inVtero.net
            return BitConverter.ToInt64(data, (int) (VA & 0xfff));
         }
 
-
         public ulong GetULongValue(long VA)
         {
             var data = VGetBlock((long) VA);
             return BitConverter.ToUInt64(data, (int)(VA & 0xfff));
         }
 
+        /// <summary>
+        /// BLOCK ALIGNED
+        /// </summary>
+        /// <param name="VA"></param>
+        /// <returns></returns>
         public byte[] VGetBlock(long VA)
         {
             bool GotData = false;
@@ -147,6 +119,28 @@ namespace inVtero.net
                 //}
             //}
             return buffer;
+        }
+
+        /// <summary>
+        /// Block aligned
+        /// </summary>
+        /// <param name="VA"></param>
+        /// <returns></returns>
+        public long[] VGetBlockLong(long VA)
+        {
+            bool GotData = false;
+            long[] rv = new long[512];
+
+            var _va = VA & ~0xfff;
+
+            HARDWARE_ADDRESS_ENTRY hw;
+            if (vmcs == null)
+                hw = MemAccess.VirtualToPhysical(CR3Value, _va);
+            else
+                hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
+
+            MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData, true);
+            return rv;
         }
 
         public long[] VGetBlockLong(long VA, ref bool GotData)
@@ -185,8 +179,33 @@ namespace inVtero.net
             return rv;
         }
 
+        public long[] GetVirtualLong(long VA)
+        {
 
-        public byte[] GetVirtualByte(long VA, ref bool GotData)
+            // offset to index
+            long startIndex = (VA & 0xfff) / 8;
+            long count = 512 - startIndex;
+            // get data
+            var block = VGetBlockLong(VA);
+
+            // adjust into return array 
+            var rv = new long[count + 512];
+            Array.Copy(block, startIndex, rv, 0, count);
+
+            VA += 4096;
+            var block2 = VGetBlockLong(VA);
+            Array.Copy(block2, 0, rv, count, 512);
+
+            return rv;
+        }
+
+
+        /// <summary>
+        /// This is byte aligned
+        /// </summary>
+        /// <param name="VA"></param>
+        /// <returns></returns>
+        public byte[] GetVirtualByte(long VA)
         {
             long startIndex = VA & 0xfff;
             long count = 4096 - startIndex;
@@ -198,6 +217,7 @@ namespace inVtero.net
             Array.Copy(block, startIndex, rv, 0, count);
             return rv;
         }
+
 
         [ProtoIgnore]
         public Mem MemAccess { get; set; }

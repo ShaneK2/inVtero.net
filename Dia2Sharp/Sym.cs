@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Linq;
+using System.Dynamic;
 
 namespace Dia2Sharp
 {
@@ -13,6 +14,7 @@ namespace Dia2Sharp
     {
         public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
         IDiaSession Session = null;
+        public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
 
         public static Sym Initalize(String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_DEBUG)
         {
@@ -124,6 +126,170 @@ namespace Dia2Sharp
             } while (childrenFetched == 1);
         }
 
+
+        public dynamic xStructInfo(string PDBFile, string Struct, long[] memRead = null)
+        {
+            dynamic Info = null;
+            IDiaSymbol Master = null;
+            IDiaEnumSymbols EnumSymbols = null;
+            uint compileFetched = 0;
+
+            var foo = new DiaSource();
+            foo.loadDataFromPdb(PDBFile);
+            foo.openSession(out Session);
+            if (Session == null)
+                return null;
+            // 10 is regex
+            Session.globalScope.findChildren(SymTagEnum.SymTagNull, Struct, 10, out EnumSymbols);
+            do
+            {
+                EnumSymbols.Next(1, out Master, out compileFetched);
+                if (Master == null)
+                    continue;
+#if DEBUGX
+                Console.ForegroundColor = ConsoleColor.White;
+                WriteLine($"Dumping Type [{Master.name}] Len [{Master.length}]");
+#endif
+                Info = new ExpandoObject();
+                Info.TypeName = Master.name;
+                Info.Length = Master.length;
+                //StructInfo.Add(Master.name, Info); // Tuple.Create<int, int>(0, (int)Master.length));
+
+                xDumpStructs(Info, Master, Master.name, 0, memRead);
+            } while (compileFetched == 1);
+
+            return Info;
+        }
+
+        dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null)
+        {
+            var IInfo = (IDictionary<string, object>)Info;
+
+            IDiaSymbol Sub = null;
+            IDiaEnumSymbols Enum2 = null;
+            uint compileFetched = 0;
+
+            Master.findChildren(SymTagEnum.SymTagNull, null, 10, out Enum2);
+            do
+            {
+                if (Enum2 == null)
+                    break;
+
+                Enum2.Next(1, out Sub, out compileFetched);
+                if (Sub == null)
+                    continue;
+
+                dynamic zym = new ExpandoObject();
+                var Izym = (IDictionary<string, object>)zym;
+
+                var master = zym.InstanceName = Master.name;
+                var sType = Sub.type;
+                var typeName = zym.TypeName = sType.name;
+                var currName = zym.MemberName = $"{preName}.{Sub.name}";
+                int Pos = CurrOffset + Sub.offset;
+
+                zym.Tag = (SymTagEnum)Sub.symTag;
+                zym.Length = sType.length;
+                zym.OffsetPos = Pos;
+
+                if (memRead != null)
+                {
+                    var defName = "Value";
+                    switch (sType.length)
+                    {
+                        case 4:
+                            var ival = memRead == null ? 0 : (int)(memRead[Pos / 8] & 0xffffffffff);
+                            Izym.Add(defName, ival);
+                            break;
+                        case 2:
+                            var sval = memRead == null ? 0 : (short)(memRead[Pos / 8] & 0xffffff);
+                            Izym.Add(defName, sval);
+                            break;
+                        case 1:
+                            var bval = memRead == null ? 0 : (byte)(memRead[Pos / 8] & 0xff);
+                            Izym.Add(defName, bval);
+                            break;
+                        default:
+                            var lval = memRead == null ? 0 : memRead[Pos / 8];
+                            Izym.Add(defName, lval);
+                            break;
+                    }
+                }
+                // This is a pointer really, so type.type... of course!
+                var TypeType = sType.type;
+                var TypeTypeTag = sType.symTag;
+                if ((SymTagEnum)TypeTypeTag == SymTagEnum.SymTagPointerType)
+                {
+                    zym.IsPtr = true;
+                    if (TypeType != null && !string.IsNullOrWhiteSpace(TypeType.name))
+                        zym.PtrTypeName = TypeType.name;
+                } else
+                    xDumpStructs(zym, sType, currName, Pos, memRead);
+#if DEBUGX
+                ForegroundColor = ConsoleColor.Cyan;
+                WriteLine($"Pos = [{Pos:X}] Name = [{currName}] Len [{sType.length}], Type [{typeName}], ThisStruct [{master}]");
+#endif
+
+                if (IInfo.ContainsKey(Sub.name))
+                    continue;
+
+                IInfo.Add(Sub.name, zym);
+
+                //Pos += (int)sType.length;
+            } while (compileFetched == 1);
+            return null;
+        }
+
+        public dynamic GetStruct(String Name, long[] memRead = null)
+        {
+            var typeDefs = from typeDef in StructInfo
+                           where typeDef.Key.StartsWith(Name)
+                           select typeDef;
+
+            dynamic strukt = new ExpandoObject();
+            var IDstrukt = (IDictionary<string, object>)strukt;
+
+            // kludge 
+            var staticDict = new Dictionary<string, object>();
+            strukt.Dictionary = staticDict;
+
+            foreach (var def in typeDefs)
+            {
+                // custom types are not fitted this way
+                // we just recuse into basic types
+                if (def.Value.Item2 > 8)
+                    continue;
+
+                // TODO: make recursive and expand on this dynamic object foo.bar working etc...
+                var defName = def.Key.Substring(Name.Length + 1); //.Replace('.', '_');
+
+                switch (def.Value.Item2)
+                {
+                    case 4:
+                        var ival = memRead == null ? 0 : (int)(memRead[def.Value.Item1 / 8] & 0xffffffffff);
+                        staticDict.Add(defName, ival);
+                        IDstrukt.Add(defName, ival);
+                        break;
+                    case 2:
+                        var sval = memRead == null ? 0 : (short)(memRead[def.Value.Item1 / 8] & 0xffffff);
+                        staticDict.Add(defName, sval);
+                        IDstrukt.Add(defName, sval);
+                        break;
+                    case 1:
+                        var bval = memRead == null ? 0 : (byte)(memRead[def.Value.Item1 / 8] & 0xff);
+                        staticDict.Add(defName, bval);
+                        IDstrukt.Add(defName, bval);
+                        break;
+                    default:
+                        var lval = memRead == null ? 0 : memRead[def.Value.Item1 / 8];
+                        staticDict.Add(defName, lval);
+                        IDstrukt.Add(defName, lval);
+                        break;
+                }
+            }
+            return strukt;
+        }
+
         /// <summary>
         /// Perform full symbol walk scanning for a struct/member position and length
         /// 
@@ -176,7 +342,6 @@ namespace Dia2Sharp
             return resultx.Value;
         }
 
-        public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
 
         void DumpStructs(IDiaSymbol Master, string preName, string Search, int CurrOffset)
         {
@@ -213,6 +378,5 @@ namespace Dia2Sharp
 
             } while (compileFetched == 1);
         }
-
     }
 }

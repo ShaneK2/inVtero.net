@@ -390,10 +390,6 @@ namespace Reloc
     
                                 var curr = *intp;
     
-                                // this has got to be an error
-                                //if(curr == 0)
-                                //Console::WriteLine("B00G");
-    
                                 *intp = curr - Delta;
                                 OvrOffset = 0;
     
@@ -670,10 +666,6 @@ namespace Reloc
                                 var intp = (uint*)basep;
     
                                 var curr = *intp;
-    
-                                // this has got to be an error
-                                //if(curr == 0)
-                                //Console::WriteLine("B00G");
     
                                 *intp = curr - Delta;
                                 OvrOffset = 0;

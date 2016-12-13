@@ -54,6 +54,8 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Vtero
     {
+        [ProtoIgnore]
+        public Sym SymForKernel;
         public static Action ProgressCallback;
 
         public string MemFile;
@@ -459,21 +461,27 @@ namespace inVtero.net
 
             // this is for DIA API SDK... 
             // TODO:remove
-            var symz = Sym.Initalize(pdbFile);
+            SymForKernel = Sym.Initalize(pdbFile);
             long[] memRead = null;
+
+
+            // TODO: update this to be used instead of legacy .Dictionary kludge ;)
+            var rv = SymForKernel.xStructInfo(pdbFile, "_EPROCESS");
+
+
             // figure out OFFSET_OF the process LIST_ENTRY
             // MemberInfo returned is Byte Position, Length
-            var aplinks = symz.StructMemberInfo(pdbFile, "_EPROCESS", "ActiveProcessLinks.Flink");
+            var aplinks = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "ActiveProcessLinks.Flink");
             var offset_of = aplinks.Item1;
-            var sym_dtb = symz.StructMemberInfo(pdbFile, "_EPROCESS", "Pcb.DirectoryTableBase");
-            var sym_ImagePathPtr = symz.StructMemberInfo(pdbFile, "_EPROCESS", "SeAuditProcessCreationInfo.ImageFileName");
-            var sym_procID = symz.StructMemberInfo(pdbFile, "_EPROCESS", "UniqueProcessId");
-            var sym_vadRoot = symz.StructMemberInfo(pdbFile, "_EPROCESS", "VadRoot");
+            var sym_dtb = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "Pcb.DirectoryTableBase");
+            var sym_ImagePathPtr = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "SeAuditProcessCreationInfo.ImageFileName");
+            var sym_procID = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "UniqueProcessId");
+            var sym_vadRoot = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "VadRoot");
 
             // adjust the first link through 
             //var flink = dp.GetLongValue(PsHeadAddr);
 
-            var typeDefs = from typeDef in symz.StructInfo
+            var typeDefs = from typeDef in SymForKernel.StructInfo
                             where typeDef.Key.StartsWith("_EPROCESS")
                             select typeDef;
 
@@ -492,9 +500,9 @@ namespace inVtero.net
                 var VadRootPtr = memRead[sym_vadRoot.Item1 / 8];
 
                 // ImagePath here is a pointer to a struct, get ptr
-                var ImagePathPtr = memRead[sym_ImagePathPtr.Item1 / 8];
                 // +0x10 in this unicode string object
-                var ImagePathArr = dp.GetVirtualByte(ImagePathPtr+0x10, ref GotData);
+                var ImagePathPtr = memRead[sym_ImagePathPtr.Item1 / 8];
+                var ImagePathArr = dp.GetVirtualByte(ImagePathPtr+0x10);
                 var ImagePath = Encoding.Unicode.GetString(ImagePathArr);
                 var pathTrim = ImagePath.Split('\x0');
                 ImagePath = pathTrim[0];
@@ -627,7 +635,6 @@ namespace inVtero.net
             // sign extend BaseVA for kernel ranges
             if ((BaseVA & 0xf00000000000) != 0)
                 BaseVA |= (long)KernRange;
-
 
             DebugHelp.SymSetOptions(DebugHelp.SymOptions.SYMOPT_DEBUG);
 

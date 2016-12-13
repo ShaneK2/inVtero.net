@@ -99,7 +99,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConfigOptions.cs" />
-    <Compile Include="DebugHelp.cs" />
     <Compile Include="DeLocate.cs" />
     <Compile Include="DetectedProc.cs" />
     <Compile Include="Extensions.cs" />
