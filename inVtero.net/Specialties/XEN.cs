@@ -32,6 +32,9 @@ namespace inVtero.net.Specialties
             // use abstract implementation & scan for internal 
             LogicalPhysMemDesc = ExtractMemDesc(vtero);
 
+            if (Elf == null)
+                return false;
+
             using (var dstream = File.OpenRead(vtero.MemFile))
             {
                 using (var ebin = new BinaryReader(dstream))

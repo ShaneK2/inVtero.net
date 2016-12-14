@@ -18,8 +18,8 @@
 #
 #MemoryDump = "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem"   
 #MemoryDump = "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem"   
-#MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
-MemoryDump = "d:\\temp\\server2016.xendump"
+MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
+#MemoryDump = "d:\\temp\\server2016.xendump"
 import clr,sys
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
@@ -171,18 +171,39 @@ def WalkETHREAD(eThreadHead):
     while True:
         memRead = vtero.KernelProc.GetVirtualLong(_ETHR_ADDR - ThreadOffsetOf)
         _ETHREAD = vtero.SymForKernel.xStructInfo(symFile,"_ETHREAD", memRead)
-        print "Thread [0x" + _ETHREAD.Cid.UniqueThread.Value.ToString("X") + "] BASE [0x",
-        print _ETHREAD.Tcb.StackBase.Value.ToString("X") + "] LIMIT [0x" + _ETHREAD.Tcb.StackLimit.Value.ToString("X") + "]"
+        print "Thread [" + _ETHREAD.Cid.UniqueThread.Value.ToString("X") + "] BASE", 
+        print "[0x" + _ETHREAD.Tcb.StackBase.Value.ToString("X") + "] LIMIT [0x" + _ETHREAD.Tcb.StackLimit.Value.ToString("X") + "]"
         _ETHR_ADDR = memRead[ThreadOffsetOf / 8]
         if _ETHR_ADDR == eThreadHead:
+            return
+
+def WalkModules(ModLinkHead):
+    ImagePath = ""
+    _LDR_DATA_ADDR = ModLinkHead
+    while True:
+        memRead = vtero.KernelProc.GetVirtualLong(_LDR_DATA_ADDR)
+        _LDR_DATA = vtero.SymForKernel.xStructInfo(symFile,"_LDR_DATA_TABLE_ENTRY", memRead)
+        ImagePathPtr = memRead[(_LDR_DATA.FullDllName.OffsetPos+8) / 8]
+        if ImagePathPtr != 0:
+            ImagePathArr =  vtero.KernelProc.GetVirtualByte(ImagePathPtr)
+            ImagePath = Text.Encoding.Unicode.GetString(ImagePathArr).Split('\x00')[0]
+        else:
+            ImagePath = ""
+        print "Loaded Base: 0x" + _LDR_DATA.DllBase.Value.ToString("x") + " Length: 0x" + _LDR_DATA.SizeOfImage.Value.ToString("x8") + " \t Module: " + ImagePath
+        _LDR_DATA_ADDR = memRead[0]
+        if _LDR_DATA_ADDR == ModLinkHead:
             return
 
 # Example of walking process list
 def WalkProcListExample():
     #
-    #  WALK _EPROCESS LIST
+    #  WALK KERNEL 
     #
+    print "Walking Kernel modules..."
+    pModuleHead = vtero.GetSymValueLong(vtero.KernelProc,"PsLoadedModuleList")
+    WalkModules(pModuleHead)
     # Get a typedef 
+    print "Walking Kernel processes..."
     x = vtero.SymForKernel.xStructInfo(symFile,"_EPROCESS")
     ProcListOffsetOf = x.ActiveProcessLinks.Flink.OffsetPos
     ImagePath = ""
@@ -201,8 +222,8 @@ def WalkProcListExample():
         else:
             ImagePath = ""
         _EPROC_ADDR = memRead[ProcListOffsetOf / 8]
-        print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] EXE [" + ImagePath,
-        print "] CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"
+        print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] EXE [" + ImagePath + "]",
+        print " CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"
         if _EPROC.VadRoot.Value != 0:
             ListVAD(_EPROC.VadRoot.Value)
         if _EPROC.ThreadListHead.Value != 0:

@@ -120,6 +120,7 @@
     <Compile Include="Specialties\VMWare.cs" />
     <Compile Include="Specialties\XEN.cs" />
     <Compile Include="Support.cs" />
+    <Compile Include="Support\Capstone.cs" />
     <Compile Include="Support\PageCache.cs" />
     <Compile Include="Support\WAHBitarray2.cs" />
     <Compile Include="UnsafeHelp.cs" />

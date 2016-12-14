@@ -214,7 +214,7 @@ namespace inVtero.net
             }
 
             // if the memory run is defined as 0 count then it's implicitly 1
-            if (Detected == null || Detected.PhysMemDesc.NumberOfPages < 1)
+            if (Detected == null || Detected.PhysMemDesc == null || Detected.PhysMemDesc.NumberOfPages < 1)
             {
                 Detected = new BasicRunDetector(MemFile);
                 if (Detected != null)
@@ -460,14 +460,13 @@ namespace inVtero.net
                 return null;
 
             // this is for DIA API SDK... 
-            // TODO:remove
+            // TODO: Perf analysis of switching over to xStruct... however it's expando objects
+            // are a lot slower than using the dictionary
             SymForKernel = Sym.Initalize(pdbFile);
             long[] memRead = null;
 
-
             // TODO: update this to be used instead of legacy .Dictionary kludge ;)
             //var rv = SymForKernel.xStructInfo(pdbFile, "_EPROCESS");
-
             // figure out OFFSET_OF the process LIST_ENTRY
             // MemberInfo returned is Byte Position, Length
             var aplinks = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "ActiveProcessLinks.Flink");
