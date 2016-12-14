@@ -160,6 +160,16 @@ namespace Dia2Sharp
             return Info;
         }
 
+        /// <summary>
+        /// Method for native type reflection into DLR
+        /// TODO: Perf check + handle .Dictionary references
+        /// </summary>
+        /// <param name="Info"></param>
+        /// <param name="Master"></param>
+        /// <param name="preName"></param>
+        /// <param name="CurrOffset"></param>
+        /// <param name="memRead"></param>
+        /// <returns></returns>
         dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null)
         {
             var IInfo = (IDictionary<string, object>)Info;
@@ -180,6 +190,8 @@ namespace Dia2Sharp
 
                 dynamic zym = new ExpandoObject();
                 var Izym = (IDictionary<string, object>)zym;
+                var staticDict = new Dictionary<string, object>();
+                zym.Dictionary = staticDict;
 
                 var master = zym.InstanceName = Master.name;
                 var sType = Sub.type;
@@ -199,18 +211,22 @@ namespace Dia2Sharp
                         case 4:
                             var ival = memRead == null ? 0 : (int)(memRead[Pos / 8] & 0xffffffffff);
                             Izym.Add(defName, ival);
+                            staticDict.Add(currName, ival);
                             break;
                         case 2:
                             var sval = memRead == null ? 0 : (short)(memRead[Pos / 8] & 0xffffff);
                             Izym.Add(defName, sval);
+                            staticDict.Add(currName, sval);
                             break;
                         case 1:
                             var bval = memRead == null ? 0 : (byte)(memRead[Pos / 8] & 0xff);
                             Izym.Add(defName, bval);
+                            staticDict.Add(currName, bval);
                             break;
                         default:
                             var lval = memRead == null ? 0 : memRead[Pos / 8];
                             Izym.Add(defName, lval);
+                            staticDict.Add(currName, lval);
                             break;
                     }
                 }
@@ -228,7 +244,7 @@ namespace Dia2Sharp
                 ForegroundColor = ConsoleColor.Cyan;
                 WriteLine($"Pos = [{Pos:X}] Name = [{currName}] Len [{sType.length}], Type [{typeName}], ThisStruct [{master}]");
 #endif
-
+                // BUGBUG: Fix with things like PrependingTextToLength (length is already in the Expando)
                 if (IInfo.ContainsKey(Sub.name))
                     continue;
 

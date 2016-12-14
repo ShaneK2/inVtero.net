@@ -354,7 +354,7 @@ namespace inVtero.net
 
         }
 
-        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = true)
+        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = false)
         {
             long rv = 0;
             // convert PAddr to PFN

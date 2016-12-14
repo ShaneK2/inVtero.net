@@ -466,8 +466,7 @@ namespace inVtero.net
 
 
             // TODO: update this to be used instead of legacy .Dictionary kludge ;)
-            var rv = SymForKernel.xStructInfo(pdbFile, "_EPROCESS");
-
+            //var rv = SymForKernel.xStructInfo(pdbFile, "_EPROCESS");
 
             // figure out OFFSET_OF the process LIST_ENTRY
             // MemberInfo returned is Byte Position, Length
@@ -1527,8 +1526,6 @@ DoubleBreak:
         /// </summary>
         static WAHBitArray SISmap;
 
-
-
         // TODO: Figure out if MemoryCopy or BlockCopy ...
          
 
@@ -1586,7 +1583,7 @@ DoubleBreak:
                             // TODO: PageCache is still broken in some cases... disable for now here
                             for (int i = 0; i < 0x200; i++)
                             {
-                                PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead, true); 
+                                PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead); 
                                 VALUE.PTE.PTE += 0x1000;
                                 if(!GoodRead)
                                     block = new long[0x200];
@@ -1625,8 +1622,6 @@ DoubleBreak:
             //}
         }
 #endregion
-
-
         public byte[] HashRange(VIRTUAL_ADDRESS KEY, PFN VALUE)
         {
             var rv = new byte[1];

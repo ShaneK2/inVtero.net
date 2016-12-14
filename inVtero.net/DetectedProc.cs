@@ -113,7 +113,7 @@ namespace inVtero.net
             //{
                 //fixed (void* lp = rv, bp = buffer)
                 //{
-                    MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData, true);
+                    MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData);
                     Buffer.BlockCopy(rv, 0, buffer, 0, 4096);
                     //Buffer.MemoryCopy((byte*)lp, (byte*)bp, 4096, 4096);
                 //}
@@ -139,7 +139,7 @@ namespace inVtero.net
             else
                 hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
 
-            MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData, true);
+            MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData);
             return rv;
         }
 
@@ -155,7 +155,7 @@ namespace inVtero.net
             else
                 hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
 
-            MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData, true);
+            MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData);
 
             return rv;
         }

@@ -18,8 +18,8 @@
 #
 #MemoryDump = "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem"   
 #MemoryDump = "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem"   
-MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
-#MemoryDump = "d:\\temp\\server2016.xendump"
+#MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
+MemoryDump = "d:\\temp\\server2016.xendump"
 import clr,sys
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
@@ -142,6 +142,7 @@ for pdb in vtero.KernelProc.PDBFiles:
     if pdb.Contains("ntkrnlmp"):
         symFile = pdb
 
+# This one is recursive down a tree
 def ListVAD(VadRoot):
     if VadRoot == 0:
         return
@@ -161,6 +162,20 @@ def ListVAD(VadRoot):
     ListVAD(mmvad.Core.VadNode.Left.Value)
     #print "ListVAD going Right 0x" + mmvad.Core.VadNode.Left.Value.ToString("X")
     ListVAD(mmvad.Core.VadNode.Right.Value)
+
+# Here we walk another LIST_ENTRY
+def WalkETHREAD(eThreadHead):
+    typedef = vtero.SymForKernel.xStructInfo(symFile,"_ETHREAD")
+    ThreadOffsetOf = typedef.ThreadListEntry.OffsetPos
+    _ETHR_ADDR = eThreadHead
+    while True:
+        memRead = vtero.KernelProc.GetVirtualLong(_ETHR_ADDR - ThreadOffsetOf)
+        _ETHREAD = vtero.SymForKernel.xStructInfo(symFile,"_ETHREAD", memRead)
+        print "Thread [0x" + _ETHREAD.Cid.UniqueThread.Value.ToString("X") + "] BASE [0x",
+        print _ETHREAD.Tcb.StackBase.Value.ToString("X") + "] LIMIT [0x" + _ETHREAD.Tcb.StackLimit.Value.ToString("X") + "]"
+        _ETHR_ADDR = memRead[ThreadOffsetOf / 8]
+        if _ETHR_ADDR == eThreadHead:
+            return
 
 # Example of walking process list
 def WalkProcListExample():
@@ -188,8 +203,10 @@ def WalkProcListExample():
         _EPROC_ADDR = memRead[ProcListOffsetOf / 8]
         print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] EXE [" + ImagePath,
         print "] CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"
-        if _EPROC_ADDR == psHead:
-            break
         if _EPROC.VadRoot.Value != 0:
             ListVAD(_EPROC.VadRoot.Value)
+        if _EPROC.ThreadListHead.Value != 0:
+            WalkETHREAD(_EPROC.ThreadListHead.Value)
+        if _EPROC_ADDR == psHead:
+            return
             
