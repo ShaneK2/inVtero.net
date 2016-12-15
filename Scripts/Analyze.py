@@ -12,14 +12,17 @@
 # make sure to have dia registered do "regsvr32 c:\\windows\system32\msdia120.dll"
 # you also want symsrv.dll and dbghelp.dll in the current folder =)
 #
-#
 # Play with the PTType and stuff for nested hypervisors =) (PTTYPE VMCS)
-#
 #
 #MemoryDump = "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem"   
 #MemoryDump = "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem"   
-MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
+#MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
 #MemoryDump = "d:\\temp\\server2016.xendump"
+#MemoryDump = "c:\\temp\\win10.64.xendump"
+#MemoryDump = "c:\\temp\\2012R2.xendump"
+#MemoryDump = "D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem"
+MemoryDump = "D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
+
 import clr,sys
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
@@ -146,22 +149,35 @@ for pdb in vtero.KernelProc.PDBFiles:
 def ListVAD(VadRoot):
     if VadRoot == 0:
         return
-    #print "Analyzing VAD ROOT: 0x" + VadRoot.ToString("X")
     pMMVadArr = vtero.KernelProc.GetVirtualLong(VadRoot)
     mmvad = vtero.SymForKernel.xStructInfo(symFile,"_MMVAD", pMMVadArr)
-    subsect = vtero.SymForKernel.xStructInfo(symFile,"_SUBSECTION", vtero.KernelProc.GetVirtualLong(mmvad.Subsection.Value))
-    control_area = vtero.SymForKernel.xStructInfo(symFile,"_CONTROL_AREA", vtero.KernelProc.GetVirtualLong(subsect.ControlArea.Value))
-    segment = vtero.SymForKernel.xStructInfo(symFile,"_SEGMENT", vtero.KernelProc.GetVirtualLong(control_area.Segment.Value))
-    # look for file pointer
-    if control_area.FilePointer.Value != 0:
-        file_pointer = vtero.SymForKernel.xStructInfo(symFile,"_FILE_OBJECT", vtero.KernelProc.GetVirtualLong(control_area.FilePointer.Value & -16))
-        fileNameByteArr = vtero.KernelProc.GetVirtualByte(file_pointer.FileName.Buffer.Value)
-        fileNameString = Text.Encoding.Unicode.GetString(fileNameByteArr).Split('\x00')[0]
-        print "Mapped File: " + fileNameString 
-    #print "ListVAD going Left 0x" + mmvad.Core.VadNode.Left.Value.ToString("X")
-    ListVAD(mmvad.Core.VadNode.Left.Value)
-    #print "ListVAD going Right 0x" + mmvad.Core.VadNode.Left.Value.ToString("X")
-    ListVAD(mmvad.Core.VadNode.Right.Value)
+    IsExec = False
+    # This is to support 7 and earlier kernels
+    if mmvad.Dictionary.ContainsKey("Core"):
+        if mmvad.Core.u.VadFlags.Protection.Value & 2 != 0:
+            IsExec = True
+    else:
+        # TODO: Double check this one! 
+        if mmvad.u.VadFlags.Protection.Value & 2 != 0:
+            IsExec = True
+    # Check VAD Flags for execute permission before we spend time looking at this entry
+    if IsExec:
+        subsect = vtero.SymForKernel.xStructInfo(symFile,"_SUBSECTION", vtero.KernelProc.GetVirtualLong(mmvad.Subsection.Value))
+        control_area = vtero.SymForKernel.xStructInfo(symFile,"_CONTROL_AREA", vtero.KernelProc.GetVirtualLong(subsect.ControlArea.Value))
+        segment = vtero.SymForKernel.xStructInfo(symFile,"_SEGMENT", vtero.KernelProc.GetVirtualLong(control_area.Segment.Value))
+        # look for file pointer
+        if control_area.FilePointer.Value != 0:
+            file_pointer = vtero.SymForKernel.xStructInfo(symFile,"_FILE_OBJECT", vtero.KernelProc.GetVirtualLong(control_area.FilePointer.Value & -16))
+            fileNameByteArr = vtero.KernelProc.GetVirtualByte(file_pointer.FileName.Buffer.Value)
+            fileNameString = Text.Encoding.Unicode.GetString(fileNameByteArr).Split('\x00')[0]
+            print "Mapped File: " + fileNameString 
+    # Core is the more recent kernels
+    if mmvad.Dictionary.ContainsKey("Core"):
+        ListVAD(mmvad.Core.VadNode.Left.Value)
+        ListVAD(mmvad.Core.VadNode.Right.Value)
+    else:
+        ListVAD(mmvad.LeftChild.Value)
+        ListVAD(mmvad.RightChild.Value)
 
 # Here we walk another LIST_ENTRY
 def WalkETHREAD(eThreadHead):

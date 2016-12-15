@@ -173,6 +173,10 @@ namespace Dia2Sharp
         dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null)
         {
             var IInfo = (IDictionary<string, object>)Info;
+            var InfoDict= new Dictionary<string, object>();
+            Info.Dictionary = InfoDict;
+            long lvalue = 0;
+
 
             IDiaSymbol Sub = null;
             IDiaEnumSymbols Enum2 = null;
@@ -181,12 +185,10 @@ namespace Dia2Sharp
             Master.findChildren(SymTagEnum.SymTagNull, null, 10, out Enum2);
             do
             {
-                if (Enum2 == null)
-                    break;
+                if (Enum2 == null) break;
 
                 Enum2.Next(1, out Sub, out compileFetched);
-                if (Sub == null)
-                    continue;
+                if (Sub == null) continue;
 
                 dynamic zym = new ExpandoObject();
                 var Izym = (IDictionary<string, object>)zym;
@@ -206,30 +208,46 @@ namespace Dia2Sharp
                 if (memRead != null)
                 {
                     var defName = "Value";
+                    lvalue = memRead == null ? 0 : memRead[Pos / 8];
+
+                    // 6 is a bitfield
+                    if (Sub.locationType == 6)
+                    {
+                        zym.BitPosition = Sub.bitPosition;
+
+                        var mask = 1U;
+                        for(int x=(int)sType.length-1; x > 0; x--)
+                        {
+                            mask = mask << 1;
+                            mask |= 1;
+                        }
+                        var new_mask = mask << (int)Sub.bitPosition;
+
+                        lvalue &= new_mask;
+
+                        // move lvalue to bitposition 0 
+                        // saves having todo this every time we evaluate Value
+                        lvalue = lvalue >> (int)Sub.bitPosition;
+
+                    }
                     switch (sType.length)
                     {
                         case 4:
-                            var ival = memRead == null ? 0 : (int)(memRead[Pos / 8] & 0xffffffffff);
-                            Izym.Add(defName, ival);
-                            staticDict.Add(currName, ival);
+                            lvalue = (int)lvalue & 0xffffffffff;
                             break;
                         case 2:
-                            var sval = memRead == null ? 0 : (short)(memRead[Pos / 8] & 0xffffff);
-                            Izym.Add(defName, sval);
-                            staticDict.Add(currName, sval);
+                            lvalue = (short)lvalue & 0xffffff;
                             break;
                         case 1:
-                            var bval = memRead == null ? 0 : (byte)(memRead[Pos / 8] & 0xff);
-                            Izym.Add(defName, bval);
-                            staticDict.Add(currName, bval);
+                            lvalue = (byte)lvalue & 0xff;
                             break;
                         default:
-                            var lval = memRead == null ? 0 : memRead[Pos / 8];
-                            Izym.Add(defName, lval);
-                            staticDict.Add(currName, lval);
                             break;
                     }
+                    Izym.Add(defName, lvalue);
+                    staticDict.Add(currName, lvalue);
                 }
+
                 // This is a pointer really, so type.type... of course!
                 var TypeType = sType.type;
                 var TypeTypeTag = sType.symTag;
@@ -244,12 +262,21 @@ namespace Dia2Sharp
                 ForegroundColor = ConsoleColor.Cyan;
                 WriteLine($"Pos = [{Pos:X}] Name = [{currName}] Len [{sType.length}], Type [{typeName}], ThisStruct [{master}]");
 #endif
-                // BUGBUG: Fix with things like PrependingTextToLength (length is already in the Expando)
-                if (IInfo.ContainsKey(Sub.name))
+
+                // Length comes up a lot in struct's and conflicts with the ExpandoObject 
+                // so remap it specially
+                var AddedName = Sub.name;
+
+                if (AddedName.ToLower().Equals("value"))
+                    AddedName = "ValueMember";
+                if (AddedName.ToLower().Equals("length"))
+                    AddedName = "LengthMember";
+
+                if (IInfo.ContainsKey(AddedName))
                     continue;
 
-                IInfo.Add(Sub.name, zym);
-
+                IInfo.Add(AddedName, zym);
+                InfoDict.Add(AddedName, lvalue);
                 //Pos += (int)sType.length;
             } while (compileFetched == 1);
             return null;
