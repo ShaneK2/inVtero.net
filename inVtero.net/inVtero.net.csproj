@@ -107,6 +107,7 @@
     <Compile Include="Hashing\tigersbox.cs" />
     <Compile Include="inVtero.cs" />
     <Compile Include="Mem.cs" />
+    <Compile Include="MemSection.cs" />
     <Compile Include="PageTable.cs" />
     <Compile Include="PFN.cs" />
     <Compile Include="PhysicalMemoryStream.cs" />
@@ -121,7 +122,6 @@
     <Compile Include="Specialties\XEN.cs" />
     <Compile Include="Support.cs" />
     <Compile Include="Support\Capstone.cs" />
-    <Compile Include="Support\PageCache.cs" />
     <Compile Include="Support\WAHBitarray2.cs" />
     <Compile Include="UnsafeHelp.cs" />
     <Compile Include="VirtualScanner.cs" />

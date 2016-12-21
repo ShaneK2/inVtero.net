@@ -54,6 +54,12 @@ namespace inVtero.net.ConsoleUtils
                 if (!co.IgnoreSaveData)
                 {
                     vtero = vtero.CheckpointRestoreState(saveStateFile);
+                    if(vtero == null)
+                    {
+                        WriteColor(ConsoleColor.Red, "ERROR IN SERIALIZER");
+                        return null;
+                    }
+
                     vtero.OverRidePhase = true;
                 }
                 else

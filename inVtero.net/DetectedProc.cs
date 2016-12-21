@@ -32,8 +32,8 @@ namespace inVtero.net
         {
             SymbolStore = new Dictionary<string, long>();
             TopPageTablePage = new Dictionary<int, long>();
-            PDBFiles = new List<string>();
             LogicalProcessList = new List<dynamic>();
+            Sections = new List<MemSection>();
         }
         public int ASGroup;
         public int Group;       // linux only 
@@ -46,15 +46,25 @@ namespace inVtero.net
         public long Diff;
         public int Mode; // 1 or 2
         public PTType PageTableType;
+
+        public List<MemSection> Sections;
+
+        /*
         public CODEVIEW_HEADER DebugData;
         public Extract ext;
-        public List<string> PDBFiles;
+        */
+
         public Dictionary<int, long> TopPageTablePage;
 
+        // Since we have a known PT, start collecting meta info
+        // Mapped Modules
+
+        // This is really to aid Debugging 
         [ProtoIgnore]
         public Dictionary<string, long> SymbolStore;
 
         [ProtoIgnore]
+        // Relevent when parsing Kernel
         public List<dynamic> LogicalProcessList;
 
         // the high bit signals if we collected a kernel address space for this AS group
@@ -94,12 +104,11 @@ namespace inVtero.net
         /// BLOCK ALIGNED
         /// </summary>
         /// <param name="VA"></param>
-        /// <returns></returns>
+        /// <returns>BLOCK of memory (ALIGNED)</returns>
         public byte[] VGetBlock(long VA)
         {
             bool GotData = false;
             long[] rv = new long[512];
-            byte[] buffer = new byte[4096];
 
             var _va = VA & ~0xfff;
 
@@ -109,15 +118,12 @@ namespace inVtero.net
             else
                 hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
             
-            //unsafe
-            //{
-                //fixed (void* lp = rv, bp = buffer)
-                //{
-                    MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData);
-                    Buffer.BlockCopy(rv, 0, buffer, 0, 4096);
-                    //Buffer.MemoryCopy((byte*)lp, (byte*)bp, 4096, 4096);
-                //}
-            //}
+            MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData);
+            if (!GotData)
+                return null;
+
+            byte[] buffer = new byte[4096];
+            Buffer.BlockCopy(rv, 0, buffer, 0, 4096);
             return buffer;
         }
 
@@ -125,7 +131,7 @@ namespace inVtero.net
         /// Block aligned
         /// </summary>
         /// <param name="VA"></param>
-        /// <returns></returns>
+        /// <returns>PAGE ALIGNED </returns>
         public long[] VGetBlockLong(long VA)
         {
             bool GotData = false;
@@ -143,6 +149,12 @@ namespace inVtero.net
             return rv;
         }
 
+        /// <summary>
+        /// See all other PAGE ALIGNED
+        /// </summary>
+        /// <param name="VA"></param>
+        /// <param name="GotData"></param>
+        /// <returns></returns>
         public long[] VGetBlockLong(long VA, ref bool GotData)
         {
             long[] rv = new long[512];
@@ -160,6 +172,14 @@ namespace inVtero.net
             return rv;
         }
 
+        /// <summary>
+        /// GetVirtual get's at least 1 block sized byte aligned chunk of memory.
+        /// The chunk may be up to 2Pages-1 in size since we always get the next page
+        /// in case you need it...
+        /// </summary>
+        /// <param name="VA"></param>
+        /// <param name="GotData">Byte aligned chunk MIN (PageSize+8) MAX (PageSize*2-8)</param>
+        /// <returns></returns>
         public long[] GetVirtualLong(long VA, ref bool GotData)
         {
             // offset to index
@@ -223,7 +243,7 @@ namespace inVtero.net
         /// This is byte aligned
         /// </summary>
         /// <param name="VA"></param>
-        /// <returns></returns>
+        /// <returns>SINGLE PAGE OR LESS</returns>
         public byte[] GetVirtualByte(long VA)
         {
             long startIndex = VA & 0xfff;
@@ -233,7 +253,8 @@ namespace inVtero.net
 
             var rv = new byte[count];
 
-            Array.Copy(block, startIndex, rv, 0, count);
+            if(block != null)
+                Array.Copy(block, startIndex, rv, 0, count);
             return rv;
         }
 
@@ -299,6 +320,9 @@ namespace inVtero.net
         public int Age;
         public string PdbName;
         public uint TimeDateStamp;
+
+        // This field is determined through a call to SymFindFileInPath/Ex from the above info 
+        public string PDBFullPath;
     }
 
 }

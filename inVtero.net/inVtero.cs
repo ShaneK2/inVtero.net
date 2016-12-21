@@ -43,8 +43,6 @@ using PowerArgs.Cli;
 
 namespace inVtero.net
 {
-
-
     /// <summary>
     /// Moving things around to support save state
     /// If it turns out that we are to parse the input aggressively, it may make sense to not have to waste time doing the same analysis over again
@@ -250,6 +248,10 @@ namespace inVtero.net
         {
             Vtero ThisInstance = new Vtero();
 
+            var siz = new FileInfo(SaveFile).Length;
+            if (siz == 0)
+                return null;
+
             using (var SerData = File.OpenRead(SaveFile))
                 ThisInstance = Serializer.Deserialize<inVtero.net.Vtero>(SerData);
 
@@ -326,9 +328,12 @@ namespace inVtero.net
 
         // TODO: MOVE below to DetectedProc class
 
-        public CODEVIEW_HEADER ExtractCVDebug(DetectedProc dp, Extract Ext, long VA)
+        public CODEVIEW_HEADER ExtractCVDebug(DetectedProc dp, MemSection sec)
         {
-            uint SizeData=0, RawData=0, PointerToRawData=0;
+             uint SizeData=0, RawData=0, PointerToRawData=0;
+
+            Extract Ext = sec.Module;
+            long VA = sec.VA.Address;
 
             if (dp.MemAccess == null)
                 dp.MemAccess = new Mem(MemAccess);
@@ -380,7 +385,11 @@ namespace inVtero.net
                 WriteLine($"Str {str} : GUID : {gid} : AGE {age}");
             }
 
-            return new CODEVIEW_HEADER { VSize = (int) Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
+            var cv = new CODEVIEW_HEADER { VSize = (int) Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
+
+            sec.DebugDetails = cv;
+
+            return cv;
         }
 
         /// <summary>
@@ -414,7 +423,7 @@ namespace inVtero.net
             rv = true;
             return rv;
 #if FALSE
-
+            I'm leaving this in for now just to show the use of DecodePointer if needed since it could be uswed in a scenerio where symbols fail
 
 
             var KdpDataBlockEncoded = dp.GetByteValue(symInfo.Address);
@@ -448,13 +457,15 @@ namespace inVtero.net
         public dynamic[] WalkProcList(DetectedProc dp)
         {
             bool GotData = false;
-            var PsHeadAddr = GetSymValueLong(dp, "PsActiveProcessHead");
             // TODO: Build out symbol system / auto registration into DLR for DIA2
             // expected kernel hardcoded
 
-            var pdbFile = (from kern in dp.PDBFiles
-                           where kern.ToLower().Contains("ntkrnlmp")
-                           select kern).FirstOrDefault();
+
+            var pdbFile = (from kern in dp.Sections
+                           where kern.DebugDetails != null &&
+                           !string.IsNullOrWhiteSpace(kern.DebugDetails.PDBFullPath) && 
+                           kern.DebugDetails.PDBFullPath.ToLower().Contains("ntkrnlmp")
+                           select kern.DebugDetails.PDBFullPath).FirstOrDefault();
 
             if (string.IsNullOrWhiteSpace(pdbFile))
                 return null;
@@ -464,6 +475,9 @@ namespace inVtero.net
             // are a lot slower than using the dictionary
             SymForKernel = Sym.Initalize(pdbFile);
             long[] memRead = null;
+
+            var PsHeadAddr = GetSymValueLong(dp, "PsActiveProcessHead");
+
 
             // TODO: update this to be used instead of legacy .Dictionary kludge ;)
             //var rv = SymForKernel.xStructInfo(pdbFile, "_EPROCESS");
@@ -626,7 +640,7 @@ namespace inVtero.net
             return symInfo.Address;
         }
 
-        public bool TryLoadSymbols(DetectedProc dp, Extract ext, CODEVIEW_HEADER cv_data, long BaseVA, string SymPath)
+        public bool TryLoadSymbols(CODEVIEW_HEADER cv_data, long BaseVA, string SymPath)
         {
             ulong KernRange = 0xffff000000000000;
 
@@ -660,24 +674,31 @@ namespace inVtero.net
                 GCHandle pinnedArray = GCHandle.Alloc(refBytes, GCHandleType.Pinned);
                 IntPtr pointer = pinnedArray.AddrOfPinnedObject();
 
-                symStatus = DebugHelp.SymFindFileInPath(hCurrentProcess, null, cv_data.PdbName, pointer, (int)ext.SizeOfImage, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
+                symStatus = DebugHelp.SymFindFileInPath(hCurrentProcess, null, cv_data.PdbName, pointer, cv_data.VSize, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
                 pinnedArray.Free();
                 if (!symStatus)
                     WriteColor(ConsoleColor.Red, $"Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
             }
             if (symStatus)
             {
-                var symLoaded = DebugHelp.SymLoadModuleEx(hCurrentProcess, IntPtr.Zero, sbx.ToString(), null, BaseVA, (int)ext.SizeOfImage, IntPtr.Zero, 0);
+                var symLoaded = DebugHelp.SymLoadModuleEx(hCurrentProcess, IntPtr.Zero, sbx.ToString(), null, BaseVA, cv_data.VSize, IntPtr.Zero, 0);
                 if (symLoaded == 0)
                     WriteColor(ConsoleColor.Red, $"Load Failed: [{new Win32Exception(Marshal.GetLastWin32Error()).Message }]");
 
 
-                dp.PDBFiles.Add(sbx.ToString());
+                cv_data.PDBFullPath = sbx.ToString();
             }
 
             return symStatus;
         }
 
+        /// <summary>
+        /// Only scanning for core kernel modules
+        /// </summary>
+        /// <param name="dp"></param>
+        /// <param name="StartingVA"></param>
+        /// <param name="EndingVA"></param>
+        /// <returns>Array of modules</returns>
         public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, long StartingVA = 0, long EndingVA = 0xFFFFFFFFF000)
         {
             if (dp.PT == null)
@@ -688,8 +709,11 @@ namespace inVtero.net
             KVS = new VirtualScanner(dp, new Mem(MemAccess));
             KVS.ScanMode = VAScanType.PE_FAST;
 
-            WriteColor(ConsoleColor.Cyan, "Scanning VA for Kernel... ");
-            ForegroundColor = ConsoleColor.Green;
+            if (VerboseLevel > 0)
+            {
+                WriteColor(ConsoleColor.Cyan, "Scanning VA for Kernel... ");
+                ForegroundColor = ConsoleColor.Green;
+            }
 
             Parallel.For(0, cnt, i =>
             {
@@ -697,14 +721,21 @@ namespace inVtero.net
 
                 var curr = cnt - dp.PT.PageQueue.Count();
                 CursorLeft = 0;
-                var done = (int) (Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0) + 0.5;
-                Write($"{done} % done");
+                var done = (int)(Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0) + 0.5;
+
+                if (VerboseLevel > 0)
+                    Write($"{done} % done");
 
                 if (dp.PT.PageQueue.TryDequeue(out range))
                     if (range.PTE.Valid)
                         KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
             });
-            WriteLine("Done comprehensive VA scan");
+            if (VerboseLevel > 0)
+                WriteLine("Done comprehensive VA scan");
+
+            foreach (var detected in KVS.Artifacts)
+                dp.Sections.Add(new MemSection() { IsExec = true, Module = detected.Value, VA = new VIRTUAL_ADDRESS(detected.Key) });
+
             return KVS.Artifacts;
         }
 
@@ -733,22 +764,27 @@ namespace inVtero.net
                 foreach (var DirectoryPointerOffset in Proc.PT.ExtractNextLevel(pfn, true, level))
                 {
                     if (DirectoryPointerOffset == null) continue;
-                        foreach (var DirectoryOffset in Proc.PT.ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level - 1))
+                    foreach (var DirectoryOffset in Proc.PT.ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level - 1))
+                    {
+                        if (DirectoryOffset == null) continue;
+
+                        foreach (var TableOffset in Proc.PT.ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
                         {
-                            if (DirectoryOffset == null) continue;
+                            if (TableOffset == null) continue;
 
-                                foreach (var TableOffset in Proc.PT.ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
-                                {
-                                    if (TableOffset == null) continue;
-
-                                    entries++;
-                                    if (IncludeData == TableOffset.PTE.NoExecute)
-                                        WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess);
-                                }
                             entries++;
-                            if (IncludeData == DirectoryOffset.PTE.NoExecute)
-                                WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess);
+                            if (IncludeData == TableOffset.PTE.NoExecute)
+                                WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess);
+                            if (!TableOffset.PTE.NoExecute)
+                            WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess);
+
                         }
+                        entries++;
+                        if (IncludeData == DirectoryOffset.PTE.NoExecute)
+                            WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess);
+                        if (!DirectoryOffset.PTE.NoExecute)
+                            WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess);
+                    }
                     entries++;
                 }
 

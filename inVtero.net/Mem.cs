@@ -122,12 +122,6 @@ namespace inVtero.net
         }
         Mem()
         {
-            // so not even 1/2 the size of the window which was only getting < 50% hit ratio at best
-            // PageCache may be better off than a huge window...
-            // PageCacheMax default is 100000 which is 390MB or so.
-            if (!PageCache.Initalized)
-                PageCache.InitPageCache(Environment.ProcessorCount * 4, PageCacheMax);
-
             // common init
             MapViewBase = 0;
             // 64MB
@@ -319,8 +313,7 @@ namespace inVtero.net
         /// <returns>adjusted file byte offset from backing storage (file)</returns>
         public long OffsetToMemIndex(long aPFN)
         {
-            var NeedAdjLastBaseOffset = true;
-            long IndexedPFN = 0, bIndexedPFN = 0, bPFN = aPFN;
+            long bIndexedPFN = 0, bPFN = aPFN;
             bool Good = false;
 
             if (aPFN > MD.PhysMemDesc.MaxAddressablePageNumber)
@@ -354,25 +347,18 @@ namespace inVtero.net
 
         }
 
-        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData, bool NoCache = false)
+        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData)
         {
             long rv = 0;
             // convert PAddr to PFN
             var aPFN = PAddr.NextTable_PFN;
             GotData = false;
-            //NoCache = true;
-
-            if (!NoCache && PageCache.ContainsKey(aPFN))
-            {
-                do
-                    PageCache.TryGetValue(aPFN, out block);
-                while (block == null);
-                // shift down since were loading a long[]
-                GotData = true;
-                return block[(PAddr >> 3) & 0x1ff];
-            }
 
             // should return with - error_value
+            // This happens quite a bit and is a good boost
+            // I guess were constrained by int.MaxValue pages here. 
+            // so that is about 8TB
+            // TODO: explore 5 level page tables and larger than 8TB inputs :)
             if (aPFN > int.MaxValue || aPFN < 0)
                 return 0;
 #if USE_BITMAP
@@ -382,17 +368,11 @@ namespace inVtero.net
             // paranoid android setting
 
             var FileOffset = OffsetToMemIndex(aPFN);
-            if (FileOffset < 0)
-                rv = MagicNumbers.BAD_RUN_CONFIG_READ;
-            else
-            // add back in the file offset for possible exact byte lookup
+            if (FileOffset >= 0)
                 rv = GetPageFromFileOffset(FileOffset + PAddr.AddressOffset, ref block, ref GotData);
 
             if (!GotData)
                 rv = MagicNumbers.BAD_VALUE_READ;
-
-            if (!NoCache && GotData)
-                PageCache.TryAdd(aPFN, block);
 
             return rv;
 
@@ -408,7 +388,7 @@ namespace inVtero.net
         public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
         {
             bool GoodRead = false;
-            return GetPageForPhysAddr(PAddr, ref block, ref GoodRead, false);
+            return GetPageForPhysAddr(PAddr, ref block, ref GoodRead);
         }
 
 
@@ -423,7 +403,7 @@ namespace inVtero.net
             bool Ignored = false;
             long[] block = new long[512];
 
-            return GetPageForPhysAddr(PAddr, ref block, ref Ignored, false);
+            return GetPageForPhysAddr(PAddr, ref block, ref Ignored);
 
             //return pageData[PAddr.AddressOffset >> 3];
         }

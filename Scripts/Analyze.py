@@ -19,9 +19,9 @@
 #MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
 #MemoryDump = "d:\\temp\\server2016.xendump"
 #MemoryDump = "c:\\temp\\win10.64.xendump"
-#MemoryDump = "c:\\temp\\2012R2.xendump"
+MemoryDump = "c:\\temp\\2012R2.xendump"
 #MemoryDump = "D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem"
-MemoryDump = "D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
+#MemoryDump = "D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
 
 import clr,sys
 
@@ -75,18 +75,28 @@ swModScan = Stopwatch.StartNew()
 if vtero.KVS is None or vtero.KVS.Artifacts is None:
     #this thing is pretty expensive right now :(
     #at least it's threaded for you
-    vtero.ModuleScan(proc)
+    #it's an optimized kernel scan at this time
+    likelyKernelModules = vtero.ModuleScan(proc)
     print "Module Scan time: " + swModScan.Elapsed.ToString()
 
 vtero.CheckpointSaveState()
 
+# this initial pass for module scan should only be for Kernel
+for section in proc.Sections:
+    vtero.ExtractCVDebug(proc, section)
+    if section.DebugDetails is not None:
+        if vtero.TryLoadSymbols(section.DebugDetails, section.VA.Address, sympath) == True:
+            vtero.KernelProc = proc
+
 # Symbol scan using GUID & DWORD methods
 # If you can't match symbols you can use other API for most goals
-for detected in vtero.KVS.Artifacts:
-    cv_data = vtero.ExtractCVDebug(proc, detected.Value, detected.Key)
-    if cv_data is not None:
-        if vtero.TryLoadSymbols(proc, detected.Value, cv_data, detected.Key, sympath):
-            vtero.GetKernelDebuggerData(proc, detected.Value, cv_data, sympath)
+# BUGBUG: weird bug you have to run this twice, not a big deal since we
+# do get past a checkpoint.  Need to review protobuf code around here
+#for detected in vtero.KVS.Artifacts:
+#    cv_data = vtero.ExtractCVDebug(proc, detected.Value, detected.Key)
+#    if cv_data is not None:
+#        if vtero.TryLoadSymbols(cv_data, detected.Key, sympath):
+#            vtero.GetKernelDebuggerData(proc, detected.Value, cv_data, sympath)
 
 vtero.CheckpointSaveState()
 
@@ -97,43 +107,39 @@ print "Physical Proc Count: " + proc_arr.Count.ToString()
 for pproc in proc_arr:
     print pproc
 
-print "Logical Proc Count: " + logicalList.Count.ToString()
-
-for proc in logicalList:
-    # This is due to a structure member name change pre win 8
-    if proc.Dictionary.ContainsKey("VadRoot.BalancedRoot.RightChild"):
-        proc.VadRoot = proc.Dictionary["VadRoot.BalancedRoot.RightChild"]
-    print proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
-
-
-Console.ForegroundColor = ConsoleColor.Green;
-print "Green text is OK++"
-print "checking that all logical processes exist in the physical list."
-# Miss list mostly bad for yellow printing  
-for proc in logicalList:
-    found=False
-    for hwproc in proc_arr:
-        if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
-            found=True
-    if found == False:
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        if proc.VadRoot == 0:
-            Console.ForegroundColor = ConsoleColor.Green;
-        print "Logical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
-
-print "Checking that all physical processes exist in the logical list"
-for hwproc in proc_arr:
-    Found=False
+if logicalList is not None:
+    print "Logical Proc Count: " + logicalList.Count.ToString()
     for proc in logicalList:
-        if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
-            found=True
-    if found == False:
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        if proc.VadRoot == 0:
-            Console.ForegroundColor = ConsoleColor.Green;
-            print "An expected, ",
-            print "physical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
- 
+        # This is due to a structure member name change pre win 8
+        if proc.Dictionary.ContainsKey("VadRoot.BalancedRoot.RightChild"):
+            proc.VadRoot = proc.Dictionary["VadRoot.BalancedRoot.RightChild"]
+        print proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
+    Console.ForegroundColor = ConsoleColor.Green;
+    print "Green text is OK++"
+    print "checking that all logical processes exist in the physical list."
+    # Miss list mostly bad for yellow printing  
+    for proc in logicalList:
+        found=False
+        for hwproc in proc_arr:
+            if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
+                found=True
+        if found == False:
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            if proc.VadRoot == 0:
+                Console.ForegroundColor = ConsoleColor.Green;
+            print "Logical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
+    print "Checking that all physical processes exist in the logical list"
+    for hwproc in proc_arr:
+        Found=False
+        for proc in logicalList:
+            if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
+                found=True
+        if found == False:
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            if proc.VadRoot == 0:
+                Console.ForegroundColor = ConsoleColor.Green;
+                print "An expected, ",
+                print "physical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
 
 print "TOTAL RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP SIZE: " + MemoryDumpSize.ToString("N") + " bytes."
 print "SPEED: " + ((MemoryDumpSize / 1024) / ((runTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
@@ -141,9 +147,9 @@ print "ALL DONE... Please explore!"
 
 # Get detected symbol file to use for loaded vtero
 symFile = ""
-for pdb in vtero.KernelProc.PDBFiles:
-    if pdb.Contains("ntkrnlmp"):
-        symFile = pdb
+for section in vtero.KernelProc.Sections:
+    if section.DebugDetails.PDBFullPath.Contains("ntkrnlmp"):
+        symFile = section.DebugDetails.PDBFullPath
 
 # This one is recursive down a tree
 def ListVAD(VadRoot):

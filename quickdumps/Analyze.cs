@@ -40,12 +40,11 @@ namespace inVtero.net
         {
             var mods = vtero.ModuleScan(p, VAStart, VAEnd);
 
-            // BUGBUG: TODO: Refactor the threadlocal stuff seems were re-entrant unsafe :(
             //Parallel.ForEach(mods, (detected) =>
             //{
-            foreach (var detected in mods)
+            foreach (var detected in p.Sections)
             {
-                var cv_data = vtero.ExtractCVDebug(p, detected.Value, detected.Key);
+                var cv_data = vtero.ExtractCVDebug(p, detected);
 
                 if (cv_data != null)
                 {
@@ -53,9 +52,8 @@ namespace inVtero.net
                     if (string.IsNullOrWhiteSpace(sympath))
                         sympath = "SRV*http://msdl.microsoft.com/download/symbols";
 
-                    if (vtero.TryLoadSymbols(p, detected.Value, cv_data, detected.Key, sympath))
-                        vtero.GetKernelDebuggerData(p, detected.Value, cv_data, sympath);
-
+                    if(vtero.TryLoadSymbols(cv_data, detected.VA.Address, sympath))
+                        vtero.KernelProc = p;
                 }
             }
             //});

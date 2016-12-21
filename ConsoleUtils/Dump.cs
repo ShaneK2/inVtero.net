@@ -33,6 +33,7 @@ using inVtero.net.ConsoleUtils;
 namespace inVtero.net
 {
 
+    // TODO: Rewrite/change this, updated API for extracting syms etc...
     public class Dump
     {
         public Dump()
@@ -109,7 +110,9 @@ namespace inVtero.net
                                 if (detected.Value.ToString().Contains("POOLCODE"))
                                 {
                                     WriteColor(ConsoleColor.White, "Likely Kernel analyzing for CV data");
-                                    var cv_data = vtero.ExtractCVDebug(LikelyKernel, detected.Value, detected.Key);
+
+                                    /*
+                                     * var cv_data = vtero.ExtractCVDebug(LikelyKernel, detected.Value, detected.Key);
 
                                     if (cv_data != null)
                                     {
@@ -117,9 +120,10 @@ namespace inVtero.net
                                         if (string.IsNullOrWhiteSpace(sympath))
                                             sympath = "SRV*http://msdl.microsoft.com/download/symbols";
 
-                                        if (vtero.TryLoadSymbols(LikelyKernel, detected.Value, cv_data, detected.Key, sympath))
+                                        if (vtero.TryLoadSymbols(cv_data, detected.Key, sympath))
                                             Decoded = vtero.GetKernelDebuggerData(LikelyKernel, detected.Value, cv_data, sympath);
                                     }
+                                    */
                                 }
                             }
                         }
