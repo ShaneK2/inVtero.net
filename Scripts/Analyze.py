@@ -156,7 +156,7 @@ def ListVAD(proc, VadRoot):
             IsExec = True
     # Check VAD Flags for execute permission before we spend time looking at this entry
     if IsExec:
-        subsect = proc.xStructInfo("_SUBSECTION")
+        subsect = proc.xStructInfo("_SUBSECTION", proc.GetVirtualLong(mmvad.Subsection.Value))
         control_area = proc.xStructInfo("_CONTROL_AREA", proc.GetVirtualLong(subsect.ControlArea.Value))
         segment = proc.xStructInfo("_SEGMENT", proc.GetVirtualLong(control_area.Segment.Value))
         # look for file pointer
