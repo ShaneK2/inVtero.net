@@ -36,8 +36,11 @@ using PowerArgs;
 using RaptorDB;
 using softwareunion;
 using Dia2Sharp;
+using static inVtero.net.Misc;
 
 // TODO: MemoryCopy / unsafe version performance testing
+// TODO: Use git issues ;)
+// TODO: Implement 5 level page table traversal (new intel spec)
 using System.Dynamic;
 using PowerArgs.Cli;
 
@@ -52,8 +55,6 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Vtero
     {
-        [ProtoIgnore]
-        public Sym SymForKernel;
         public static Action ProgressCallback;
 
         public string MemFile;
@@ -63,11 +64,9 @@ namespace inVtero.net
         // Do not think debughelp api is MT safe really so careful
         public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
 
-
         // Preserve detected results to avoid aggressive kernel / symbol scanning loading
         public DetectedProc KernelProc;
         public VirtualScanner KVS;
-        
 
         public PTType Version { get; set; }
 
@@ -151,7 +150,7 @@ namespace inVtero.net
             GroupThreshold = 0.5;
             Phase = 1;
 
-#if DEBUG 
+#if DEBUGX 
             VerboseOutput = true;
             DiagOutput = false;
 #endif
@@ -221,9 +220,9 @@ namespace inVtero.net
 
             if (Vtero.VerboseOutput)
             {
-                if (Detected.LogicalPhysMemDesc != null)
-                    WriteColor(ConsoleColor.Yellow, $"Windows/Logical Memory Run: {Detected.LogicalPhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
-                else if (Detected.PhysMemDesc != null)
+               // if (Detected.LogicalPhysMemDesc != null)
+               //     WriteColor(ConsoleColor.Yellow, $"Windows/Logical Memory Run: {Detected.LogicalPhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
+               // else if (Detected.PhysMemDesc != null)
                     WriteColor(ConsoleColor.Green, $"HW Memory Run: {Detected.PhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
             }
 
@@ -310,7 +309,7 @@ namespace inVtero.net
                 Proc = Procz;
 
                 if (Proc.PT == null)
-                    PageTable.AddProcess(Proc, MemAccess, true, 4);
+                    PageTable.AddProcess(Proc, MemAccess, true);
 
                 if (Proc.PT.EntriesParsed < 512)
                     continue;
@@ -326,70 +325,9 @@ namespace inVtero.net
             return Proc;
         }
 
-        // TODO: MOVE below to DetectedProc class
-
         public CODEVIEW_HEADER ExtractCVDebug(DetectedProc dp, MemSection sec)
         {
-             uint SizeData=0, RawData=0, PointerToRawData=0;
-
-            Extract Ext = sec.Module;
-            long VA = sec.VA.Address;
-
-            if (dp.MemAccess == null)
-                dp.MemAccess = new Mem(MemAccess);
-
-            var _va = VA + Ext.DebugDirPos;
-            var block = dp.VGetBlock(_va);
-            var TimeDate2 = BitConverter.ToUInt32(block, ((int) Ext.DebugDirPos & 0xfff) + 4);
-
-            if(TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
-            {
-                WriteColor(ConsoleColor.Yellow, "Unable to lock on to CV data.");
-                return null; 
-            }
-
-            if(Vtero.VerboseOutput)
-                WriteColor(ConsoleColor.Green, $"Locked on to CV Debug info.  Time2 = {TimeDate2:X} Time1 = {Ext.TimeStamp:X}");
-
-            var max_offset = (int)(_va & 0xfff) + 28;
-            if (max_offset > 0x1000)
-            {
-                if (Vtero.VerboseOutput)
-                    WriteColor(ConsoleColor.Yellow, "CV block seems too straddle into next block (too large)"); return null;
-            }
-            SizeData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 16);
-            RawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 20);
-            PointerToRawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 24);
-
-            _va = VA + RawData;
-
-            var bytes = new byte[16];
-
-            block = dp.VGetBlock(_va);
-
-            // first 4 bytes
-            var sig = block[((int)_va & 0xfff)];
-            
-            Array.ConstrainedCopy(block, (((int) _va & 0xfff) + 4), bytes, 0, 16);
-            var gid = new Guid(bytes);
-
-            // after GUID
-            var age = block[((int)_va & 0xfff) + 20];
-
-            // char* at end
-            var str = Encoding.Default.GetString(block, (((int)_va & 0xfff) + 24), 32).Trim();
-
-            if (Vtero.VerboseOutput)
-            {
-                WriteLine($"Size = {SizeData} \t Raw = {RawData} \t Pointer {PointerToRawData}");
-                WriteLine($"Str {str} : GUID : {gid} : AGE {age}");
-            }
-
-            var cv = new CODEVIEW_HEADER { VSize = (int) Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
-
-            sec.DebugDetails = cv;
-
-            return cv;
+            return dp.ExtractCVDebug(sec);
         }
 
         /// <summary>
@@ -410,7 +348,7 @@ namespace inVtero.net
 
             symInfo.SizeOfStruct = 0x58;
             symInfo.MaxNameLen = 1024;
-            rv = DebugHelp.SymFromName(hCurrentProcess, "KdpDataBlockEncoded", ref symInfo);
+            rv = DebugHelp.SymFromName(dp.ID.GetHashCode(), "KdpDataBlockEncoded", ref symInfo);
             if(!rv)
             {
                 WriteLine($"Symbol Find : {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
@@ -454,18 +392,20 @@ namespace inVtero.net
 #endif
         }
 
+        /// <summary>
+        /// Manages SymForKernel  
+        /// </summary>
+        /// <param name="dp"></param>
+        /// <returns></returns>
         public dynamic[] WalkProcList(DetectedProc dp)
         {
             bool GotData = false;
             // TODO: Build out symbol system / auto registration into DLR for DIA2
             // expected kernel hardcoded
 
-
             var pdbFile = (from kern in dp.Sections
-                           where kern.DebugDetails != null &&
-                           !string.IsNullOrWhiteSpace(kern.DebugDetails.PDBFullPath) && 
-                           kern.DebugDetails.PDBFullPath.ToLower().Contains("ntkrnlmp")
-                           select kern.DebugDetails.PDBFullPath).FirstOrDefault();
+                           where kern.Value.Name == "ntkrnlmp"
+                           select kern.Value.DebugDetails.PDBFullPath).FirstOrDefault();
 
             if (string.IsNullOrWhiteSpace(pdbFile))
                 return null;
@@ -473,7 +413,7 @@ namespace inVtero.net
             // this is for DIA API SDK... 
             // TODO: Perf analysis of switching over to xStruct... however it's expando objects
             // are a lot slower than using the dictionary
-            SymForKernel = Sym.Initalize(pdbFile);
+            var SymForKernel = Sym.Initalize(dp.ID.GetHashCode(), pdbFile);
             long[] memRead = null;
 
             var PsHeadAddr = GetSymValueLong(dp, "PsActiveProcessHead");
@@ -567,7 +507,9 @@ namespace inVtero.net
                 // move flink to next list entry
                 flink = memRead[offset_of / 8];
 
-            } while (PsHeadAddr != flink);
+                // if flink is > 0 we have a problem since it's in the expected "user" range 
+                // and we are walking the kernel sooooo... exit  TODO: Report error! ;)
+            } while (PsHeadAddr != flink && flink < 0);
             return dp.LogicalProcessList.ToArray();
         }
 
@@ -580,7 +522,7 @@ namespace inVtero.net
         /// <param name="Never"></param>
         /// <param name="Value"></param>
         /// <returns></returns>
-        public ulong DecodePointer(ulong BlockAddress, ulong Always, ulong Never, ulong Value)
+        public static ulong DecodePointer(ulong BlockAddress, ulong Always, ulong Never, ulong Value)
         {
             ulong decoded = 0;
 
@@ -628,7 +570,7 @@ namespace inVtero.net
             symInfo.SizeOfStruct = 0x58;
             symInfo.MaxNameLen = 1024;
 
-            var rv = DebugHelp.SymFromName(hCurrentProcess, SymName, ref symInfo);
+            var rv = DebugHelp.SymFromName(dp.ID.GetHashCode(), SymName, ref symInfo);
             if (!rv)
             {
                 WriteColor(ConsoleColor.Red, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
@@ -640,31 +582,43 @@ namespace inVtero.net
             return symInfo.Address;
         }
 
-        public bool TryLoadSymbols(CODEVIEW_HEADER cv_data, long BaseVA, string SymPath)
+        /// <summary>
+        /// This is a global context (hCurrentProcess) so do not forget that we will need to avoid overlapping
+        /// or release resources consuming VA ranges we expired from scope...
+        /// 
+        /// We use sympath environment variable
+        /// </summary>
+        /// <param name="cv_data"></param>
+        /// <param name="BaseVA"></param>
+        /// <param name="SymPath"></param>
+        /// <returns></returns>
+        public static Sym TryLoadSymbols(long Handle, CODEVIEW_HEADER cv_data, long BaseVA)
         {
+            if (cv_data == null)
+                return null;
+
             ulong KernRange = 0xffff000000000000;
 
             // sign extend BaseVA for kernel ranges
             if ((BaseVA & 0xf00000000000) != 0)
                 BaseVA |= (long)KernRange;
 
-            DebugHelp.SymSetOptions(DebugHelp.SymOptions.SYMOPT_DEBUG);
+            var sym = Sym.Initalize(Handle, null, DebugHelp.SymOptions.SYMOPT_DEBUG);
 
-            bool symStatus = DebugHelp.SymInitialize(hCurrentProcess, SymPath, false);
-            if(!symStatus)
-                WriteLine($"symbol status  {symStatus}:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
+            if(sym == null)
+                WriteLine($"Can not initialize symbols for ${Handle}, error:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
+
+            var symStatus = true;
 
             StringBuilder sbx = new StringBuilder(1024);
             
             int three = 0;
             var flags = DebugHelp.SSRVOPT_GUIDPTR;
-            symStatus = DebugHelp.SymFindFileInPathW(hCurrentProcess, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
+            symStatus = DebugHelp.SymFindFileInPathW(Handle, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
             // try twice, just in case
             if (!symStatus)
-                symStatus = DebugHelp.SymFindFileInPathW(hCurrentProcess, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
+                symStatus = DebugHelp.SymFindFileInPathW(Handle, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
 
-            if (symStatus)
-                WriteColor(ConsoleColor.Cyan, $"Symbols found: {sbx.ToString()}");
             if (!symStatus)
             {
                 WriteLine($"Symbol returned {symStatus}: {new Win32Exception(Marshal.GetLastWin32Error()).Message }, attempting less precise request.");
@@ -674,22 +628,23 @@ namespace inVtero.net
                 GCHandle pinnedArray = GCHandle.Alloc(refBytes, GCHandleType.Pinned);
                 IntPtr pointer = pinnedArray.AddrOfPinnedObject();
 
-                symStatus = DebugHelp.SymFindFileInPath(hCurrentProcess, null, cv_data.PdbName, pointer, cv_data.VSize, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
+                symStatus = DebugHelp.SymFindFileInPath(Handle, null, cv_data.PdbName, pointer, cv_data.VSize, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
                 pinnedArray.Free();
                 if (!symStatus)
                     WriteColor(ConsoleColor.Red, $"Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
+
+                sym = null;
             }
             if (symStatus)
             {
-                var symLoaded = DebugHelp.SymLoadModuleEx(hCurrentProcess, IntPtr.Zero, sbx.ToString(), null, BaseVA, cv_data.VSize, IntPtr.Zero, 0);
+                var symLoaded = DebugHelp.SymLoadModuleEx(Handle, IntPtr.Zero, sbx.ToString(), null, BaseVA, cv_data.VSize, IntPtr.Zero, 0);
                 if (symLoaded == 0)
                     WriteColor(ConsoleColor.Red, $"Load Failed: [{new Win32Exception(Marshal.GetLastWin32Error()).Message }]");
-
 
                 cv_data.PDBFullPath = sbx.ToString();
             }
 
-            return symStatus;
+            return sym;
         }
 
         /// <summary>
@@ -699,7 +654,7 @@ namespace inVtero.net
         /// <param name="StartingVA"></param>
         /// <param name="EndingVA"></param>
         /// <returns>Array of modules</returns>
-        public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, long StartingVA = 0, long EndingVA = 0xFFFFFFFFF000)
+        public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, int ExitAfter = 2, long StartingVA = 0, long EndingVA = 0xFFFFFFFFF000)
         {
             if (dp.PT == null)
                 PageTable.AddProcess(dp, new Mem(MemAccess));
@@ -715,7 +670,7 @@ namespace inVtero.net
                 ForegroundColor = ConsoleColor.Green;
             }
 
-            Parallel.For(0, cnt, i =>
+            Parallel.For(0, cnt, (i, loopState) =>
             {
                 PFN range;
 
@@ -726,7 +681,7 @@ namespace inVtero.net
                 if (VerboseLevel > 0)
                     Write($"{done} % done");
 
-                if (dp.PT.PageQueue.TryDequeue(out range))
+                if (dp.PT.PageQueue.TryDequeue(out range) && KVS.Artifacts.Count() < ExitAfter)
                     if (range.PTE.Valid)
                         KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
             });
@@ -734,7 +689,7 @@ namespace inVtero.net
                 WriteLine("Done comprehensive VA scan");
 
             foreach (var detected in KVS.Artifacts)
-                dp.Sections.Add(new MemSection() { IsExec = true, Module = detected.Value, VA = new VIRTUAL_ADDRESS(detected.Key) });
+                dp.Sections.TryAdd(detected.Key, new MemSection() { IsExec = true, Module = detected.Value, VA = new VIRTUAL_ADDRESS(detected.Key) });
 
             return KVS.Artifacts;
         }
@@ -819,8 +774,6 @@ namespace inVtero.net
     /// inconsequential if they are grouped with the appropriate AS since even if they are isolated into their own 'AS' this is an artificial 
     /// construct for our book keeping.  The net result is that even if some process is grouped by itself due to some aggressive variation in
     /// kernel PFN' use (lots of dual mapped memory/MDL's or something), it's still able to be dumped and analyzed.
-    /// 
-    /// 
     /// </summary>
     /// <param name="pTypes">Types to scan for, this is of the already detected processes list so it's already filtered really</param>
     public void GroupAS(PTType pTypes = PTType.UNCONFIGURED)
@@ -848,7 +801,8 @@ namespace inVtero.net
             int LastGroupTotal = 0;
             var grouped = new ConcurrentBag<DetectedProc>();
 
-            WriteLine($"Scanning for group correlations total processes {totUngrouped}");
+            if(Vtero.DiagOutput)
+                WriteColor(ConsoleColor.White, ConsoleColor.Black, $"Scanning for group correlations total processes {totUngrouped}");
             ASGroups[CurrASID] = new ConcurrentBag<DetectedProc>();
 
             while (true)
@@ -868,7 +822,8 @@ namespace inVtero.net
                     // and this proc is not already joined into another group
                     if (correlated > GroupThreshold && !ASGroups[CurrASID].Contains(proc) && proc.AddressSpaceID == 0)
                     {
-                        WriteColor(ConsoleColor.Cyan, $"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{correlated:P3}] PID [{proc.CR3Value:X}]");
+                        if (Vtero.DiagOutput)
+                            WriteColor(ConsoleColor.Cyan, $"MemberProces: Group {CurrASID} Type [{proc.PageTableType}] GroupCorrelation [{correlated:P3}] PID [{proc.CR3Value:X}]");
 
                         proc.AddressSpaceID = CurrASID;
                         ASGroups[CurrASID].Add(proc);
@@ -881,8 +836,8 @@ namespace inVtero.net
 
                 var totGrouped = (from g in ASGroups.Values
                                   select g).Sum(x => x.Count());
-
-                WriteLine($"Finished Group {CurrASID} collected size {ASGroups[CurrASID].Count()}, continuing to group");
+                if (Vtero.DiagOutput)
+                    WriteLine($"Finished Group {CurrASID} collected size {ASGroups[CurrASID].Count()}, continuing to group");
                 // if there is more work todo, setup an entry for testing
                 if (totGrouped < totUngrouped)
                 {
@@ -890,8 +845,9 @@ namespace inVtero.net
                     // there has been no forward progress in isolating further groups
                     if(LastGroupTotal == totGrouped)
                     {
-                        ForegroundColor = ConsoleColor.Red;
-                        WriteLine($"Terminating with non-grouped process candidates.  GroupThreshold may be too high. {GroupThreshold}");
+                        if (Vtero.DiagOutput)
+                            WriteColor(ConsoleColor.Red, $"Terminating with non-grouped process candidates.  GroupThreshold may be too high. {GroupThreshold}");
+
                         var pz = from px in Processes
                                 where px.AddressSpaceID == 0
                                 select px;
@@ -913,18 +869,18 @@ namespace inVtero.net
                             {
                                 px.CandidateList = new List<VMCS>(isCandidate);
                                 px.vmcs = px.CandidateList.First();
-                                WriteColor( ConsoleColor.White, $"Detected ungrouped {px.CR3Value} as a candidate under {px.CandidateList.Count()} values (first){px.vmcs.EPTP}");
+                                if (Vtero.VerboseOutput)
+                                    WriteColor( ConsoleColor.White, $"Detected ungrouped {px.CR3Value} as a candidate under {px.CandidateList.Count()} values (first){px.vmcs.EPTP}");
                             }
                         }
-
-                        ForegroundColor = ConsoleColor.Yellow;
                         break;
                     }
 
 
                     CurrASID++;
                     ASGroups[CurrASID] = new ConcurrentBag<DetectedProc>();
-                    WriteLine($"grouped count ({totGrouped}) is less than total process count ({totUngrouped}, rescanning...)");
+                    if (Vtero.DiagOutput)
+                        WriteColor(ConsoleColor.Cyan, $"grouped count ({totGrouped}) is less than total process count ({totUngrouped}, rescanning...)");
                     LastGroupTotal = totGrouped;
                 }
                 else
@@ -939,8 +895,8 @@ namespace inVtero.net
                                    where ptes.Key > 255 && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
                                    select ptes.Value;
             }
-
-            Console.WriteLine($"Done All process groups.");
+            if (Vtero.DiagOutput)
+                WriteColor(ConsoleColor.Green, $"Done All process groups.");
 
             // after grouping link VMCS back to the group who 'discovered' the VMCS in the first place!
             var eptpz = VMCSs.Values.GroupBy(eptz => eptz.EPTP).OrderBy(eptx => eptx.Key).Select(ept => ept.First()).ToArray();
@@ -1219,7 +1175,7 @@ namespace inVtero.net
 
 #region Dumper
 
-        // TODO: Move this to Dumper.cs
+        // TODO: Move this to Dumper.cs or just get rid of this stuff since it's all the super old CLI stuff
 
         /// <summary>
         /// Memory Dump routines
@@ -1300,7 +1256,7 @@ DoubleBreak:
                         var vmcs = ToDump[i].vmcs == null ? 0 : ToDump[i].vmcs.EPTP;
 
                         if (ToDump[i].PT == null)
-                            PageTable.AddProcess(ToDump[i], memAxs, true, 1);
+                            PageTable.AddProcess(ToDump[i], memAxs, true);
 
                         WriteColor(ConsoleColor.Magenta, $"{i} VMCS:{vmcs:X} Process:{ToDump[i].CR3Value:X} (top level) {ToDump[i].PT.Root.Count} type {ToDump[i].PageTableType} group {ToDump[i].Group}");
                     }
@@ -1525,19 +1481,7 @@ DoubleBreak:
                     WriteColor(ConsoleColor.Cyan, $" {mr.Key} {mr.Value.PTE}");
             }
         }
-
-        public void WriteColor(ConsoleColor ForeGround, string var)
-        {
-            ForegroundColor = ForeGround;
-            WriteLine(var);
-        }
-        public void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
-        {
-            BackgroundColor = BackGround;
-            ForegroundColor = ForeGround;
-            WriteLine(var);
-        }
-
+        
         public void PrintLastDumped(List<string> LastList)
         {
             foreach(var s in LastList)

@@ -529,7 +529,7 @@ namespace inVtero.net
                                         dp.TopPageTablePage.Add(p, block[p]);
                                 }
                                 DetectedProcesses.TryAdd(offset, dp);
-                                if (Vtero.VerboseOutput)
+                                if (Vtero.DiagOutput)
                                     WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, dp.ToString());
                                 Candidate = true;
                             }
@@ -720,7 +720,6 @@ namespace inVtero.net
                             FileSize = new FileInfo(Filename).Length;
 
                         // TODO: Clean up all the shifts
-
                         while (CurrWindowBase < FileSize)
                         {
                             using (var reader = mmap.CreateViewAccessor(CurrWindowBase, mapSize, MemoryMappedFileAccess.Read))
@@ -737,7 +736,6 @@ namespace inVtero.net
                                     var offset_pfn = offset >> MagicNumbers.PAGE_SHIFT;
                                     // next page, may be faster with larger chunks but it's simple to view 1 page at a time
                                     long IndexedOffset_pfn = 0;
-
                                     do
                                     {
                                         IndexedOffset_pfn = vtero.MemAccess.OffsetToMemIndex(offset_pfn + RunShift);

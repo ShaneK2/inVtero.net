@@ -18,7 +18,7 @@ namespace inVtero.net
     /// </summary>
     /// 
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
-    public class MemSection
+    public class MemSection : IComparable
     {
         public string Name;
         public VIRTUAL_ADDRESS VA;
@@ -35,5 +35,14 @@ namespace inVtero.net
 
         // Often PE section data will overlap the MM system's protection scheme
         public List<MemSection> SubSections;
+
+        public int CompareTo(object obj)
+        {
+            var other = obj as MemSection;
+            if (other == null)
+                return int.MaxValue;
+
+            return other.VA.Address.CompareTo(VA.Address);
+        }
     }
 }

@@ -54,14 +54,14 @@ namespace inVtero.net
 
         public PageTableRoot Root;
         [ProtoIgnore]
-        DetectedProc DP;
+        public DetectedProc DP;
         [ProtoIgnore]
         public Mem mem { get; private set; }
         bool KernelSpace;
         public int DepthParsed;
         public long EntriesParsed;
 
-        public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true, int DepthToGo = 4)
+        public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true)
         {
             if(Vtero.DiagOutput)
                 WriteLine($"PT analysis of {dp}");
@@ -368,8 +368,8 @@ namespace inVtero.net
             if (DP.PT == null)
                 PageTable.AddProcess(DP, DP.MemAccess);
 
-            //Parallel.ForEach(DP.TopPageTablePage, (kvp) =>
-            foreach (var kvp in DP.TopPageTablePage)
+            Parallel.ForEach(DP.TopPageTablePage, (kvp) =>
+            //foreach (var kvp in DP.TopPageTablePage)
             {
                 // were at the top level (4th)
                 VA.PML4 = kvp.Key;
@@ -396,8 +396,8 @@ namespace inVtero.net
                         }
                     }
                 }
-            }
-            //});
+            //}
+            });
             return PageQueue.Count();
         }
 

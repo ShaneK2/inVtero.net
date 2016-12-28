@@ -12,10 +12,10 @@ namespace Dia2Sharp
 {
     public class Sym
     {
-        public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
+        //public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
         public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
 
-        public static Sym Initalize(String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_DEBUG)
+        public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_DEBUG)
         {
             DebugHelp.SymSetOptions(Options);
 
@@ -24,7 +24,7 @@ namespace Dia2Sharp
                 if (string.IsNullOrWhiteSpace(SymPath))
                     SymPath = "SRV*http://msdl.microsoft.com/download/symbols";
 
-            bool symStatus = DebugHelp.SymInitialize(hCurrentProcess, SymPath, false);
+            bool symStatus = DebugHelp.SymInitialize(Handle, SymPath, false);
             if (!symStatus)
                 WriteLine($"symbol status  {symStatus}:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
 

@@ -140,12 +140,12 @@ namespace Dia2Sharp
         };
 
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode)]
-        public static extern bool SymInitialize(IntPtr hProcess, [MarshalAs(UnmanagedType.LPWStr)] string UserSearchPath, bool fInvadeProcess);
+        public static extern bool SymInitialize(long hProcess, [MarshalAs(UnmanagedType.LPWStr)] string UserSearchPath, bool fInvadeProcess);
 
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymFindFileInPath(
-            IntPtr hProcess,
+            long hProcess,
             string SearchPath,
             [MarshalAs(UnmanagedType.LPWStr), In]  string FileName,
             IntPtr TimeDate,
@@ -159,7 +159,7 @@ namespace Dia2Sharp
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymFindFileInPathW(
-            IntPtr hProcess,
+            long hProcess,
             string searchPath,
             [MarshalAs(UnmanagedType.LPWStr), In] string fileName,
             ref Guid id,
@@ -174,7 +174,7 @@ namespace Dia2Sharp
 
         [DllImport("dbghelp.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool SymEnumSymbols(IntPtr hProcess, ulong BaseOfDll, string Mask, PSYM_ENUMERATESYMBOLS_CALLBACK EnumSymbolsCallback, IntPtr UserContext);
+        public static extern bool SymEnumSymbols(long hProcess, ulong BaseOfDll, string Mask, PSYM_ENUMERATESYMBOLS_CALLBACK EnumSymbolsCallback, IntPtr UserContext);
         public delegate bool PSYM_ENUMERATESYMBOLS_CALLBACK(ref SYMBOL_INFO pSymInfo, uint SymbolSize, IntPtr UserContext);
 
         public static bool EnumSyms(ref SYMBOL_INFO pSymInfo, uint SymbolSize, IntPtr UserContext)
@@ -187,7 +187,7 @@ namespace Dia2Sharp
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymFromName(
-            IntPtr hProcess,
+            long hProcess,
             [MarshalAs(UnmanagedType.LPTStr)] string SymName,
             ref SYMBOL_INFO pSymInfo);
 
@@ -210,7 +210,7 @@ namespace Dia2Sharp
 
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         public static extern ulong SymLoadModuleExW(
-            IntPtr hProcess,
+            long hProcess,
             IntPtr hFile,
             string ImageName,
             string ModuleName,
@@ -223,13 +223,13 @@ namespace Dia2Sharp
         [DllImport("dbghelp.dll", SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymUnloadModule64(
-            IntPtr hProcess,
+            long hProcess,
             ulong BaseOfDll);
 
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymGetLineFromAddrW64(
-            IntPtr hProcess,
+            long hProcess,
             ulong Address,
             ref Int32 Displacement,
             ref IntPtr Line
@@ -238,13 +238,13 @@ namespace Dia2Sharp
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymFromAddrW(
-            IntPtr hProcess,
+            long hProcess,
             ulong Address,
             ref ulong Displacement,
             ref SYMBOL_INFO Symbol
         );
         [DllImport("dbghelp.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        public static extern ulong SymLoadModuleEx(IntPtr hProcess, IntPtr hFile, string ImageName, string ModuleName, long BaseOfDll, int DllSize, IntPtr Data, int Flags);
+        public static extern ulong SymLoadModuleEx(long hProcess, IntPtr hFile, string ImageName, string ModuleName, long BaseOfDll, int DllSize, IntPtr Data, int Flags);
 
 
         [DllImport("dbghelp.dll", SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]

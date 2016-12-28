@@ -22,18 +22,26 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Serialization;
+using System.Text;
+using System.Threading.Tasks;
+using System.Collections.Concurrent;
+using static inVtero.net.Misc;
+using Dia2Sharp;
+using System.Linq;
 
 namespace inVtero.net
 {
+
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
-    public class DetectedProc : IComparable
+    public class DetectedProc : IComparable, IDisposable
     {
         public DetectedProc()
         {
             SymbolStore = new Dictionary<string, long>();
             TopPageTablePage = new Dictionary<int, long>();
             LogicalProcessList = new List<dynamic>();
-            Sections = new List<MemSection>();
+            Sections = new ConcurrentDictionary<long, MemSection>();
+            ID = Guid.NewGuid();
         }
         public int ASGroup;
         public int Group;       // linux only 
@@ -47,7 +55,13 @@ namespace inVtero.net
         public int Mode; // 1 or 2
         public PTType PageTableType;
 
-        public List<MemSection> Sections;
+        public Guid ID;
+
+        // symbol info provider
+        [ProtoIgnore]
+        public Sym sym;
+
+        public ConcurrentDictionary<long, MemSection> Sections;
 
         /*
         public CODEVIEW_HEADER DebugData;
@@ -64,12 +78,145 @@ namespace inVtero.net
         public Dictionary<string, long> SymbolStore;
 
         [ProtoIgnore]
-        // Relevent when parsing Kernel
+        // Relevant when parsing Kernel
         public List<dynamic> LogicalProcessList;
 
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
+        public dynamic xStructInfo(string Struct, long[] memRead = null, string Module = "ntkrnlmp")
+        {
+
+            var pdbPaths = from files in Sections.Values
+                          where files.DebugDetails != null &&
+                          files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
+                          select files;
+
+            var pdb = pdbPaths.FirstOrDefault();
+
+            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead);
+        }
+
+        /// <summary>
+        /// Currently we scan hard for only kernel regions (2MB pages + ExEC)
+        /// If there are kernel modules named the OnlyModule it may cause us to ignore the real one in that case
+        /// you can still scan for * by passing null or empty string
+        /// </summary>
+        /// <param name="OnlyModule">Stop when the first module named this is found</param>
+        public void ScanAndLoadModules(string OnlyModule = "ntkrnlmp")
+        {
+
+            PageTable.AddProcess(this, new Mem(MemAccess));
+
+            var cnt = PT.FillPageQueue(true);
+
+            var KVS = new VirtualScanner(this, new Mem(MemAccess));
+            KVS.ScanMode = VAScanType.PE_FAST;
+
+            Parallel.For(0, cnt, (i, loopState) =>
+            {
+                PFN range;
+
+                var curr = cnt - PT.PageQueue.Count;
+                var done = (int)(Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0) + 0.5;
+
+                if (PT.PageQueue.TryDequeue(out range))
+                    if (range.PTE.Valid)
+                    {
+                        var found = KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
+                        // Attempt load
+                        foreach(var artifact in found)
+                        {
+                            var ms = new MemSection() { IsExec = true, Module = artifact.Value, VA = new VIRTUAL_ADDRESS(artifact.Key) };
+                            var extracted = ExtractCVDebug(ms);
+                            if (extracted == null)
+                                continue;
+
+                            if (!string.IsNullOrWhiteSpace(OnlyModule) && OnlyModule != ms.Name)
+                                continue;
+
+                            if (!Sections.ContainsKey(artifact.Key))
+                                Sections.TryAdd(artifact.Key, ms);
+
+                            // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
+                            // entirely by the handle ID really which is local to our GUID so....   
+                            sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                            if (Vtero.VerboseOutput)
+                                WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.DebugDetails.PDBFullPath}]");
+
+                            if (!string.IsNullOrWhiteSpace(OnlyModule))
+                            {
+                                if (!string.IsNullOrWhiteSpace(ms.Name) && ms.Name == OnlyModule)
+                                {
+                                    loopState.Stop();
+                                    return;
+                                }
+                            }
+                            if (loopState.IsStopped)
+                                return;
+                        }
+                    }
+
+                if (loopState.IsStopped)
+                    return;
+            });
+        }
+
+        /// <summary>
+        ///  This guy names the section and establishes the codeview data needed for symbol handling
+        /// </summary>
+        /// <param name="sec"></param>
+        /// <returns></returns>
+        public CODEVIEW_HEADER ExtractCVDebug(MemSection sec)
+        {
+            uint SizeData = 0, RawData = 0, PointerToRawData = 0;
+
+            Extract Ext = sec.Module;
+            long VA = sec.VA.Address;
+
+            var _va = VA + Ext.DebugDirPos;
+            var block = VGetBlock(_va);
+            var TimeDate2 = BitConverter.ToUInt32(block, ((int)Ext.DebugDirPos & 0xfff) + 4);
+            if (TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
+            {
+                WriteColor(ConsoleColor.Yellow, "Unable to lock on to CV data.");
+                return null;
+            }
+
+            var max_offset = (int)(_va & 0xfff) + 28;
+            if (max_offset > 0x1000)
+                return null;
+
+            SizeData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 16);
+            RawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 20);
+            PointerToRawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 24);
+
+            _va = VA + RawData;
+
+            var bytes = new byte[16];
+
+            block = VGetBlock(_va);
+
+            // first 4 bytes
+            var sig = block[((int)_va & 0xfff)];
+
+            Array.ConstrainedCopy(block, (((int)_va & 0xfff) + 4), bytes, 0, 16);
+            var gid = new Guid(bytes);
+
+            // after GUID
+            var age = block[((int)_va & 0xfff) + 20];
+
+            // char* at end
+            var str = Encoding.Default.GetString(block, (((int)_va & 0xfff) + 24), 32).Trim();
+            var cv = new CODEVIEW_HEADER { VSize = (int)Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
+            sec.Name = str.Substring(0, str.IndexOf('.')).ToLower();
+            sec.DebugDetails = cv;
+
+            return cv;
+        }
+
+
+        #region Memory Accessors 
         public byte GetByteValue(long VA)
         {
             var data = VGetBlock(VA);
@@ -257,7 +404,7 @@ namespace inVtero.net
                 Array.Copy(block, startIndex, rv, 0, count);
             return rv;
         }
-
+        #endregion
 
         [ProtoIgnore]
         public Mem MemAccess { get; set; }
@@ -287,6 +434,12 @@ namespace inVtero.net
             }
             return int.MinValue;
         }
+
+        public void Dispose()
+        {
+            foreach (var addr in Sections)
+                DebugHelp.SymUnloadModule64(ID.GetHashCode(), (ulong) addr.Key);
+        }
     }
 
 
@@ -296,7 +449,6 @@ namespace inVtero.net
         public VMCS()
         {
         }
-
 
         [ProtoIgnore]
         public DetectedProc dp; // which proc this came from

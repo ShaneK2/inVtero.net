@@ -31,20 +31,19 @@ using ConsoleUtils;
 
 namespace inVtero.net
 {
-   
     public class Analyze
     {
         public Analyze() { }
 
         public static void DumpDetected(Vtero vtero, DetectedProc p, long VAStart = 0, long VAEnd = 0xffffffff0000)
         {
-            var mods = vtero.ModuleScan(p, VAStart, VAEnd);
+            var mods = vtero.ModuleScan(p, 3, VAStart, VAEnd);
 
             //Parallel.ForEach(mods, (detected) =>
             //{
             foreach (var detected in p.Sections)
             {
-                var cv_data = vtero.ExtractCVDebug(p, detected);
+                var cv_data = vtero.ExtractCVDebug(p, detected.Value);
 
                 if (cv_data != null)
                 {
@@ -52,8 +51,9 @@ namespace inVtero.net
                     if (string.IsNullOrWhiteSpace(sympath))
                         sympath = "SRV*http://msdl.microsoft.com/download/symbols";
 
-                    if(vtero.TryLoadSymbols(cv_data, detected.VA.Address, sympath))
-                        vtero.KernelProc = p;
+                    // TODO: fix this or not?  
+                    //if(Vtero.TryLoadSymbols(p.ID.GetHashCode(), cv_data, detected.Key))
+                    //    vtero.KernelProc = p;
                 }
             }
             //});

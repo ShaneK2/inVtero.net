@@ -131,7 +131,8 @@ namespace inVtero.net.ConsoleUtils
 
             if (!vtero.OverRidePhase)
             {
-                WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"{procCount} candidate process page tables. Time so far: {QuickOptions.Timer.Elapsed}, second pass starting. {QuickOptions.FormatRate(vtero.FileSize, QuickOptions.Timer.Elapsed)}");
+                if (co.VerboseLevel > 1)
+                    WriteColor(ConsoleColor.Blue, ConsoleColor.Black, $"{procCount} candidate process page tables. Time so far: {QuickOptions.Timer.Elapsed}, second pass starting. {QuickOptions.FormatRate(vtero.FileSize, QuickOptions.Timer.Elapsed)}");
                 if (procCount < 3)
                 {
                     WriteColor(ConsoleColor.Red, "Seems like a fail. Try generic scanning or implement a state scan like LinuxS");

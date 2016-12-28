@@ -89,7 +89,7 @@ namespace inVtero.net
                     {
                         WriteLine($"Proc: {p.CR3Value:X}");
                         Detections = Detections.Concat(
-                            vtero.ModuleScan(p, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
+                            vtero.ModuleScan(p, 3, KernVAStart, KernVAEnd).Where(x => !Detections.ContainsKey(x.Key)))
                             .ToDictionary(x => x.Key, x => x.Value);
 
                         if (Detections.Count() > 0)
@@ -120,7 +120,7 @@ namespace inVtero.net
                                         if (string.IsNullOrWhiteSpace(sympath))
                                             sympath = "SRV*http://msdl.microsoft.com/download/symbols";
 
-                                        if (vtero.TryLoadSymbols(cv_data, detected.Key, sympath))
+                                        if (Vtero.TryLoadSymbols(cv_data, detected.Key, sympath))
                                             Decoded = vtero.GetKernelDebuggerData(LikelyKernel, detected.Value, cv_data, sympath);
                                     }
                                     */

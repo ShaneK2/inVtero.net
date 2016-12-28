@@ -75,9 +75,7 @@ namespace inVtero.net
 
         public VirtualScanner()
         {
-            DetectedFragments = new ConcurrentDictionary<long, VAScanType>();
             Artifacts = new ConcurrentDictionary<long, Extract>();
-
             CheckMethods = new List<Func<long, long[], VAScanType>>();
             ScanList = new WAHBitArray(); 
         }
@@ -112,18 +110,15 @@ namespace inVtero.net
             return VAScanType.UNDETERMINED;
         }
 
-        public ConcurrentDictionary<long, VAScanType> DetectedFragments;
-
         /// <summary>
-        /// 
+        /// Scan and return Extract objects which represent detected PE's
         /// </summary>
         /// <param name="Start"></param>
         /// <param name="Stop">We just truncate VA's at 48 bit's</param>
         /// <returns>count of new detections since last Run</returns>
-        public long Run(long Start=0, long Stop = 0xFFFFffffFFFF)
+        public Dictionary<long, Extract> Run(long Start=0, long Stop = 0xFFFFffffFFFF)
         {
-            DetectedFragments = new ConcurrentDictionary<long, VAScanType>();
-            
+            var rv = new Dictionary<long, Extract>();
             // convert index to an address 
             // then add start to it
             long i = Start;
@@ -154,14 +149,13 @@ namespace inVtero.net
                     var scan_detect = scanner(Curr, block);
                     if (scan_detect != VAScanType.UNDETERMINED)
                     {
-                        DetectedFragments.TryAdd(Curr, scan_detect);
+                        rv.Add(Curr, Artifacts[Curr]);
                         if (Vtero.VerboseOutput)
                             Console.WriteLine($"Detected PE @ VA {Curr:X}");
                     }
                 }
             }
-
-            return DetectedFragments.Count();
+            return rv;
         }
     }
 }

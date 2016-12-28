@@ -13,15 +13,19 @@
 # you also want symsrv.dll and dbghelp.dll in the current folder =)
 #
 # Play with the PTType and stuff for nested hypervisors =) (PTTYPE VMCS)
-#
-#MemoryDump = "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem"   
-#MemoryDump = "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem"   
-#MemoryDump = "d:\\temp\\2012R2.debug.MEMORY.DMP"
-#MemoryDump = "d:\\temp\\server2016.xendump"
-#MemoryDump = "c:\\temp\\win10.64.xendump"
-MemoryDump = "c:\\temp\\2012R2.xendump"
-#MemoryDump = "D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem"
-#MemoryDump = "D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
+
+
+MemList = [
+"C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
+"c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
+"C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
+"d:\\temp\\2012R2.debug.MEMORY.DMP",
+"d:\\temp\\server2016.xendump",
+"c:\\temp\\win10.64.xendump",
+"c:\\temp\\2012R2.xendump",
+"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem",
+"D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
+]
 
 import clr,sys
 
@@ -36,127 +40,111 @@ from System import Environment, String, Console, ConsoleColor
 from System import Text
 from System.Diagnostics import Stopwatch
 
-MemoryDumpSize = FileInfo(MemoryDump).Length
+TotalSizeAnalyzed = 0
+Vtero.VerboseOutput = True
+Vtero.DiagOutput = False
+Vtero.VerboseLevel = 1
 
 # This code fragment can be removed but it's a reminder you need symbols working
 sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH")
 if String.IsNullOrWhiteSpace(sympath):
     sympath = "SRV*http://msdl.microsoft.com/download/symbols"
 
-# Basic option handling
-# This script can be pretty chatty to stdout 
-# 
-copts = ConfigOptions()
-copts.IgnoreSaveData = False
-copts.FileName = MemoryDump
-copts.VersionsToEnable = PTType.GENERIC
-# To get some additional output 
-copts.VerboseOutput = True
-copts.VerboseLevel = 1
-Vtero.VerboseOutput = True
-Vtero.DiagOutput = True
-
-runTime = Stopwatch.StartNew()
-
-# since we are not ignoring SaveData, this just get's our state from
-# the underlying protobuf, pretty fast
-vtero = Scan.Scanit(copts)
-
-proc_arr = vtero.Processes.ToArray()
-low_proc = proc_arr[0]
-for proc in proc_arr:
-    if proc.CR3Value < low_proc.CR3Value:
-        low_proc = proc
-
-proc = low_proc
-
-swModScan = Stopwatch.StartNew()
-# if we have save state we can skip this entirely
-if vtero.KVS is None or vtero.KVS.Artifacts is None:
-    #this thing is pretty expensive right now :(
-    #at least it's threaded for you
-    #it's an optimized kernel scan at this time
-    likelyKernelModules = vtero.ModuleScan(proc)
-    print "Module Scan time: " + swModScan.Elapsed.ToString()
-
-vtero.CheckpointSaveState()
-
-# this initial pass for module scan should only be for Kernel
-for section in proc.Sections:
-    vtero.ExtractCVDebug(proc, section)
-    if section.DebugDetails is not None:
-        if vtero.TryLoadSymbols(section.DebugDetails, section.VA.Address, sympath) == True:
-            vtero.KernelProc = proc
-
-# Symbol scan using GUID & DWORD methods
-# If you can't match symbols you can use other API for most goals
-# BUGBUG: weird bug you have to run this twice, not a big deal since we
-# do get past a checkpoint.  Need to review protobuf code around here
-#for detected in vtero.KVS.Artifacts:
-#    cv_data = vtero.ExtractCVDebug(proc, detected.Value, detected.Key)
-#    if cv_data is not None:
-#        if vtero.TryLoadSymbols(cv_data, detected.Key, sympath):
-#            vtero.GetKernelDebuggerData(proc, detected.Value, cv_data, sympath)
-
-vtero.CheckpointSaveState()
-
-# Use dynamic typing to walk EPROCES 
-logicalList = vtero.WalkProcList(proc)
-
-print "Physical Proc Count: " + proc_arr.Count.ToString()
-for pproc in proc_arr:
-    print pproc
-
-if logicalList is not None:
-    print "Logical Proc Count: " + logicalList.Count.ToString()
-    for proc in logicalList:
-        # This is due to a structure member name change pre win 8
-        if proc.Dictionary.ContainsKey("VadRoot.BalancedRoot.RightChild"):
-            proc.VadRoot = proc.Dictionary["VadRoot.BalancedRoot.RightChild"]
-        print proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
-    Console.ForegroundColor = ConsoleColor.Green;
-    print "Green text is OK++"
-    print "checking that all logical processes exist in the physical list."
-    # Miss list mostly bad for yellow printing  
-    for proc in logicalList:
-        found=False
-        for hwproc in proc_arr:
-            if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
-                found=True
-        if found == False:
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            if proc.VadRoot == 0:
-                Console.ForegroundColor = ConsoleColor.Green;
-            print "Logical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
-    print "Checking that all physical processes exist in the logical list"
-    for hwproc in proc_arr:
-        Found=False
+def ScanDump(MemoryDump):
+    MemoryDumpSize = FileInfo(MemoryDump).Length
+    # Basic option handling
+    # This script can be pretty chatty to stdout 
+    copts = ConfigOptions()
+    copts.IgnoreSaveData = False
+    copts.FileName = MemoryDump
+    copts.VersionsToEnable = PTType.GENERIC
+    # To get some additional output 
+    copts.VerboseLevel = 0
+    # Check StopWatch
+    runTime = Stopwatch.StartNew()
+    # since we are not ignoring SaveData, this just get's our state from
+    # the underlying protobuf, pretty fast
+    vtero = Scan.Scanit(copts)
+    proc_arr = vtero.Processes.ToArray()
+    low_proc = proc_arr[0]
+    for proc in proc_arr:
+        if proc.CR3Value < low_proc.CR3Value:
+            low_proc = proc
+    proc = low_proc
+    print "Assumed Kernel Proc: " + proc.ToString()
+    vtero.CheckpointSaveState()
+    proc.MemAccess = Mem(vtero.MemAccess)
+    swModScan = Stopwatch.StartNew()
+    # by default this will scan for kernel symbols 
+    if vtero.KVS is None or vtero.KVS.Artifacts is None:
+        proc.ScanAndLoadModules()
+        vtero.CheckpointSaveState()
+    # Use dynamic typing to walk EPROCES 
+    logicalList = vtero.WalkProcList(proc)
+    print "Physical Proc Count: " + proc_arr.Count.ToString()
+    #for pproc in proc_arr:
+    #    print pproc
+    if logicalList is not None:
+        print "Logical Proc Count: " + logicalList.Count.ToString()
         for proc in logicalList:
-            if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
-                found=True
-        if found == False:
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            if proc.VadRoot == 0:
-                Console.ForegroundColor = ConsoleColor.Green;
-                print "An expected, ",
+            # This is due to a structure member name change pre win 8
+            if proc.Dictionary.ContainsKey("VadRoot.BalancedRoot.RightChild"):
+                proc.VadRoot = proc.Dictionary["VadRoot.BalancedRoot.RightChild"]
+            print proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
+        Console.ForegroundColor = ConsoleColor.Green;
+        print "checking that all logical processes exist in the physical list."
+        # Miss list mostly bad for yellow printing  
+        for proc in logicalList:
+            found=False
+            for hwproc in proc_arr:
+                if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
+                    found=True
+            if found == False:
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                if proc.VadRoot == 0:
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    print "An expected, ",
+                print "Logical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
+        print "Checking that all physical processes exist in the logical list"
+        for hwproc in proc_arr:
+            Found=False
+            for proc in logicalList:
+                if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
+                    found=True
+            if found == False:
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                if proc.VadRoot == 0:
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    print "An expected, ",
                 print "physical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
+    print "PART RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP SIZE: " + MemoryDumpSize.ToString("N") + " bytes."
+    print "SPEED: " + ((MemoryDumpSize / 1024) / ((runTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
+    return vtero
 
-print "TOTAL RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP SIZE: " + MemoryDumpSize.ToString("N") + " bytes."
-print "SPEED: " + ((MemoryDumpSize / 1024) / ((runTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
+# Check StopWatch
+TotalRunTime = Stopwatch.StartNew()
+TotalSizeAnalyzed = 0
+
+for MemoryDump in MemList:
+    print " ++++++++++++++++++++++++++++++ ANALYZING INPUT [" + MemoryDump + "] ++++++++++++++++++++++++++++++ "
+    if not File.Exists(MemoryDump):
+        print "Can not find dump to analyze: " + MemoryDump
+        continue
+    vtero = ScanDump(MemoryDump)
+    TotalSizeAnalyzed += vtero.FileSize
+    print " ++++++++++++++++++++++++++++++ DONE WITH INPUT [" + MemoryDump + "] ++++++++++++++++++++++++++++++ "
+
+print "TOTAL RUNTIME: " + TotalRunTime.Elapsed.ToString() + " (seconds), TOTAL DATA ANALYZED: " + TotalSizeAnalyzed.ToString("N") + " bytes."
+print "SPEED: " + ((TotalSizeAnalyzed / 1024) / ((TotalRunTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
 print "ALL DONE... Please explore!"
 
-# Get detected symbol file to use for loaded vtero
-symFile = ""
-for section in vtero.KernelProc.Sections:
-    if section.DebugDetails.PDBFullPath.Contains("ntkrnlmp"):
-        symFile = section.DebugDetails.PDBFullPath
 
 # This one is recursive down a tree
-def ListVAD(VadRoot):
+def ListVAD(proc, VadRoot):
     if VadRoot == 0:
         return
-    pMMVadArr = vtero.KernelProc.GetVirtualLong(VadRoot)
-    mmvad = vtero.SymForKernel.xStructInfo(symFile,"_MMVAD", pMMVadArr)
+    pMMVadArr = proc.GetVirtualLong(VadRoot)
+    mmvad = proc.xStructInfo("_MMVAD", pMMVadArr)
     IsExec = False
     # This is to support 7 and earlier kernels
     if mmvad.Dictionary.ContainsKey("Core"):
@@ -168,13 +156,13 @@ def ListVAD(VadRoot):
             IsExec = True
     # Check VAD Flags for execute permission before we spend time looking at this entry
     if IsExec:
-        subsect = vtero.SymForKernel.xStructInfo(symFile,"_SUBSECTION", vtero.KernelProc.GetVirtualLong(mmvad.Subsection.Value))
-        control_area = vtero.SymForKernel.xStructInfo(symFile,"_CONTROL_AREA", vtero.KernelProc.GetVirtualLong(subsect.ControlArea.Value))
-        segment = vtero.SymForKernel.xStructInfo(symFile,"_SEGMENT", vtero.KernelProc.GetVirtualLong(control_area.Segment.Value))
+        subsect = proc.xStructInfo("_SUBSECTION")
+        control_area = proc.xStructInfo("_CONTROL_AREA", proc.GetVirtualLong(subsect.ControlArea.Value))
+        segment = proc.xStructInfo("_SEGMENT", proc.GetVirtualLong(control_area.Segment.Value))
         # look for file pointer
         if control_area.FilePointer.Value != 0:
-            file_pointer = vtero.SymForKernel.xStructInfo(symFile,"_FILE_OBJECT", vtero.KernelProc.GetVirtualLong(control_area.FilePointer.Value & -16))
-            fileNameByteArr = vtero.KernelProc.GetVirtualByte(file_pointer.FileName.Buffer.Value)
+            file_pointer = proc.xStructInfo("_FILE_OBJECT", proc.GetVirtualLong(control_area.FilePointer.Value & -16))
+            fileNameByteArr = proc.GetVirtualByte(file_pointer.FileName.Buffer.Value)
             fileNameString = Text.Encoding.Unicode.GetString(fileNameByteArr).Split('\x00')[0]
             print "Mapped File: " + fileNameString 
     # Core is the more recent kernels
@@ -186,28 +174,28 @@ def ListVAD(VadRoot):
         ListVAD(mmvad.RightChild.Value)
 
 # Here we walk another LIST_ENTRY
-def WalkETHREAD(eThreadHead):
-    typedef = vtero.SymForKernel.xStructInfo(symFile,"_ETHREAD")
+def WalkETHREAD(proc, eThreadHead):
+    typedef = proc.xStructInfo("_ETHREAD")
     ThreadOffsetOf = typedef.ThreadListEntry.OffsetPos
     _ETHR_ADDR = eThreadHead
     while True:
-        memRead = vtero.KernelProc.GetVirtualLong(_ETHR_ADDR - ThreadOffsetOf)
-        _ETHREAD = vtero.SymForKernel.xStructInfo(symFile,"_ETHREAD", memRead)
+        memRead = proc.GetVirtualLong(_ETHR_ADDR - ThreadOffsetOf)
+        _ETHREAD = proc.xStructInfo("_ETHREAD", memRead)
         print "Thread [" + _ETHREAD.Cid.UniqueThread.Value.ToString("X") + "] BASE", 
         print "[0x" + _ETHREAD.Tcb.StackBase.Value.ToString("X") + "] LIMIT [0x" + _ETHREAD.Tcb.StackLimit.Value.ToString("X") + "]"
         _ETHR_ADDR = memRead[ThreadOffsetOf / 8]
         if _ETHR_ADDR == eThreadHead:
             return
 
-def WalkModules(ModLinkHead):
+def WalkModules(proc, ModLinkHead):
     ImagePath = ""
     _LDR_DATA_ADDR = ModLinkHead
     while True:
-        memRead = vtero.KernelProc.GetVirtualLong(_LDR_DATA_ADDR)
-        _LDR_DATA = vtero.SymForKernel.xStructInfo(symFile,"_LDR_DATA_TABLE_ENTRY", memRead)
+        memRead = proc.GetVirtualLong(_LDR_DATA_ADDR)
+        _LDR_DATA = proc.xStructInfo("_LDR_DATA_TABLE_ENTRY", memRead)
         ImagePathPtr = memRead[(_LDR_DATA.FullDllName.OffsetPos+8) / 8]
         if ImagePathPtr != 0:
-            ImagePathArr =  vtero.KernelProc.GetVirtualByte(ImagePathPtr)
+            ImagePathArr =  proc.GetVirtualByte(ImagePathPtr)
             ImagePath = Text.Encoding.Unicode.GetString(ImagePathArr).Split('\x00')[0]
         else:
             ImagePath = ""
@@ -217,29 +205,29 @@ def WalkModules(ModLinkHead):
             return
 
 # Example of walking process list
-def WalkProcListExample():
+def WalkProcListExample(proc):
     #
     #  WALK KERNEL 
     #
     print "Walking Kernel modules..."
-    pModuleHead = vtero.GetSymValueLong(vtero.KernelProc,"PsLoadedModuleList")
-    WalkModules(pModuleHead)
+    pModuleHead = proc.GetSymValueLong("PsLoadedModuleList")
+    WalkModules(proc, pModuleHead)
     # Get a typedef 
     print "Walking Kernel processes..."
-    x = vtero.SymForKernel.xStructInfo(symFile,"_EPROCESS")
+    x = proc.xStructInfo("_EPROCESS")
     ProcListOffsetOf = x.ActiveProcessLinks.Flink.OffsetPos
     ImagePath = ""
-    psHead = vtero.GetSymValueLong(vtero.KernelProc,"PsActiveProcessHead")
+    psHead = proc.GetSymValueLong("PsActiveProcessHead")
     _EPROC_ADDR = psHead
     while True:
-        memRead = vtero.KernelProc.GetVirtualLong(_EPROC_ADDR - ProcListOffsetOf)
-        _EPROC = vtero.SymForKernel.xStructInfo(symFile,"_EPROCESS", memRead)
+        memRead = proc.GetVirtualLong(_EPROC_ADDR - ProcListOffsetOf)
+        _EPROC = proc.xStructInfo("_EPROCESS", memRead)
         # prep and acquire memory for strings
         # TODO: We should scan structures for UNICODE_STRING automatically since extracting them is something * wants
         ImagePtrIndex = _EPROC.SeAuditProcessCreationInfo.ImageFileName.OffsetPos / 8
-        ImagePathPtr = memRead[ImagePtrIndex];
+        ImagePathPtr = memRead[ImagePtrIndex]
         if ImagePathPtr != 0:
-            ImagePathArr =  vtero.KernelProc.GetVirtualByte(ImagePathPtr + 0x10)
+            ImagePathArr =  proc.GetVirtualByte(ImagePathPtr + 0x10)
             ImagePath = Text.Encoding.Unicode.GetString(ImagePathArr).Split('\x00')[0]
         else:
             ImagePath = ""
