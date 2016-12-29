@@ -14,7 +14,6 @@
 #
 # Play with the PTType and stuff for nested hypervisors =) (PTTYPE VMCS)
 
-
 MemList = [
 "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
 "c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
