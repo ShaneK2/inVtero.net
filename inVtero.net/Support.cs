@@ -37,6 +37,7 @@ namespace inVtero.net
  
     public static class MagicNumbers
     {
+        public const int PAGE_SIZE = 0x1000;
         public const int KERNEL_PT_INDEX_START_USUALLY = 256;
         public const int PAGE_SHIFT = 12;
         public const long BAD_VALUE_READ = -0xbad00;

@@ -13,17 +13,21 @@
 # you also want symsrv.dll and dbghelp.dll in the current folder =)
 #
 # Play with the PTType and stuff for nested hypervisors =) (PTTYPE VMCS)
+#
+# NtBuildNumber == kernel version
+#
 
 MemList = [
-"C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
-"c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
-"C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
-"d:\\temp\\2012R2.debug.MEMORY.DMP",
-"d:\\temp\\server2016.xendump",
-"c:\\temp\\win10.64.xendump",
-"c:\\temp\\2012R2.xendump",
-"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem",
-"D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
+#"C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
+#"c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
+#"C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
+#"d:\\temp\\2012R2.debug.MEMORY.DMP",
+#"d:\\temp\\server2016.xendump",
+#"c:\\temp\\win10.64.xendump",
+#"c:\\temp\\2012R2.xendump",
+#"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem",
+"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-bbbe109e.vmem",
+#"D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
 ]
 
 import clr,sys
@@ -71,13 +75,19 @@ def ScanDump(MemoryDump):
             low_proc = proc
     proc = low_proc
     print "Assumed Kernel Proc: " + proc.ToString()
+    vtero.KernelProc = proc
     vtero.CheckpointSaveState()
     proc.MemAccess = Mem(vtero.MemAccess)
     swModScan = Stopwatch.StartNew()
     # by default this will scan for kernel symbols 
     if vtero.KVS is None or vtero.KVS.Artifacts is None:
-        proc.ScanAndLoadModules()
+        kvs = proc.ScanAndLoadModules()
+        vtero.KVS = kvs
         vtero.CheckpointSaveState()
+    else:
+        proc.LoadSymbols()
+    kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
+    print "kernel minor version " + kMinorVer.ToString()
     # Use dynamic typing to walk EPROCES 
     logicalList = vtero.WalkProcList(proc)
     print "Physical Proc Count: " + proc_arr.Count.ToString()
@@ -161,16 +171,14 @@ def ListVAD(proc, VadRoot):
         # look for file pointer
         if control_area.FilePointer.Value != 0:
             file_pointer = proc.xStructInfo("_FILE_OBJECT", proc.GetVirtualLong(control_area.FilePointer.Value & -16))
-            fileNameByteArr = proc.GetVirtualByte(file_pointer.FileName.Buffer.Value)
-            fileNameString = Text.Encoding.Unicode.GetString(fileNameByteArr).Split('\x00')[0]
-            print "Mapped File: " + fileNameString 
+            print "Mapped File: " + file_pointer.FileName.Value 
     # Core is the more recent kernels
     if mmvad.Dictionary.ContainsKey("Core"):
-        ListVAD(mmvad.Core.VadNode.Left.Value)
-        ListVAD(mmvad.Core.VadNode.Right.Value)
+        ListVAD(proc, mmvad.Core.VadNode.Left.Value)
+        ListVAD(proc, mmvad.Core.VadNode.Right.Value)
     else:
-        ListVAD(mmvad.LeftChild.Value)
-        ListVAD(mmvad.RightChild.Value)
+        ListVAD(proc, mmvad.LeftChild.Value)
+        ListVAD(proc, mmvad.RightChild.Value)
 
 # Here we walk another LIST_ENTRY
 def WalkETHREAD(proc, eThreadHead):
@@ -186,23 +194,37 @@ def WalkETHREAD(proc, eThreadHead):
         if _ETHR_ADDR == eThreadHead:
             return
 
-def WalkModules(proc, ModLinkHead):
-    ImagePath = ""
+def WalkModules(proc, ModLinkHead, Verbose):
+    modlist = []
     _LDR_DATA_ADDR = ModLinkHead
     while True:
         memRead = proc.GetVirtualLong(_LDR_DATA_ADDR)
         _LDR_DATA = proc.xStructInfo("_LDR_DATA_TABLE_ENTRY", memRead)
-        ImagePathPtr = memRead[(_LDR_DATA.FullDllName.OffsetPos+8) / 8]
-        if ImagePathPtr != 0:
-            ImagePathArr =  proc.GetVirtualByte(ImagePathPtr)
-            ImagePath = Text.Encoding.Unicode.GetString(ImagePathArr).Split('\x00')[0]
-        else:
-            ImagePath = ""
-        print "Loaded Base: 0x" + _LDR_DATA.DllBase.Value.ToString("x") + " Length: 0x" + _LDR_DATA.SizeOfImage.Value.ToString("x8") + " \t Module: " + ImagePath
+        if Verbose:
+            print "Loaded Base: 0x" + _LDR_DATA.DllBase.Value.ToString("x") + " Length: 0x" + _LDR_DATA.SizeOfImage.Value.ToString("x8") + " \t Module: " + _LDR_DATA.FullDllName.Value
+        modlist.append(_LDR_DATA)
         _LDR_DATA_ADDR = memRead[0]
         if _LDR_DATA_ADDR == ModLinkHead:
+            return modlist
+
+
+def hives(proc):
+    _HIVE_HEAD_ADDR = proc.GetSymValueLong("CmpHiveListHead")
+    _HIVE_ADDR = _HIVE_HEAD_ADDR 
+    typedef = proc.xStructInfo("_CMHIVE")
+    hiveOffsetOf = typedef.HiveList.OffsetPos
+    Path = ""
+    while True:
+        memRead = proc.GetVirtualLongLen(_HIVE_ADDR - hiveOffsetOf, typedef.Length)
+        _HIVE2 = proc.xStructInfo("_CMHIVE", memRead)
+        if _HIVE2.Hive.Signature.Value != 0xffbee0bee0:
+            return
+        print "next Hive Signature [" + _HIVE2.Hive.Signature.Value.ToString("x") + "] path: " + _HIVE2.HiveRootPath.Value
+        _HIVE_ADDR = memRead[hiveOffsetOf/ 8]
+        if _HIVE_HEAD_ADDR == _HIVE_ADDR:
             return
 
+ 
 # Example of walking process list
 def WalkProcListExample(proc):
     #
@@ -210,7 +232,7 @@ def WalkProcListExample(proc):
     #
     print "Walking Kernel modules..."
     pModuleHead = proc.GetSymValueLong("PsLoadedModuleList")
-    WalkModules(proc, pModuleHead)
+    WalkModules(proc, pModuleHead, True)
     # Get a typedef 
     print "Walking Kernel processes..."
     x = proc.xStructInfo("_EPROCESS")
@@ -221,22 +243,16 @@ def WalkProcListExample(proc):
     while True:
         memRead = proc.GetVirtualLong(_EPROC_ADDR - ProcListOffsetOf)
         _EPROC = proc.xStructInfo("_EPROCESS", memRead)
+        ImagePath = _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value;
         # prep and acquire memory for strings
-        # TODO: We should scan structures for UNICODE_STRING automatically since extracting them is something * wants
-        ImagePtrIndex = _EPROC.SeAuditProcessCreationInfo.ImageFileName.OffsetPos / 8
-        ImagePathPtr = memRead[ImagePtrIndex]
-        if ImagePathPtr != 0:
-            ImagePathArr =  proc.GetVirtualByte(ImagePathPtr + 0x10)
-            ImagePath = Text.Encoding.Unicode.GetString(ImagePathArr).Split('\x00')[0]
-        else:
-            ImagePath = ""
         _EPROC_ADDR = memRead[ProcListOffsetOf / 8]
         print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] EXE [" + ImagePath + "]",
         print " CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"
+        #print "PEB: " + _EPROC.Peb.Ldr
         if _EPROC.VadRoot.Value != 0:
-            ListVAD(_EPROC.VadRoot.Value)
-        if _EPROC.ThreadListHead.Value != 0:
-            WalkETHREAD(_EPROC.ThreadListHead.Value)
+            ListVAD(proc, _EPROC.VadRoot.Value)
+        #if _EPROC.ThreadListHead.Value != 0:
+        #    WalkETHREAD(proc, _EPROC.ThreadListHead.Value)
         if _EPROC_ADDR == psHead:
             return
             

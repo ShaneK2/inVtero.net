@@ -28,6 +28,8 @@ using System.Collections.Concurrent;
 using static inVtero.net.Misc;
 using Dia2Sharp;
 using System.Linq;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 
 namespace inVtero.net
 {
@@ -84,17 +86,104 @@ namespace inVtero.net
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
+
+
         public dynamic xStructInfo(string Struct, long[] memRead = null, string Module = "ntkrnlmp")
         {
 
             var pdbPaths = from files in Sections.Values
-                          where files.DebugDetails != null &&
-                          files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
-                          select files;
+                           where files.DebugDetails != null &&
+                           files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
+                           select files;
 
             var pdb = pdbPaths.FirstOrDefault();
 
-            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead);
+            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByte, GetVirtualLong);
+        }
+
+        /// <summary>
+        /// TODO: Make better for all types
+        /// </summary>
+        /// <param name="dp"></param>
+        /// <param name="SymName"></param>
+        /// <returns>Currently a single byte for the address resolved from the Name</returns>
+        public long GetSymValueLong(string SymName)
+        {
+            long value = 0;
+
+            // debugging help really
+            if (SymbolStore.ContainsKey(SymName))
+                return SymbolStore[SymName];
+
+            value = GetLongValue(GetSymAddress(SymName));
+            SymbolStore.Add(SymName, value);
+
+            return value;
+        }
+
+        public long GetSymAddress(string SymName)
+        {
+            var AddrName = SymName + "Address";
+            if (SymbolStore.ContainsKey(AddrName))
+                return SymbolStore[AddrName];
+
+            DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
+
+            symInfo.SizeOfStruct = 0x58;
+            symInfo.MaxNameLen = 1024;
+
+            var rv = DebugHelp.SymFromName(ID.GetHashCode(), SymName, ref symInfo);
+            if (!rv)
+            {
+                WriteColor(ConsoleColor.Red, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
+                return MagicNumbers.BAD_VALUE_READ;
+            }
+
+            SymbolStore.Add(AddrName, symInfo.Address);
+
+            return symInfo.Address;
+        }
+
+        public void LoadModulesInRange(long VA, long length, string OnlyModule = null)
+        {
+            var KVS = new VirtualScanner(this, new Mem(MemAccess));
+            KVS.ScanMode = VAScanType.PE_FAST;
+
+            KVS.Run(VA, VA + length);
+
+            foreach(var artifact in KVS.Artifacts)
+            {
+                var ms = new MemSection() { IsExec = true, Module = artifact.Value, VA = new VIRTUAL_ADDRESS(artifact.Key) };
+                var extracted = ExtractCVDebug(ms);
+                if (extracted == null)
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(OnlyModule) && OnlyModule != ms.Name)
+                    continue;
+
+                if (!Sections.ContainsKey(artifact.Key))
+                    Sections.TryAdd(artifact.Key, ms);
+
+                // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
+                // entirely by the handle ID really which is local to our GUID so....   
+                sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                if (Vtero.VerboseOutput)
+                    WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.DebugDetails.PDBFullPath}]");
+            }
+
+        }
+
+        public void LoadSymbols(MemSection OnlyMS = null)
+        {
+            foreach(var ms in Sections)
+            {
+                if(OnlyMS == null || (OnlyMS != null && OnlyMS.VA.Address == ms.Key))
+                {
+                    sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
+                    if (Vtero.VerboseOutput)
+                        WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.Value.DebugDetails.PDBFullPath}]");
+                }
+            }
         }
 
         /// <summary>
@@ -103,7 +192,7 @@ namespace inVtero.net
         /// you can still scan for * by passing null or empty string
         /// </summary>
         /// <param name="OnlyModule">Stop when the first module named this is found</param>
-        public void ScanAndLoadModules(string OnlyModule = "ntkrnlmp")
+        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp")
         {
 
             PageTable.AddProcess(this, new Mem(MemAccess));
@@ -160,6 +249,7 @@ namespace inVtero.net
                 if (loopState.IsStopped)
                     return;
             });
+            return KVS;
         }
 
         /// <summary>
@@ -348,23 +438,34 @@ namespace inVtero.net
 
         public long[] GetVirtualLong(long VA)
         {
+            return GetVirtualLongLen(VA, 4096);
+        }
+        public long[] GetVirtualLongLen(long VA, int len = 4096)
+        {
             // offset to index
             long startIndex = (VA & 0xfff) / 8;
-            long count = 512 - startIndex;
+            int count = 512 - (int)startIndex;
             // get data
             var block = VGetBlockLong(VA);
 
+            long extra = len / 8;
+
             // adjust into return array 
-            var rv = new long[count + 512];
+            var rv = new long[count + extra];
             Array.Copy(block, startIndex, rv, 0, count);
 
-            VA += 4096;
-            var block2 = VGetBlockLong(VA);
-            Array.Copy(block2, 0, rv, count, 512);
-
+            var done = count * 8;
+            do
+            {
+                VA += 4096;
+                var block2 = VGetBlockLong(VA);
+                int copy_cnt = len - done < 4096 ? (len - done) / 8 : 512;
+                Array.Copy(block2, 0, rv, count, copy_cnt);
+                done += 512 * 8;
+                count += 512;
+            } while (done < len);
             return rv;
         }
-
 
         public long[] GetVirtualULong(ulong VA)
         {

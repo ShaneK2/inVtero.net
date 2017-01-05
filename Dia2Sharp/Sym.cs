@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Linq;
 using System.Dynamic;
+using System.Text;
 
 namespace Dia2Sharp
 {
@@ -125,7 +126,7 @@ namespace Dia2Sharp
             } while (childrenFetched == 1);
         }
 
-        public dynamic xStructInfo(string PDBFile, string Struct, long[] memRead = null)
+        public dynamic xStructInfo(string PDBFile, string Struct, long[] memRead = null, Func<long, byte[]> GetMem = null, Func<long, long[]> GetMemLong = null)
         {
             dynamic Info = null;
             IDiaSymbol Master = null;
@@ -153,8 +154,10 @@ namespace Dia2Sharp
                 Info.TypeName = Master.name;
                 Info.Length = Master.length;
                 //StructInfo.Add(Master.name, Info); // Tuple.Create<int, int>(0, (int)Master.length));
+                xDumpStructs(Info, Master, Master.name, 0, memRead, GetMem, GetMemLong);
 
-                xDumpStructs(Info, Master, Master.name, 0, memRead);
+
+
             } while (compileFetched == 1);
 
             return Info;
@@ -170,7 +173,7 @@ namespace Dia2Sharp
         /// <param name="CurrOffset"></param>
         /// <param name="memRead"></param>
         /// <returns></returns>
-        dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null)
+        dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null, Func<long, byte[]> GetMem = null, Func<long, long[]> GetMemLong = null)
         {
             var IInfo = (IDictionary<string, object>)Info;
             var InfoDict= new Dictionary<string, object>();
@@ -205,59 +208,106 @@ namespace Dia2Sharp
                 zym.Length = sType.length;
                 zym.OffsetPos = Pos;
 
+                bool KeepRecur = true;
+
+
                 if (memRead != null)
                 {
                     var defName = "Value";
                     lvalue = memRead == null ? 0 : memRead[Pos / 8];
 
-                    // 6 is a bitfield
-                    if (Sub.locationType == 6)
+                    // TODO: Handles/OBJECT_FOO/_ETC...
+                    
+                    if (String.Equals("_UNICODE_STRING", typeName) && GetMem != null)
                     {
-                        zym.BitPosition = Sub.bitPosition;
-
-                        var mask = 1U;
-                        for(int x=(int)sType.length-1; x > 0; x--)
+                        // since we deref'd this struct manually don't follow 
+                        KeepRecur = false;
+                        string strVal = "";
+                        var DataOffset = (Pos + 8) / 8;
+                        // get address from our offset
+                        var StringAddr = memRead[DataOffset];
+                        if (StringAddr != 0)
                         {
-                            mask = mask << 1;
-                            mask |= 1;
+                            var strByteArr = GetMem(StringAddr);
+                            var strLen = (short)lvalue & 0xffff;
+                            if (strLen > strByteArr.Length / 2 || strLen <= 0)
+                                strLen = strByteArr.Length / 2;
+                            strVal = Encoding.Unicode.GetString(strByteArr, 0, strLen);
                         }
-                        var new_mask = mask << (int)Sub.bitPosition;
-
-                        lvalue &= new_mask;
-
-                        // move lvalue to bitposition 0 
-                        // saves having todo this every time we evaluate Value
-                        lvalue = lvalue >> (int)Sub.bitPosition;
-
+                        Izym.Add(defName, strVal);
+                        staticDict.Add(currName, lvalue);
                     }
-                    switch (sType.length)
+                    else
                     {
-                        case 4:
-                            lvalue = (int)lvalue & 0xffffffffff;
-                            break;
-                        case 2:
-                            lvalue = (short)lvalue & 0xffffff;
-                            break;
-                        case 1:
-                            lvalue = (byte)lvalue & 0xff;
-                            break;
-                        default:
-                            break;
+                        // bittable types
+                        // TODO: GUID
+
+                        // 6 is a bitfield
+                        if (Sub.locationType == 6)
+                        {
+                            zym.BitPosition = Sub.bitPosition;
+
+                            var mask = 1U;
+                            for (int x = (int)sType.length - 1; x > 0; x--)
+                            {
+                                mask = mask << 1;
+                                mask |= 1;
+                            }
+                            var new_mask = mask << (int)Sub.bitPosition;
+
+                            lvalue &= new_mask;
+
+                            // move lvalue to bitposition 0 
+                            // saves having todo this every time we evaluate Value
+                            lvalue = lvalue >> (int)Sub.bitPosition;
+
+                        }
+                        switch (sType.length)
+                        {
+                            case 4:
+                                lvalue = (int)lvalue & 0xffffffffff;
+                                break;
+                            case 2:
+                                lvalue = (short)lvalue & 0xffffff;
+                                break;
+                            case 1:
+                                lvalue = (byte)lvalue & 0xff;
+                                break;
+                            default:
+                                break;
+                        }
+                        Izym.Add(defName, lvalue);
+                        staticDict.Add(currName, lvalue);
                     }
-                    Izym.Add(defName, lvalue);
-                    staticDict.Add(currName, lvalue);
                 }
 
                 // This is a pointer really, so type.type... of course!
-                var TypeType = sType.type;
-                var TypeTypeTag = sType.symTag;
-                if ((SymTagEnum)TypeTypeTag == SymTagEnum.SymTagPointerType)
+                if (KeepRecur)
                 {
-                    zym.IsPtr = true;
-                    if (TypeType != null && !string.IsNullOrWhiteSpace(TypeType.name))
-                        zym.PtrTypeName = TypeType.name;
-                } else
-                    xDumpStructs(zym, sType, currName, Pos, memRead);
+                    var TypeType = sType.type;
+                    var TypeTypeTag = sType.symTag;
+                    if ((SymTagEnum)TypeTypeTag == SymTagEnum.SymTagPointerType)
+                    {
+                        zym.IsPtr = true;
+                        if (TypeType != null && !string.IsNullOrWhiteSpace(TypeType.name))
+                        {
+                            zym.PtrTypeName = TypeType.name;
+
+                            // only recuse non-recursive ptr types
+                            if (TypeType.name.Equals("_OBJECT_NAME_INFORMATION"))
+                            {
+                                // do second deref here
+                                // the location to read is our offset pos data
+                                var deRefArr = GetMemLong(lvalue);
+
+
+                                xDumpStructs(zym, TypeType, currName, 0, deRefArr, GetMem, GetMemLong);
+                            }
+                        }
+                    }
+                    else
+                        xDumpStructs(zym, sType, currName, Pos, memRead, GetMem, GetMemLong);
+                }
 #if DEBUGX
                 ForegroundColor = ConsoleColor.Cyan;
                 WriteLine($"Pos = [{Pos:X}] Name = [{currName}] Len [{sType.length}], Type [{typeName}], ThisStruct [{master}]");

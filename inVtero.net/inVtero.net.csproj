@@ -96,6 +96,7 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Runtime.Caching" />
     <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConfigOptions.cs" />
@@ -103,6 +104,7 @@
     <Compile Include="DetectedProc.cs" />
     <Compile Include="Extensions.cs" />
     <Compile Include="extract.cs" />
+    <Compile Include="Hashing\Hasher.cs" />
     <Compile Include="Hashing\tigerhash.cs" />
     <Compile Include="Hashing\tigersbox.cs" />
     <Compile Include="inVtero.cs" />
