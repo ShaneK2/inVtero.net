@@ -18,16 +18,16 @@
 #
 
 MemList = [
-#"C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
-#"c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
-#"C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
-#"d:\\temp\\2012R2.debug.MEMORY.DMP",
-#"d:\\temp\\server2016.xendump",
-#"c:\\temp\\win10.64.xendump",
-#"c:\\temp\\2012R2.xendump",
-#"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem",
+"C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
+"c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
+"C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
+"d:\\temp\\2012R2.debug.MEMORY.DMP",
+"d:\\temp\\server2016.xendump",
+"c:\\temp\\win10.64.xendump",
+"c:\\temp\\2012R2.xendump",
+"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem",
 "D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-bbbe109e.vmem",
-#"D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
+"D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
 ]
 
 import clr,sys
@@ -58,7 +58,7 @@ def ScanDump(MemoryDump):
     # Basic option handling
     # This script can be pretty chatty to stdout 
     copts = ConfigOptions()
-    copts.IgnoreSaveData = False
+    copts.IgnoreSaveData = True
     copts.FileName = MemoryDump
     copts.VersionsToEnable = PTType.GENERIC
     # To get some additional output 
@@ -152,8 +152,8 @@ print "ALL DONE... Please explore!"
 def ListVAD(proc, VadRoot):
     if VadRoot == 0:
         return
-    pMMVadArr = proc.GetVirtualLong(VadRoot)
-    mmvad = proc.xStructInfo("_MMVAD", pMMVadArr)
+    #pMMVadArr = proc.GetVirtualLong(VadRoot)
+    mmvad = proc.xStructInfo("_MMVAD", VadRoot)
     IsExec = False
     # This is to support 7 and earlier kernels
     if mmvad.Dictionary.ContainsKey("Core"):
@@ -165,12 +165,12 @@ def ListVAD(proc, VadRoot):
             IsExec = True
     # Check VAD Flags for execute permission before we spend time looking at this entry
     if IsExec:
-        subsect = proc.xStructInfo("_SUBSECTION", proc.GetVirtualLong(mmvad.Subsection.Value))
-        control_area = proc.xStructInfo("_CONTROL_AREA", proc.GetVirtualLong(subsect.ControlArea.Value))
-        segment = proc.xStructInfo("_SEGMENT", proc.GetVirtualLong(control_area.Segment.Value))
+        subsect = proc.xStructInfo("_SUBSECTION", mmvad.Subsection.Value)
+        control_area = proc.xStructInfo("_CONTROL_AREA", subsect.ControlArea.Value)
+        segment = proc.xStructInfo("_SEGMENT", control_area.Segment.Value)
         # look for file pointer
         if control_area.FilePointer.Value != 0:
-            file_pointer = proc.xStructInfo("_FILE_OBJECT", proc.GetVirtualLong(control_area.FilePointer.Value & -16))
+            file_pointer = proc.xStructInfo("_FILE_OBJECT", control_area.FilePointer.Value & -16)
             print "Mapped File: " + file_pointer.FileName.Value 
     # Core is the more recent kernels
     if mmvad.Dictionary.ContainsKey("Core"):
@@ -180,49 +180,45 @@ def ListVAD(proc, VadRoot):
         ListVAD(proc, mmvad.LeftChild.Value)
         ListVAD(proc, mmvad.RightChild.Value)
 
+
 # Here we walk another LIST_ENTRY
 def WalkETHREAD(proc, eThreadHead):
     typedef = proc.xStructInfo("_ETHREAD")
     ThreadOffsetOf = typedef.ThreadListEntry.OffsetPos
     _ETHR_ADDR = eThreadHead
+    _ETHREAD = proc.xStructInfo("_ETHREAD", _ETHR_ADDR - ThreadOffsetOf)
     while True:
-        memRead = proc.GetVirtualLong(_ETHR_ADDR - ThreadOffsetOf)
-        _ETHREAD = proc.xStructInfo("_ETHREAD", memRead)
         print "Thread [" + _ETHREAD.Cid.UniqueThread.Value.ToString("X") + "] BASE", 
         print "[0x" + _ETHREAD.Tcb.StackBase.Value.ToString("X") + "] LIMIT [0x" + _ETHREAD.Tcb.StackLimit.Value.ToString("X") + "]"
-        _ETHR_ADDR = memRead[ThreadOffsetOf / 8]
+        _ETHR_ADDR = _ETHREAD.ThreadListEntry.Value
         if _ETHR_ADDR == eThreadHead:
             return
+        _ETHREAD = proc.xStructInfo("_ETHREAD", _ETHR_ADDR - ThreadOffsetOf)
 
 def WalkModules(proc, ModLinkHead, Verbose):
     modlist = []
     _LDR_DATA_ADDR = ModLinkHead
     while True:
-        memRead = proc.GetVirtualLong(_LDR_DATA_ADDR)
-        _LDR_DATA = proc.xStructInfo("_LDR_DATA_TABLE_ENTRY", memRead)
+        _LDR_DATA = proc.xStructInfo("_LDR_DATA_TABLE_ENTRY", _LDR_DATA_ADDR)
         if Verbose:
             print "Loaded Base: 0x" + _LDR_DATA.DllBase.Value.ToString("x") + " Length: 0x" + _LDR_DATA.SizeOfImage.Value.ToString("x8") + " \t Module: " + _LDR_DATA.FullDllName.Value
         modlist.append(_LDR_DATA)
-        _LDR_DATA_ADDR = memRead[0]
+        _LDR_DATA_ADDR = _LDR_DATA.InLoadOrderLinks.Value
         if _LDR_DATA_ADDR == ModLinkHead:
             return modlist
 
 
 def hives(proc):
     _HIVE_HEAD_ADDR = proc.GetSymValueLong("CmpHiveListHead")
-    _HIVE_ADDR = _HIVE_HEAD_ADDR 
     typedef = proc.xStructInfo("_CMHIVE")
     hiveOffsetOf = typedef.HiveList.OffsetPos
-    Path = ""
+    _CMHIVE = proc.xStructInfo("_CMHIVE", _HIVE_HEAD_ADDR - hiveOffsetOf , typedef.Length)
     while True:
-        memRead = proc.GetVirtualLongLen(_HIVE_ADDR - hiveOffsetOf, typedef.Length)
-        _HIVE2 = proc.xStructInfo("_CMHIVE", memRead)
-        if _HIVE2.Hive.Signature.Value != 0xffbee0bee0:
+        if _CMHIVE.Hive.Signature.Value != 0xffbee0bee0 or _HIVE_HEAD_ADDR == _CMHIVE.HiveList.Value:
             return
-        print "next Hive Signature [" + _HIVE2.Hive.Signature.Value.ToString("x") + "] path: " + _HIVE2.HiveRootPath.Value
-        _HIVE_ADDR = memRead[hiveOffsetOf/ 8]
-        if _HIVE_HEAD_ADDR == _HIVE_ADDR:
-            return
+        print "HiveRootPath: " + _CMHIVE.HiveRootPath.Value
+        print "FileUserName: " + _CMHIVE.FileUserName.Value
+        _CMHIVE = proc.xStructInfo("_CMHIVE", _CMHIVE.HiveList.Value - hiveOffsetOf, typedef.Length)
 
  
 # Example of walking process list
@@ -239,20 +235,22 @@ def WalkProcListExample(proc):
     ProcListOffsetOf = x.ActiveProcessLinks.Flink.OffsetPos
     ImagePath = ""
     psHead = proc.GetSymValueLong("PsActiveProcessHead")
-    _EPROC_ADDR = psHead
+    _EPROC = proc.xStructInfo("_EPROCESS", psHead - ProcListOffsetOf)
     while True:
-        memRead = proc.GetVirtualLong(_EPROC_ADDR - ProcListOffsetOf)
-        _EPROC = proc.xStructInfo("_EPROCESS", memRead)
+        # Deeply hidden value in _EPROCESS to find full path!! ;)
         ImagePath = _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value;
-        # prep and acquire memory for strings
-        _EPROC_ADDR = memRead[ProcListOffsetOf / 8]
         print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] EXE [" + ImagePath + "]",
+        # Nice to see members
         print " CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"
-        #print "PEB: " + _EPROC.Peb.Ldr
+        # Walk VAD & look for +X file mapped entries
         if _EPROC.VadRoot.Value != 0:
             ListVAD(proc, _EPROC.VadRoot.Value)
+        # Depending on Thr Count this takes too long
         #if _EPROC.ThreadListHead.Value != 0:
         #    WalkETHREAD(proc, _EPROC.ThreadListHead.Value)
+        # We read this 2x, simply readability ? =)
+        _EPROC_ADDR = _EPROC.ActiveProcessLinks.Flink.Value
         if _EPROC_ADDR == psHead:
             return
+        _EPROC = proc.xStructInfo("_EPROCESS", _EPROC_ADDR - ProcListOffsetOf)
             

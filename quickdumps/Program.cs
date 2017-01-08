@@ -193,6 +193,9 @@ namespace inVtero.net
                 CancelKeyPress += Console_CancelKeyPress;
                 AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
 
+                if (args.Length < 1)
+                    args = new string[] { "python" };
+
                 RunCLIREPL._Main(args);
 
                 var p = new quickdumps();

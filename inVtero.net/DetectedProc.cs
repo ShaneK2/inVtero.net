@@ -88,6 +88,26 @@ namespace inVtero.net
 
 
 
+        public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntkrnlmp")
+        {
+
+            var pdbPaths = from files in Sections.Values
+                           where files.DebugDetails != null &&
+                           files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
+                           select files;
+
+            var pdb = pdbPaths.FirstOrDefault();
+
+            long[] memRead = null;
+            if(Address != 0)
+                memRead = GetVirtualLongLen(Address, minLen);
+
+            var rv = sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByte, GetVirtualLong);
+            rv.SelfAddr = Address;
+
+            return rv;
+        }
+
         public dynamic xStructInfo(string Struct, long[] memRead = null, string Module = "ntkrnlmp")
         {
 
@@ -194,9 +214,7 @@ namespace inVtero.net
         /// <param name="OnlyModule">Stop when the first module named this is found</param>
         public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp")
         {
-
             PageTable.AddProcess(this, new Mem(MemAccess));
-
             var cnt = PT.FillPageQueue(true);
 
             var KVS = new VirtualScanner(this, new Mem(MemAccess));
@@ -206,45 +224,46 @@ namespace inVtero.net
             {
                 PFN range;
 
+
+
                 var curr = cnt - PT.PageQueue.Count;
                 var done = (int)(Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0) + 0.5;
 
-                if (PT.PageQueue.TryDequeue(out range))
-                    if (range.PTE.Valid)
+                if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid)
+                {
+                    var found = KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000), loopState);
+                    // Attempt load
+                    foreach(var artifact in found)
                     {
-                        var found = KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
-                        // Attempt load
-                        foreach(var artifact in found)
+                        var ms = new MemSection() { IsExec = true, Module = artifact.Value, VA = new VIRTUAL_ADDRESS(artifact.Key) };
+                        var extracted = ExtractCVDebug(ms);
+                        if (extracted == null)
+                            continue;
+
+                        if (!string.IsNullOrWhiteSpace(OnlyModule) && OnlyModule != ms.Name)
+                            continue;
+
+                        if (!Sections.ContainsKey(artifact.Key))
+                            Sections.TryAdd(artifact.Key, ms);
+
+                        // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
+                        // entirely by the handle ID really which is local to our GUID so....   
+                        sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                        if (Vtero.VerboseOutput)
+                            WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.DebugDetails.PDBFullPath}]");
+
+                        if (!string.IsNullOrWhiteSpace(OnlyModule))
                         {
-                            var ms = new MemSection() { IsExec = true, Module = artifact.Value, VA = new VIRTUAL_ADDRESS(artifact.Key) };
-                            var extracted = ExtractCVDebug(ms);
-                            if (extracted == null)
-                                continue;
-
-                            if (!string.IsNullOrWhiteSpace(OnlyModule) && OnlyModule != ms.Name)
-                                continue;
-
-                            if (!Sections.ContainsKey(artifact.Key))
-                                Sections.TryAdd(artifact.Key, ms);
-
-                            // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
-                            // entirely by the handle ID really which is local to our GUID so....   
-                            sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
-                            if (Vtero.VerboseOutput)
-                                WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.DebugDetails.PDBFullPath}]");
-
-                            if (!string.IsNullOrWhiteSpace(OnlyModule))
+                            if (!string.IsNullOrWhiteSpace(ms.Name) && ms.Name == OnlyModule)
                             {
-                                if (!string.IsNullOrWhiteSpace(ms.Name) && ms.Name == OnlyModule)
-                                {
-                                    loopState.Stop();
-                                    return;
-                                }
-                            }
-                            if (loopState.IsStopped)
+                                loopState.Stop();
                                 return;
+                            }
                         }
+                        if (loopState.IsStopped)
+                            return;
                     }
+                }
 
                 if (loopState.IsStopped)
                     return;

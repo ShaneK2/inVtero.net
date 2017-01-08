@@ -53,7 +53,6 @@ namespace inVtero.net
 
         WAHBitArray ScanList;
 
-
         // similar to the file based interface, we will only scan 1 page at a time 
         // but if we hit a signature in a check it's free to non-block the others while it completes 
         // a deeper scan
@@ -85,10 +84,6 @@ namespace inVtero.net
             DPContext = Ctx;
             BackingBlocks = backingBlocks;
             BackingStream = new PhysicalMemoryStream(backingBlocks, Ctx);
-
-            //mn ,n m,MemoryBank = new ConcurrentDictionary<int, Mem>();
-            //for(int i=0; i< Environment.ProcessorCount; i++)
-                //MemoryBank[i] = new Mem(BackingBlocks);
         }
 
         public VAScanType FastPE(long VA, long[] Block)
@@ -116,8 +111,10 @@ namespace inVtero.net
         /// <param name="Start"></param>
         /// <param name="Stop">We just truncate VA's at 48 bit's</param>
         /// <returns>count of new detections since last Run</returns>
-        public Dictionary<long, Extract> Run(long Start=0, long Stop = 0xFFFFffffFFFF)
+        public Dictionary<long, Extract> Run(long Start=0, long Stop = 0xFFFFffffFFFF, ParallelLoopState pState = null, Mem Instance = null)
         {
+            var memAxss = Instance == null ? BackingBlocks : Instance;
+
             var rv = new Dictionary<long, Extract>();
             // convert index to an address 
             // then add start to it
@@ -125,27 +122,29 @@ namespace inVtero.net
             var block = new long[0x200]; // 0x200 * 8 = 4k
             while (i < Stop)
             {
+
+                if (pState != null && pState.IsStopped)
+                    return rv;
+
+                HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
+                if (DPContext.vmcs != null)
+                    locPhys = memAxss.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                else
+                    locPhys = memAxss.VirtualToPhysical(DPContext.CR3Value, i);
+
+                var Curr = i;
+                i += 0x1000;
+
+                if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
+                    continue;
+
+                bool GotData = false;
+                memAxss.GetPageForPhysAddr(locPhys, ref block, ref GotData);
+                if (!GotData)
+                    continue;
+
                 foreach (var scanner in CheckMethods)
                 {
-                    HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
-                    if (DPContext.vmcs != null)
-                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                    else
-                        //locPhys = MemoryBank[j].VirtualToPhysical(DPContext.CR3Value, i);
-                        locPhys = BackingBlocks.VirtualToPhysical(DPContext.CR3Value, i);
-
-                    var Curr = i;
-                    i += 0x1000;
-
-                    if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
-                        continue;
-
-                    bool GotData = false;
-                    BackingBlocks.GetPageForPhysAddr(locPhys, ref block, ref GotData);
-                    if (!GotData)
-                        continue;
-
                     var scan_detect = scanner(Curr, block);
                     if (scan_detect != VAScanType.UNDETERMINED)
                     {

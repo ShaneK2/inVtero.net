@@ -30,7 +30,6 @@ namespace inVtero.net.ConsoleUtils
         }
 
         [StickyArg, ArgExistingFile
-        ArgRequired(PromptIfMissing = true), 
         ArgShortcut("-f"), 
         ArgDescription("Input .VMEM or .DMP (additionally any arbitrary non-extant based memory dump, e.g. .RAW, /dev/mem)")]
         public string MemoryDump { get

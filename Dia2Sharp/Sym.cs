@@ -156,8 +156,6 @@ namespace Dia2Sharp
                 //StructInfo.Add(Master.name, Info); // Tuple.Create<int, int>(0, (int)Master.length));
                 xDumpStructs(Info, Master, Master.name, 0, memRead, GetMem, GetMemLong);
 
-
-
             } while (compileFetched == 1);
 
             return Info;
@@ -210,7 +208,6 @@ namespace Dia2Sharp
 
                 bool KeepRecur = true;
 
-
                 if (memRead != null)
                 {
                     var defName = "Value";
@@ -241,7 +238,6 @@ namespace Dia2Sharp
                     {
                         // bittable types
                         // TODO: GUID
-
                         // 6 is a bitfield
                         if (Sub.locationType == 6)
                         {
@@ -260,21 +256,23 @@ namespace Dia2Sharp
                             // move lvalue to bitposition 0 
                             // saves having todo this every time we evaluate Value
                             lvalue = lvalue >> (int)Sub.bitPosition;
-
                         }
-                        switch (sType.length)
+                        else
                         {
-                            case 4:
-                                lvalue = (int)lvalue & 0xffffffffff;
-                                break;
-                            case 2:
-                                lvalue = (short)lvalue & 0xffffff;
-                                break;
-                            case 1:
-                                lvalue = (byte)lvalue & 0xff;
-                                break;
-                            default:
-                                break;
+                            switch (sType.length)
+                            {
+                                case 4:
+                                    lvalue = (int)lvalue & 0xffffffffff;
+                                    break;
+                                case 2:
+                                    lvalue = (short)lvalue & 0xffffff;
+                                    break;
+                                case 1:
+                                    lvalue = (byte)lvalue & 0xff;
+                                    break;
+                                default:
+                                    break;
+                            }
                         }
                         Izym.Add(defName, lvalue);
                         staticDict.Add(currName, lvalue);
@@ -312,22 +310,17 @@ namespace Dia2Sharp
                 ForegroundColor = ConsoleColor.Cyan;
                 WriteLine($"Pos = [{Pos:X}] Name = [{currName}] Len [{sType.length}], Type [{typeName}], ThisStruct [{master}]");
 #endif
-
                 // Length comes up a lot in struct's and conflicts with the ExpandoObject 
                 // so remap it specially
                 var AddedName = Sub.name;
-
                 if (AddedName.ToLower().Equals("value"))
                     AddedName = "ValueMember";
                 if (AddedName.ToLower().Equals("length"))
                     AddedName = "LengthMember";
-
                 if (IInfo.ContainsKey(AddedName))
                     continue;
-
                 IInfo.Add(AddedName, zym);
                 InfoDict.Add(AddedName, lvalue);
-                //Pos += (int)sType.length;
             } while (compileFetched == 1);
             return null;
         }

@@ -18,7 +18,7 @@ namespace ConsoleUtils
     [ArgExample("Dump -f filename", "dumps"), ArgExample("scan", "-f filename scan's memory")]
     public class QuickOptions 
     {
-        [ArgRequired(PromptIfMissing = true), ArgShortcut("-f"), ArgEnforceCase, StickyArg, ArgExistingFile, ArgIgnoreCase(IgnoreCase = false)]
+        [ArgShortcut("-f"), ArgEnforceCase, StickyArg, ArgExistingFile, ArgIgnoreCase(IgnoreCase = false)]
         public string FileName { get; set; }
 
         [HelpHook, ArgShortcut("-?")]
