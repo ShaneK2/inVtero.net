@@ -58,7 +58,7 @@ def ScanDump(MemoryDump):
     # Basic option handling
     # This script can be pretty chatty to stdout 
     copts = ConfigOptions()
-    copts.IgnoreSaveData = True
+    copts.IgnoreSaveData = False
     copts.FileName = MemoryDump
     copts.VersionsToEnable = PTType.GENERIC
     # To get some additional output 
@@ -143,9 +143,11 @@ for MemoryDump in MemList:
     TotalSizeAnalyzed += vtero.FileSize
     print " ++++++++++++++++++++++++++++++ DONE WITH INPUT [" + MemoryDump + "] ++++++++++++++++++++++++++++++ "
 
+print " ++++++++++++++++++++++++++++++ ALL DONE... Please explore! ++++++++++++++++++++++++++++++"
 print "TOTAL RUNTIME: " + TotalRunTime.Elapsed.ToString() + " (seconds), TOTAL DATA ANALYZED: " + TotalSizeAnalyzed.ToString("N") + " bytes."
 print "SPEED: " + ((TotalSizeAnalyzed / 1024) / ((TotalRunTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
-print "ALL DONE... Please explore!"
+for MemoryDump in MemList:
+    "INPUT: " + MemoryDump
 
 
 # This one is recursive down a tree

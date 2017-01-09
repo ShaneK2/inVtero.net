@@ -42,6 +42,8 @@ namespace inVtero.net
 
         public static void DumpIt(Vtero vtero, ConfigOptions co, DumpOptions dmpo)
         {
+
+#if FALSE
             var Version = vtero.Version;
 
             Mem.InitMem(co.FileName, vtero.MRD);
@@ -146,6 +148,7 @@ namespace inVtero.net
                 //vtero.DumpFailList();
             
             return;
+#endif
         }
     }
 }

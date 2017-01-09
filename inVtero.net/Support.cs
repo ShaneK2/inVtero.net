@@ -246,7 +246,7 @@ namespace inVtero.net
         public long twoMB_PFN { get { return (PTE & 0xFFFFFFE00000) >> 21; } }
         // after >> 30 == 3FFFF tot 1GB pages 
         public long GB_PFN { get { return (PTE & 0xFFFFC0000000) >> 30; } }
-        public long AddressOffset {  get { return PTE & 0xfff; } set { PTE = PTE &= ~0xfff; PTE |= value & 0xfff;    } }
+        public long AddressOffset {  get { return PTE & 0xfff; } /*set { PTE = PTE &= ~0xfff; PTE |= value & 0xfff; } */ }
     }
 
     public struct SLAT_ENTRY

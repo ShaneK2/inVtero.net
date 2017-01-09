@@ -78,7 +78,6 @@ namespace inVtero.net
 
         // there is a static for this also we can inherit from
         public long StartOfMemory; // adjust for .DMP headers or something
-                                   //public long GapScanSize;   // auto-tune for seeking gaps default is 0x10000000 
 
         [ProtoIgnore]
         public long MaxLimit { get { if (MD.PhysMemDesc != null) return MD.PhysMemDesc.MaxAddressablePageNumber; return 0; } }
@@ -124,22 +123,20 @@ namespace inVtero.net
         {
             // common init
             MapViewBase = 0;
-            // 64MB
-            MapViewSize = 0x1000 * 0x1000 * 4;
+            MapViewSize = 0x1000 * 0x1000 * 4L;
         }
 
         void SetupStreams()
         {
             // we want a process/thread private name for our mapped view
-            var mapName = Path.GetFileNameWithoutExtension(MemoryDump) + "-" + Process.GetCurrentProcess().Id.ToString() + "-" + Thread.CurrentThread.ManagedThreadId.ToString();
             mapStream = new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             mappedFile = MemoryMappedFile.CreateFromFile(mapStream,
                 null,
                 0,
                 MemoryMappedFileAccess.Read,
                 null,
-                HandleInheritability.Inheritable,
-                true);
+                HandleInheritability.None,
+                false);
             mappedAccess = mappedFile.CreateViewAccessor(
                 MapViewBase,
                 MapViewSize,
@@ -209,20 +206,14 @@ namespace inVtero.net
         public long GetPageFromFileOffset(long FileOffset, ref long[] block, ref bool DataRead)
         {
             var rv = 0L;
-            //var NewMapViewBase = MapViewBase;
-            var NewMapViewSize = MapViewSize;
             DataRead = false;
-
+            var NewMapViewSize = MapViewSize;
 
             var CheckBase = FileOffset / MapViewSize;
-            //if (MapViewBase != CheckBase * MapViewSize)
             var NewMapViewBase = CheckBase * MapViewSize;
 
             if (FileOffset > FileSize)
                 return 0;
-
-            //if (FileOffset < NewMapViewBase)
-            //    NewMapViewBase = CheckBase * MapViewSize;
 
             var AbsOffset = FileOffset - NewMapViewBase;
             var BlockOffset = AbsOffset & ~(PAGE_SIZE - 1);
@@ -251,7 +242,7 @@ namespace inVtero.net
 
                 if (block != null)
                 {
-                    UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block);
+                    UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block, block.Length);
                     rv = block[((AbsOffset >> 3) & 0x1ff)];
                 }
                 // FIX: ReadInt64 uses byte address so when we use it must adjust, check for other callers
@@ -504,18 +495,10 @@ namespace inVtero.net
                 //convert Guest CR3 gPA into Host CR3 pPA
                 var gpaCR3 = VirtualToPhysical(eptp, gVa.Address);
 
-                // Validate page table. Possibly adjust for run gaps
-                //var GapSize = ValidateAndGetGap(gpaCR3, aCR3);
-                // let's just ignore failures for now
-                //if (GapSize == long.MaxValue)
-                //Debug.Print("Table verification error.  YMMV.");
-                long GapSize = 0;
-                //}
-
                 //Console.WriteLine($"In V2P2P, using CR3 {aCR3.PTE:X16}, found guest phys CR3 {gpaCR3.PTE:X16}, attempting load of PML4E from {(gpaCR3 | va.PML4):X16}");
                 // gPML4E - as we go were getting gPA's which need to pPA
 
-                Attempted = (gpaCR3.NextTableAddress - GapSize) | va.PML4 ;
+                Attempted = gpaCR3.NextTableAddress | va.PML4 ;
 
                 var gPML4E = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                 ConvertedV2hP.Add(gPML4E);
@@ -526,7 +509,7 @@ namespace inVtero.net
                 var hPML4E = VirtualToPhysical(eptp, gPML4E.NextTableAddress);
                 if (EPTP.IsValid(hPML4E.PTE) && EPTP.IsValid2(hPML4E.PTE) && HARDWARE_ADDRESS_ENTRY.IsBadEntry(hPML4E))
                 { 
-                    Attempted = (hPML4E.NextTableAddress - GapSize) | (va.DirectoryPointerOffset << 3);
+                    Attempted = hPML4E.NextTableAddress | (va.DirectoryPointerOffset << 3);
                     var gPDPTE = (HARDWARE_ADDRESS_ENTRY) GetValueAtPhysicalAddr(Attempted);
                     ConvertedV2hP.Add(gPDPTE);
                     var hPDPTE = VirtualToPhysical(eptp, gPDPTE.NextTableAddress);
@@ -537,7 +520,7 @@ namespace inVtero.net
                         {
                             if (EPTP.IsValid2(hPDPTE.PTE))
                             {
-                                Attempted = (hPDPTE.NextTableAddress - GapSize) | (va.DirectoryOffset << 3);
+                                Attempted = hPDPTE.NextTableAddress | (va.DirectoryOffset << 3);
                                 var gPDE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                 ConvertedV2hP.Add(gPDE);
                                 var hPDE = VirtualToPhysical(eptp, gPDE.NextTableAddress);
@@ -548,13 +531,13 @@ namespace inVtero.net
                                     {
                                         if (EPTP.IsValid2(hPDE.PTE))
                                         {
-                                            Attempted = (hPDE.NextTableAddress - GapSize) | (va.TableOffset << 3);
+                                            Attempted = hPDE.NextTableAddress | (va.TableOffset << 3);
                                             var gPTE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                             ConvertedV2hP.Add(gPTE);
                                             var hPTE = VirtualToPhysical(eptp, gPTE.NextTableAddress);
 
                                             if (EPTP.IsValidEntry(hPTE.PTE))
-                                                rv = (hPTE.NextTableAddress - GapSize) | va.Offset;
+                                                rv = hPTE.NextTableAddress | va.Offset;
                                         }
                                     }
                                     else {

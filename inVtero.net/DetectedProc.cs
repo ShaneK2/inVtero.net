@@ -167,13 +167,10 @@ namespace inVtero.net
         public void LoadModulesInRange(long VA, long length, string OnlyModule = null)
         {
             var KVS = new VirtualScanner(this, new Mem(MemAccess));
-            KVS.ScanMode = VAScanType.PE_FAST;
 
-            KVS.Run(VA, VA + length);
-
-            foreach(var artifact in KVS.Artifacts)
+            foreach(var artifact in KVS.Run(VA, VA + length))
             {
-                var ms = new MemSection() { IsExec = true, Module = artifact.Value, VA = new VIRTUAL_ADDRESS(artifact.Key) };
+                var ms = new MemSection() { IsExec = true, Module = artifact, VA = new VIRTUAL_ADDRESS(artifact.VA) };
                 var extracted = ExtractCVDebug(ms);
                 if (extracted == null)
                     continue;
@@ -181,8 +178,8 @@ namespace inVtero.net
                 if (!string.IsNullOrWhiteSpace(OnlyModule) && OnlyModule != ms.Name)
                     continue;
 
-                if (!Sections.ContainsKey(artifact.Key))
-                    Sections.TryAdd(artifact.Key, ms);
+                if (!Sections.ContainsKey(artifact.VA))
+                    Sections.TryAdd(artifact.VA, ms);
 
                 // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                 // entirely by the handle ID really which is local to our GUID so....   
@@ -214,28 +211,28 @@ namespace inVtero.net
         /// <param name="OnlyModule">Stop when the first module named this is found</param>
         public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp")
         {
+            const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
             PageTable.AddProcess(this, new Mem(MemAccess));
             var cnt = PT.FillPageQueue(true);
 
             var KVS = new VirtualScanner(this, new Mem(MemAccess));
-            KVS.ScanMode = VAScanType.PE_FAST;
 
-            Parallel.For(0, cnt, (i, loopState) =>
+            // single threaded worked best so far 
+            //Parallel.For(0, cnt, (i, loopState) =>
+            for (int i = 0; i < cnt; i++)
             {
                 PFN range;
-
-
+                bool stop = false;
 
                 var curr = cnt - PT.PageQueue.Count;
-                var done = (int)(Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0) + 0.5;
-
-                if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid)
+                var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
+                Console.CursorLeft = 0;
+                Console.Write($"{done:F3}% scanned");
+                if (PT.PageQueue.TryPop(out range) && range.PTE.Valid && !range.PTE.NoExecute)
                 {
-                    var found = KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000), loopState);
-                    // Attempt load
-                    foreach(var artifact in found)
+                    foreach (var artifact in KVS.Run(range.VA.Address, range.VA.Address + LARGE_PAGE_SIZE, range))
                     {
-                        var ms = new MemSection() { IsExec = true, Module = artifact.Value, VA = new VIRTUAL_ADDRESS(artifact.Key) };
+                        var ms = new MemSection() { IsExec = true, Module = artifact, VA = new VIRTUAL_ADDRESS(artifact.VA) };
                         var extracted = ExtractCVDebug(ms);
                         if (extracted == null)
                             continue;
@@ -243,8 +240,8 @@ namespace inVtero.net
                         if (!string.IsNullOrWhiteSpace(OnlyModule) && OnlyModule != ms.Name)
                             continue;
 
-                        if (!Sections.ContainsKey(artifact.Key))
-                            Sections.TryAdd(artifact.Key, ms);
+                        if (!Sections.ContainsKey(artifact.VA))
+                            Sections.TryAdd(artifact.VA, ms);
 
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
@@ -256,18 +253,22 @@ namespace inVtero.net
                         {
                             if (!string.IsNullOrWhiteSpace(ms.Name) && ms.Name == OnlyModule)
                             {
-                                loopState.Stop();
-                                return;
+                                stop = true;
+                                //loopState.Stop();
+                                break;
                             }
                         }
-                        if (loopState.IsStopped)
-                            return;
+                        //if (loopState.IsStopped)
+                        //return;
+                        if (stop) break;
                     }
                 }
 
-                if (loopState.IsStopped)
-                    return;
-            });
+                //if (loopState.IsStopped)
+                //    return;
+                //});
+                if (stop) break;
+            }
             return KVS;
         }
 
@@ -285,6 +286,9 @@ namespace inVtero.net
 
             var _va = VA + Ext.DebugDirPos;
             var block = VGetBlock(_va);
+            if (block == null)
+                return null;
+
             var TimeDate2 = BitConverter.ToUInt32(block, ((int)Ext.DebugDirPos & 0xfff) + 4);
             if (TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
             {
@@ -301,14 +305,13 @@ namespace inVtero.net
             PointerToRawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 24);
 
             _va = VA + RawData;
+            block = VGetBlock(_va);
+            if (block == null)
+                return null;
 
             var bytes = new byte[16];
-
-            block = VGetBlock(_va);
-
             // first 4 bytes
             var sig = block[((int)_va & 0xfff)];
-
             Array.ConstrainedCopy(block, (((int)_va & 0xfff) + 4), bytes, 0, 16);
             var gid = new Guid(bytes);
 
@@ -318,7 +321,10 @@ namespace inVtero.net
             // char* at end
             var str = Encoding.Default.GetString(block, (((int)_va & 0xfff) + 24), 32).Trim();
             var cv = new CODEVIEW_HEADER { VSize = (int)Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
-            sec.Name = str.Substring(0, str.IndexOf('.')).ToLower();
+            if (str.Contains("."))
+                sec.Name = str.Substring(0, str.IndexOf('.')).ToLower();
+            else
+                sec.Name = str;
             sec.DebugDetails = cv;
 
             return cv;
@@ -373,7 +379,6 @@ namespace inVtero.net
                 hw = MemAccess.VirtualToPhysical(CR3Value, _va);
             else
                 hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
-            
             MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData);
             if (!GotData)
                 return null;

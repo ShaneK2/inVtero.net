@@ -38,7 +38,6 @@ namespace inVtero.net
     {
         Mem BackingBlocks;
         //ConcurrentDictionary<int, Mem> MemoryBank;
-        public ConcurrentDictionary<long, Extract> Artifacts;
         PhysicalMemoryStream BackingStream;
 
         /// <summary>
@@ -51,32 +50,12 @@ namespace inVtero.net
         /// </summary>
         DetectedProc DPContext;
 
-        WAHBitArray ScanList;
-
         // similar to the file based interface, we will only scan 1 page at a time 
         // but if we hit a signature in a check it's free to non-block the others while it completes 
         // a deeper scan
-        List<Func<long, long[], VAScanType>> CheckMethods;
-
-        VAScanType scanMode;
-        public VAScanType ScanMode
-        {
-            get { return scanMode; }
-            set
-            {
-                scanMode = value;
-                CheckMethods.Clear();
-
-                if ((value & VAScanType.PE_FAST) == VAScanType.PE_FAST)
-                    CheckMethods.Add(FastPE);
-            }
-        }
 
         public VirtualScanner()
         {
-            Artifacts = new ConcurrentDictionary<long, Extract>();
-            CheckMethods = new List<Func<long, long[], VAScanType>>();
-            ScanList = new WAHBitArray(); 
         }
 
         public VirtualScanner(DetectedProc Ctx, Mem backingBlocks) : this()
@@ -85,73 +64,89 @@ namespace inVtero.net
             BackingBlocks = backingBlocks;
             BackingStream = new PhysicalMemoryStream(backingBlocks, Ctx);
         }
+        
 
-        public VAScanType FastPE(long VA, long[] Block)
+        // this guy store's his results in a global thread safe array
+        List<Extract> FastPE(long VA, long[] Block)
         {
-            // magic check before copying into byte[]
-            uint PEMagic = (uint)Block[0] & 0xffff;
-            if (PEMagic == 0x5a4d)
+            int Pos = 0;
+            int Lim = Block.Length;
+            List<Extract> rv = new List<Extract>();
+
+            while (Pos < Lim)
             {
-                var bpage = new byte[0x1000];
-                Buffer.BlockCopy(Block, 0, bpage, 0, 4096);
-                // TODO: improve/fix check
-                var extracted = Extract.IsBlockaPE(bpage);
-                if (extracted != null)
+                // magic check before copying into byte[]
+                uint PEMagic = (uint)Block[Pos] & 0xffff;
+                if (PEMagic == 0x5a4d)
                 {
-                    Artifacts.TryAdd(VA, extracted);
-                    return VAScanType.PE_FAST;
+                    var bpage = new byte[0x1000];
+                    Buffer.BlockCopy(Block, Pos*8, bpage, 0, 4096);
+                    // TODO: improve/fix check
+                    var extracted = Extract.IsBlockaPE(bpage);
+                    if (extracted != null)
+                    {
+                        extracted.VA = VA + (Pos*8);
+                        rv.Add(extracted);
+                    }
                 }
+                Pos += 512;
             }
-            return VAScanType.UNDETERMINED;
+            return rv;
         }
 
         /// <summary>
         /// Scan and return Extract objects which represent detected PE's
+        /// 
+        /// TODO:simplify/rewrite this
         /// </summary>
         /// <param name="Start"></param>
         /// <param name="Stop">We just truncate VA's at 48 bit's</param>
         /// <returns>count of new detections since last Run</returns>
-        public Dictionary<long, Extract> Run(long Start=0, long Stop = 0xFFFFffffFFFF, ParallelLoopState pState = null, Mem Instance = null)
+        public List<Extract> Run(long Start=0, long Stop = 0xFFFFffffFFFF, PFN entry = null, ParallelLoopState pState = null, Mem Instance = null)
         {
+            bool GotData = false;
             var memAxss = Instance == null ? BackingBlocks : Instance;
+            long i = Start, Curr = 0;
 
-            var rv = new Dictionary<long, Extract>();
-            // convert index to an address 
-            // then add start to it
-            long i = Start;
-            var block = new long[0x200]; // 0x200 * 8 = 4k
-            while (i < Stop)
+            var rv = new List<Extract>();
+
+            if (entry != null && entry.PTE.LargePage)
             {
-
-                if (pState != null && pState.IsStopped)
-                    return rv;
-
-                HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
-                if (DPContext.vmcs != null)
-                    locPhys = memAxss.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                else
-                    locPhys = memAxss.VirtualToPhysical(DPContext.CR3Value, i);
-
-                var Curr = i;
-                i += 0x1000;
-
-                if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
-                    continue;
-
-                bool GotData = false;
-                memAxss.GetPageForPhysAddr(locPhys, ref block, ref GotData);
-                if (!GotData)
-                    continue;
-
-                foreach (var scanner in CheckMethods)
+                var block = new long[0x40000];
+                memAxss.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
+                if (GotData)
+                    rv = FastPE(Start, block);
+            }
+            else
+            {
+                // convert index to an address 
+                // then add start to it
+                var block = new long[0x200]; // 0x200 * 8 = 4k
+                while (i < Stop)
                 {
-                    var scan_detect = scanner(Curr, block);
-                    if (scan_detect != VAScanType.UNDETERMINED)
-                    {
-                        rv.Add(Curr, Artifacts[Curr]);
-                        if (Vtero.VerboseOutput)
-                            Console.WriteLine($"Detected PE @ VA {Curr:X}");
-                    }
+                    if (pState != null && pState.IsStopped)
+                        return rv;
+
+                    HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
+                    if (DPContext.vmcs != null)
+                        locPhys = memAxss.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                    else
+                        locPhys = memAxss.VirtualToPhysical(DPContext.CR3Value, i);
+
+                    Curr = i;
+                    i += 0x1000;
+
+                    if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
+                        continue;
+
+                    memAxss.GetPageForPhysAddr(locPhys, ref block, ref GotData);
+                    if (!GotData)
+                        continue;
+
+                    var new_pe = FastPE(Curr, block);
+                    rv.AddRange(new_pe);
+                    if (Vtero.VerboseOutput && new_pe.Count > 0)
+                        Console.WriteLine($"Detected PE @ VA {Curr:X}");
                 }
             }
             return rv;

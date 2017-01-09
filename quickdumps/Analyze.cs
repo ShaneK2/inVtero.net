@@ -37,6 +37,7 @@ namespace inVtero.net
 
         public static void DumpDetected(Vtero vtero, DetectedProc p, long VAStart = 0, long VAEnd = 0xffffffff0000)
         {
+            /*
             var mods = vtero.ModuleScan(p, 3, VAStart, VAEnd);
 
             //Parallel.ForEach(mods, (detected) =>
@@ -57,6 +58,7 @@ namespace inVtero.net
                 }
             }
             //});
+            */
         }
 
         /// <summary>

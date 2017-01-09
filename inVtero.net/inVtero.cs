@@ -342,7 +342,6 @@ namespace inVtero.net
         {
             DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
             bool rv = false;
-            bool GotData = false;
 
             // Locate and extract some data points
 
@@ -645,53 +644,6 @@ namespace inVtero.net
             }
 
             return sym;
-        }
-
-        /// <summary>
-        /// Only scanning for core kernel modules
-        /// </summary>
-        /// <param name="dp"></param>
-        /// <param name="StartingVA"></param>
-        /// <param name="EndingVA"></param>
-        /// <returns>Array of modules</returns>
-        public ConcurrentDictionary<long, Extract> ModuleScan(DetectedProc dp, int ExitAfter = 2, long StartingVA = 0, long EndingVA = 0xFFFFFFFFF000)
-        {
-            if (dp.PT == null)
-                PageTable.AddProcess(dp, new Mem(MemAccess));
-
-            var cnt = dp.PT.FillPageQueue(true);
-
-            KVS = new VirtualScanner(dp, new Mem(MemAccess));
-            KVS.ScanMode = VAScanType.PE_FAST;
-
-            if (VerboseLevel > 0)
-            {
-                WriteColor(ConsoleColor.Cyan, "Scanning VA for Kernel... ");
-                ForegroundColor = ConsoleColor.Green;
-            }
-
-            Parallel.For(0, cnt, (i, loopState) =>
-            {
-                PFN range;
-
-                var curr = cnt - dp.PT.PageQueue.Count();
-                CursorLeft = 0;
-                var done = (int)(Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0) + 0.5;
-
-                if (VerboseLevel > 0)
-                    Write($"{done} % done");
-
-                if (dp.PT.PageQueue.TryDequeue(out range) && KVS.Artifacts.Count() < ExitAfter)
-                    if (range.PTE.Valid)
-                        KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? (1024 * 1024 * 2) : 0x1000));
-            });
-            if (VerboseLevel > 0)
-                WriteLine("Done comprehensive VA scan");
-
-            foreach (var detected in KVS.Artifacts)
-                dp.Sections.TryAdd(detected.Key, new MemSection() { IsExec = true, Module = detected.Value, VA = new VIRTUAL_ADDRESS(detected.Key) });
-
-            return KVS.Artifacts;
         }
 
         public long DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false, bool KernelSpace = true)

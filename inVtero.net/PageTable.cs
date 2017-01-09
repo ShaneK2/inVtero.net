@@ -357,11 +357,11 @@ namespace inVtero.net
         }
 
         [ProtoIgnore]
-        public ConcurrentQueue<PFN> PageQueue;
+        public ConcurrentStack<PFN> PageQueue;
 
         public int FillPageQueue(bool OnlyLarge = false)
         {
-            PageQueue = new ConcurrentQueue<PFN>();
+            PageQueue = new ConcurrentStack<PFN>();
             VIRTUAL_ADDRESS VA;
             VA.Address = 0;
 
@@ -383,7 +383,7 @@ namespace inVtero.net
                         if (DirectoryOffset == null) continue;
                         // if we have a large page we add it now
                         if (DirectoryOffset.PTE.LargePage)
-                            PageQueue.Enqueue(DirectoryOffset);
+                            PageQueue.Push(DirectoryOffset);
                         // otherwise were scanning lower level entries
                         else if(!OnlyLarge)
                         {
@@ -391,7 +391,7 @@ namespace inVtero.net
                             {
                                 if (TableOffset == null) continue;
 
-                                PageQueue.Enqueue(TableOffset);
+                                PageQueue.Push(TableOffset);
                             }
                         }
                     }

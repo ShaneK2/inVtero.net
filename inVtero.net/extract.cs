@@ -47,6 +47,8 @@ namespace Reloc
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Extract
     {
+        public long VA;
+
         public static int NewCnt;
         public static int Verbose;
         public static bool OverWrite;
