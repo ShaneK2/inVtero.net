@@ -9,7 +9,7 @@
 # IF A GUID IS NOT FOUND, FIND IT MAY BE ON THE SYM CD WHICH IS NOT ON THE SERVER
 #
 # DLR reflected DIA symbols through physical memory
-# make sure to have dia registered do "regsvr32 c:\\windows\system32\msdia120.dll"
+# make sure to have dia registered do "regsvr32 c:\\windows\system32\msdia140.dll"
 # you also want symsrv.dll and dbghelp.dll in the current folder =)
 #
 # Play with the PTType and stuff for nested hypervisors =) (PTTYPE VMCS)
