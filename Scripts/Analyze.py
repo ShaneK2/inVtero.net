@@ -20,10 +20,10 @@
 MemList = [
 "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
 "c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
+"c:\\temp\\win10.64.xendump",
 "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
 "d:\\temp\\2012R2.debug.MEMORY.DMP",
 "d:\\temp\\server2016.xendump",
-"c:\\temp\\win10.64.xendump",
 "c:\\temp\\2012R2.xendump",
 "D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem",
 "D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-bbbe109e.vmem",
@@ -47,6 +47,7 @@ TotalSizeAnalyzed = 0
 Vtero.VerboseOutput = True
 Vtero.DiagOutput = False
 Vtero.VerboseLevel = 1
+Vtero.DisableProgressBar = False
 
 # This code fragment can be removed but it's a reminder you need symbols working
 sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH")
@@ -80,7 +81,7 @@ def ScanDump(MemoryDump):
     proc.MemAccess = Mem(vtero.MemAccess)
     swModScan = Stopwatch.StartNew()
     # by default this will scan for kernel symbols 
-    if vtero.KVS is None or vtero.KVS.Artifacts is None:
+    if vtero.KVS is None:
         kvs = proc.ScanAndLoadModules()
         vtero.KVS = kvs
         vtero.CheckpointSaveState()

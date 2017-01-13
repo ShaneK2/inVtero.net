@@ -37,4 +37,6 @@ for proc in vtero.FlattenASGroups:
     entries = vtero.DumpProc(currProcBase + "\\", proc, False, CollectKernel)
     CollectKernel = False
     print "Dumped Process %s, entries %d" % (proc.ShortName, entries)
+    # use Reloc.Delocate.DeLocateFile to repair a dumped section into a block that matches disk representation 
+    # this allows for secure hash validation of memory blocks
 

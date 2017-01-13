@@ -41,7 +41,13 @@ namespace inVtero.net
             Marshal.Copy(ptr_off, arr, 0, Count);
             view.SafeMemoryMappedViewHandle.ReleasePointer();
         }
-
+    
+        /// <summary>
+        /// </summary>
+        /// <param name="view"></param>
+        /// <param name="ScanFor"></param>
+        /// <param name="Count"></param>
+        /// <returns></returns>
         public static unsafe List<long> ScanBytes(MemoryMappedViewAccessor view, int ScanFor, int Count = 512)
         {
             var rv = new List<long>();

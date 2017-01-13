@@ -182,7 +182,8 @@ namespace inVtero.net.ConsoleUtils
             // sync-save state so restarting is faster
             if (!File.Exists(saveStateFile))
             {
-                Write($"Saving checkpoint... ");
+                if(Vtero.VerboseLevel > 0)
+                    Write($"Saving checkpoint... ");
                 saveStateFile = vtero.CheckpointSaveState();
                 WriteColor(ConsoleColor.White, saveStateFile);
             }

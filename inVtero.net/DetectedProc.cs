@@ -224,11 +224,14 @@ namespace inVtero.net
                 PFN range;
                 bool stop = false;
 
-                var curr = cnt - PT.PageQueue.Count;
-                var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
-                Console.CursorLeft = 0;
-                Console.Write($"{done:F3}% scanned");
-                if (PT.PageQueue.TryPop(out range) && range.PTE.Valid && !range.PTE.NoExecute)
+                if (Vtero.VerboseLevel > 1)
+                {
+                    var curr = cnt - PT.PageQueue.Count;
+                    var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
+                    Console.CursorLeft = 0;
+                    Console.Write($"{done:F3}% scanned");
+                }
+                if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid && !range.PTE.NoExecute)
                 {
                     foreach (var artifact in KVS.Run(range.VA.Address, range.VA.Address + LARGE_PAGE_SIZE, range))
                     {

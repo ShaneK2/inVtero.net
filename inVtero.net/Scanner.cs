@@ -70,7 +70,7 @@ namespace inVtero.net
 
         List<MemoryRun> Gaps;
         [ProtoIgnore]
-        List<Func<long, bool>> CheckMethods;
+        List<Func<int, long, bool>> CheckMethods;
         PTType scanMode;
         public PTType ScanMode
         {
@@ -120,7 +120,7 @@ namespace inVtero.net
             HVLayer = new ConcurrentBag<VMCS>();
             FileSize = 0;
             Gaps = new List<MemoryRun>();
-            CheckMethods = new List<Func<long, bool>>();
+            CheckMethods = new List<Func<int, long, bool>>();
         }
 
         public Scanner(string InputFile, Vtero vTero) : this()
@@ -176,10 +176,10 @@ namespace inVtero.net
         /// </summary>
         /// <param name="xoffset"></param>
         /// <returns>true if the page being scanned is a candidate</returns>
-        public bool VMCS(long xoffset)
+        public bool VMCS(int bo, long xoffset)
         {
-            var RevID = (REVISION_ID)(block[0] & 0xffffffff);
-            var Acode = (VMCS_ABORT)((block[0] >> 32) & 0x7fffffff);
+            var RevID = (REVISION_ID)(block[bo + 0] & 0xffffffff);
+            var Acode = (VMCS_ABORT)((block[bo + 0] >> 32) & 0x7fffffff);
 
             var KnownAbortCode = false;
             var KnownRevision = false;
@@ -198,7 +198,7 @@ namespace inVtero.net
             // Find a 64bit value for link ptr
             for (int l = 0; l < block.Length; l++)
             {
-                if (block[l] == Neg1)
+                if (block[bo + l] == Neg1)
                     LinkCount++;
 
                 // too many
@@ -217,7 +217,7 @@ namespace inVtero.net
 
                 for (int check = 1; check < block.Length; check++)
                 {
-                    if (block[check] == ScanFor.CR3Value && Candidate == false)
+                    if (block[bo + check] == ScanFor.CR3Value && Candidate == false)
                     {
                         var OutputList = new List<long>();
                         StringBuilder sb = null, sbRED = null;
@@ -228,7 +228,7 @@ namespace inVtero.net
                         {
                             sb = new StringBuilder();
                             // reverse endianness for easy reading in hex dumps/editors
-                            shorted = BitConverter.GetBytes(block[check]);
+                            shorted = BitConverter.GetBytes(block[bo + check]);
                             Array.Reverse(shorted, 0, 8);
                             var Converted = BitConverter.ToUInt64(shorted, 0);
 
@@ -239,23 +239,23 @@ namespace inVtero.net
 
                         for (int i = 0; i < block.Length; i++)
                         {
-                            var value = block[i];
+                            var value = block[bo + i];
 
                             var eptp = new EPTP(value);
 
                             // any good minimum size? 64kb?
-                            if (block[i] > 0
-                            && block[i] < FileSize
+                            if (block[bo + i] > 0
+                            && block[bo + i] < FileSize
                             && eptp.IsFullyValidated()
                    //         && EPTP.IsValid(eptp.aEPTP) && EPTP.IsValid2(eptp.aEPTP) && EPTP.IsValidEntry(eptp.aEPTP)
-                            && !OutputList.Contains(block[i]))
+                            && !OutputList.Contains(block[bo + i]))
                             {
                                 Candidate = true;
-                                OutputList.Add(block[i]);
+                                OutputList.Add(block[bo + i]);
 
                                 if (Vtero.VerboseOutput)
                                 {
-                                    var linefrag = $"[{i}][{block[i]:X16}] ";
+                                    var linefrag = $"[{i}][{block[bo + i]:X16}] ";
 
                                     if (curr_width + linefrag.Length > MAX_LINE_WIDTH)
                                     {
@@ -276,9 +276,9 @@ namespace inVtero.net
 
                         // most VMWare I've scanned comes are using this layout
                         // we know VMWare well so ignore any other potential candidates // TODO: Constantly Verify assumption's 
-                        if (RevID == REVISION_ID.VMWARE_NESTED && OutputList.Contains(block[14]))
+                        if (RevID == REVISION_ID.VMWARE_NESTED && OutputList.Contains(block[bo + 14]))
                         {
-                            var vmcsFound = new VMCS { dp = ScanFor, EPTP = block[14], gCR3 = ScanFor.CR3Value, Offset = xoffset };
+                            var vmcsFound = new VMCS { dp = ScanFor, EPTP = block[bo + 14], gCR3 = ScanFor.CR3Value, Offset = xoffset };
                             HVLayer.Add(vmcsFound);
                         }
                         else
@@ -301,7 +301,7 @@ namespace inVtero.net
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
-        public bool LinuxS(long offset)
+        public bool LinuxS(int bo, long offset)
         {
             var Candidate = false;
             var group = -1;
@@ -319,13 +319,13 @@ namespace inVtero.net
 
             var Profiles = new List<Dictionary<int, bool>>();
 
-            if (((block[0xFF] & 0xfff) == 0x067) &&
-               ((block[0x110] & 0xfff) == 0x067) &&
-               ((block[0x192] & 0xfff) == 0x067) &&
-               ((block[0x1d1] & 0xfff) == 0x067) &&
-               ((block[0x1d4] & 0xfff) == 0x067) &&
-               ((block[0x1fe] & 0xfff) == 0x067) &&
-               ((block[0x1ff] & 0xfff) == 0x067) 
+            if (((block[bo + 0xFF] & 0xfff) == 0x067) &&
+               ((block[bo + 0x110] & 0xfff) == 0x067) &&
+               ((block[bo + 0x192] & 0xfff) == 0x067) &&
+               ((block[bo + 0x1d1] & 0xfff) == 0x067) &&
+               ((block[bo + 0x1d4] & 0xfff) == 0x067) &&
+               ((block[bo + 0x1fe] & 0xfff) == 0x067) &&
+               ((block[bo + 0x1ff] & 0xfff) == 0x067) 
 
                // this is the largest block of 0's 
                // just do this one to qualify
@@ -356,8 +356,8 @@ namespace inVtero.net
                 // load DP 
                 var dp = new DetectedProc { CR3Value = offset, FileOffset = offset, Diff = 0, Mode = 2, Group = group, PageTableType = PTType.LinuxS, TrueOffset = TrueOffset };
                     for (int p = 0; p < 0x200; p++)
-                    if (block[p] != 0)
-                        dp.TopPageTablePage.Add(p, block[p]);
+                    if (block[bo + p] != 0)
+                        dp.TopPageTablePage.Add(p, block[bo + p]);
 
                 if (Vtero.VerboseOutput)
                     WriteColor(ConsoleColor.Cyan, dp.ToString());
@@ -374,26 +374,26 @@ namespace inVtero.net
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
-        public bool NetBSD(long offset)
+        public bool NetBSD(int bo, long offset)
         {
             var Candidate = false;
 
             //var offset = CurrWindowBase + CurrMapBase;
-            var shifted = (block[255] & 0xFFFFFFFFF000);
+            var shifted = (block[bo + 255] & 0xFFFFFFFFF000);
             var diff = offset - shifted;
 
 
-            if (((block[511] & 0xf3) == 0x63) && ((0x63 == (block[320] & 0xf3)) || (0x63 == (block[256] & 0xf3))))
+            if (((block[bo + 511] & 0xf3) == 0x63) && ((0x63 == (block[bo + 320] & 0xf3)) || (0x63 == (block[bo + 256] & 0xf3))))
             {
-                if (((block[255] & 0xf3) == 0x63) && (0 == (block[255] & 0x7FFF000000000000)))
+                if (((block[bo + 255] & 0xf3) == 0x63) && (0 == (block[bo + 255] & 0x7FFF000000000000)))
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
                         var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.NetBSD, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
-                            if (block[p] != 0)
-                                dp.TopPageTablePage.Add(p, block[p]);
+                            if (block[bo + p] != 0)
+                                dp.TopPageTablePage.Add(p, block[bo + p]);
                         }
 
                         DetectedProcesses.TryAdd(offset, dp);
@@ -417,25 +417,25 @@ namespace inVtero.net
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
-        public bool OpenBSD(long offset)
+        public bool OpenBSD(int bo, long offset)
         {
             var Candidate = false;
 
             //var offset = CurrWindowBase + CurrMapBase;
-            var shifted = (block[255] & 0xFFFFFFFFF000);
+            var shifted = (block[bo + 255] & 0xFFFFFFFFF000);
             var diff = offset - shifted;
 
-            if (((block[510] & 0xf3) == 0x63) && (0x63 == (block[256] & 0xf3)) && (0x63 == (block[254] & 0xf3)))
+            if (((block[bo + 510] & 0xf3) == 0x63) && (0x63 == (block[bo + 256] & 0xf3)) && (0x63 == (block[bo + 254] & 0xf3)))
             {
-                if (((block[255] & 0xf3) == 0x63) && (0 == (block[255] & 0x7FFF000000000000)))
+                if (((block[bo + 255] & 0xf3) == 0x63) && (0 == (block[bo + 255] & 0x7FFF000000000000)))
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
                         var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.OpenBSD, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
-                            if (block[p] != 0)
-                                dp.TopPageTablePage.Add(p, block[p]);
+                            if (block[bo + p] != 0)
+                                dp.TopPageTablePage.Add(p, block[bo + p]);
                         }
 
                         DetectedProcesses.TryAdd(offset, dp);
@@ -454,25 +454,25 @@ namespace inVtero.net
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
-        public bool FreeBSD(long offset)
+        public bool FreeBSD(int bo, long offset)
         {
             var Candidate = false;
 
             //var offset = CurrWindowBase + CurrMapBase;
-            var shifted = (block[0x100] & 0xFFFFFFFFF000);
+            var shifted = (block[bo + 0x100] & 0xFFFFFFFFF000);
             var diff = offset - shifted;
 
-            if (((block[0] & 0xff) == 0x67) && (0x67 == (block[0xff] & 0xff)))
+            if (((block[bo] & 0xff) == 0x67) && (0x67 == (block[bo + 0xff] & 0xff)))
             {
-                if (((block[0x100] & 0xff) == 0x63) && (0 == (block[0x100] & 0x7FFF000000000000)))
+                if (((block[bo + 0x100] & 0xff) == 0x63) && (0 == (block[bo + 0x100] & 0x7FFF000000000000)))
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
                         var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.FreeBSD, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
-                            if (block[p] != 0)
-                                dp.TopPageTablePage.Add(p, block[p]);
+                            if (block[bo + p] != 0)
+                                dp.TopPageTablePage.Add(p, block[bo + p]);
                         }
 
                         DetectedProcesses.TryAdd(offset, dp);
@@ -496,26 +496,27 @@ namespace inVtero.net
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
-        public bool Generic(long offset)
+        public bool Generic(int x, long offset)
         {
             var Candidate = false;
+
             //var offset = CurrWindowBase + CurrMapBase;
             //long bestShift = long.MaxValue, bestDiff = long.MaxValue;
             //var bestOffset = long.MaxValue;
             var i = 0x1ff;
 
-            if (((block[0] & 0xff) == 0x63) || (block[0] & 0xfdf) == 0x847)
+            if (((block[x] & 0xff) == 0x63) || (block[x] & 0xfdf) == 0x847)
             {
                 do
                 {
-                    if (((block[i] & 0xff) == 0x63 || (block[i] & 0xff) == 0x67))
+                    if (((block[x+i] & 0xff) == 0x63 || (block[x+i] & 0xff) == 0x67))
                     {
                         // we disqualify entries that have these bits configured
                         // 111 1111 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 1000 0000
                         // 
-                        if ((block[i] & 0x7FFF000000000480) == 0)
+                        if ((block[x+i] & 0x7FFF000000000480) == 0)
                         {
-                            var shifted = (block[i] & 0xFFFFFFFFF000);
+                            var shifted = (block[x+i] & 0xFFFFFFFFF000);
 
                             if (shifted == offset)
                             {
@@ -525,8 +526,8 @@ namespace inVtero.net
                                 var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.GENERIC, TrueOffset = TrueOffset };
                                 for (int p = 0; p < 0x200; p++)
                                 {
-                                    if (block[p] != 0)
-                                        dp.TopPageTablePage.Add(p, block[p]);
+                                    if (block[x+p] != 0)
+                                        dp.TopPageTablePage.Add(x+p, block[x+p]);
                                 }
                                 DetectedProcesses.TryAdd(offset, dp);
                                 if (Vtero.DiagOutput)
@@ -548,30 +549,30 @@ namespace inVtero.net
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
-        public bool HV(long offset)
+        public bool HV(int bo, long offset)
         {
             var Candidate = false;
 
             //var offset = CurrWindowBase + CurrMapBase;
-            var shifted = (block[0x1fe] & 0xFFFFFFFFF000);
+            var shifted = (block[bo + 0x1fe] & 0xFFFFFFFFF000);
             var diff = offset - shifted;
 
             // detect mode 2, 2 seems good for most purposes and is more portable
             // maybe 0x3 is sufficient
-            if (shifted != 0 && ((block[0] & 0xfff) == 0x063) && ((block[0x1fe] & 0xff) == 0x63 || (block[0x1fe] & 0xff) == 0x67) && block[0x1ff] == 0)
+            if (shifted != 0 && ((block[bo] & 0xfff) == 0x063) && ((block[bo + 0x1fe] & 0xff) == 0x63 || (block[bo + 0x1fe] & 0xff) == 0x67) && block[bo + 0x1ff] == 0)
             {
                 // we disqualify entries that have these bits configured
                 // 111 1111 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 1000 0000
                 // 
-                if (((ulong)block[0x1fe] & 0xFFFF000000000480) == 0)
+                if (((ulong)block[bo + 0x1fe] & 0xFFFF000000000480) == 0)
                 {
                     if (!DetectedProcesses.ContainsKey(offset))
                     {
                         var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.HyperV, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
-                            if (block[p] != 0)
-                                dp.TopPageTablePage.Add(p, block[p]);
+                            if (block[bo + p] != 0)
+                                dp.TopPageTablePage.Add(p, block[bo + p]);
                         }
 
                         DetectedProcesses.TryAdd(offset, dp);
@@ -589,20 +590,19 @@ namespace inVtero.net
         /// </summary>
         /// <param name="offset"></param>
         /// <returns></returns>
-        public bool Windows(long offset)
+        public bool Windows(int bo, long offset)
         {
             var Candidate = false;
-
             // pre randomized kernel 10.16 anniversario edition
             const int SELF_PTR = 0x1ed;
 
             //var offset = CurrWindowBase + CurrMapBase;
-            var shifted = (block[SELF_PTR] & 0xFFFFFFFFF000);
+            var shifted = (block[bo + SELF_PTR] & 0xFFFFFFFFF000);
             var diff = offset - shifted;
 
             // detect mode 2, 2 seems good for most purposes and is more portable
             // maybe 0x3 is sufficient
-            if (((block[0] & 0xfdf) == 0x847) && ((block[SELF_PTR] & 0xff) == 0x63 || (block[SELF_PTR] & 0xff) == 0x67))
+            if (((block[bo] & 0xfdf) == 0x847) && ((block[bo + SELF_PTR] & 0xff) == 0x63 || (block[bo + SELF_PTR] & 0xff) == 0x67))
             {
                 // we disqualify entries that have these bits configured
                 //111 1111 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 1000 0000
@@ -620,8 +620,8 @@ namespace inVtero.net
                         var dp = new DetectedProc { CR3Value = shifted, FileOffset = offset, Diff = diff, Mode = 2, PageTableType = PTType.Windows, TrueOffset = TrueOffset };
                         for (int p = 0; p < 0x200; p++)
                         {
-                            if (block[p] != 0)
-                                dp.TopPageTablePage.Add(p, block[p]);
+                            if (block[bo + p] != 0)
+                                dp.TopPageTablePage.Add(p, block[bo + p]);
                         }
 
                         DetectedProcesses.TryAdd(offset, dp);
@@ -681,14 +681,17 @@ namespace inVtero.net
             return Candidate;
         }
 
+        const int init_map_size = 64 * 1024 * 1024; // 64MB window's
+        const int block_size = (1024 * 4)*512; // 2MB chunks
+        const int block_count = block_size / 8; // long arrays
 
         // TODO: Stop using static's ? perf?
         static long TrueOffset;
         static long CurrMapBase;
         static long CurrWindowBase;
-        static long mapSize = (64 * 1024 * 1024);
-        static long[] block = new long[512];
-        static long[][] buffers = { new long[512], new long[512] };
+        static long mapSize = init_map_size;
+        static long[] block = new long[block_count];
+        static long[][] buffers = { new long[block_count], new long[block_count] };
         static int filled = 0;
 
         /// <summary>
@@ -699,7 +702,7 @@ namespace inVtero.net
         public int Analyze(int ExitAfter = 0)
         {
             CurrWindowBase = 0;
-            mapSize = (64 * 1024 * 1024);
+            mapSize = init_map_size;
             long RunShift = 0;
 
             if (File.Exists(Filename))
@@ -725,63 +728,70 @@ namespace inVtero.net
                             using (var reader = mmap.CreateViewAccessor(CurrWindowBase, mapSize, MemoryMappedFileAccess.Read))
                             {
                                 CurrMapBase = 0;
-                                reader.ReadArray(CurrMapBase, buffers[filled], 0, 512);
+                                //reader.ReadArray(CurrMapBase, buffers[filled], 0, block_count);
+                                UnsafeHelp.ReadBytes(reader, CurrMapBase, ref buffers[filled], block_count);
 
                                 while (CurrMapBase < mapSize)
                                 {
-                                    // Adjust for known memory run / extents mappings.
-                                    
-                                    var offset = TrueOffset = CurrWindowBase + CurrMapBase;
-
-                                    var offset_pfn = offset >> MagicNumbers.PAGE_SHIFT;
-                                    // next page, may be faster with larger chunks but it's simple to view 1 page at a time
-                                    long IndexedOffset_pfn = 0;
-                                    do
-                                    {
-                                        IndexedOffset_pfn = vtero.MemAccess.OffsetToMemIndex(offset_pfn + RunShift);
-                                        if (IndexedOffset_pfn == -1)
-                                        {
-                                            RunShift++;
-                                            continue;
-                                        }
-                                        if (IndexedOffset_pfn == -2)
-                                            return DetectedProcesses.Count();
-
-                                    } while (IndexedOffset_pfn < 0);
-
-                                    // found shift, accumulate indexes
-                                    CurrMapBase += 4096;
-                                    offset_pfn += RunShift;
-                                    IndexedOffset_pfn = IndexedOffset_pfn >> MagicNumbers.PAGE_SHIFT; 
-
-                                    // Calculate DIFF
-                                    var diff_off_pfn = offset < IndexedOffset_pfn ? IndexedOffset_pfn - offset_pfn : offset_pfn - IndexedOffset_pfn;
-
-                                    // Skew Offset
-                                    offset += (diff_off_pfn << MagicNumbers.PAGE_SHIFT);
-
                                     // setup buffers for parallel load/read
                                     block = buffers[filled];
                                     filled ^= 1;
+                                    var CURR_BASES = CurrWindowBase + CurrMapBase;
+                                    CurrMapBase += block_size;
 
 #pragma warning disable HeapAnalyzerImplicitParamsRule // Array allocation for params parameter
                                     Parallel.Invoke(() =>
-                                    Parallel.ForEach<Func<long, bool>>(CheckMethods, (check) =>
+                                    Parallel.ForEach<Func<int, long, bool>>(CheckMethods, (check) =>
                                     {
-                                        check(offset);
+                                        for (int bo = 0; bo < block_count; bo += 512)
+                                        {
+                                            // Adjust for known memory run / extents mappings.
+                                            // Adjust TrueOffset is actually possibly used by check fn (TODO: CLEAN UP THE GLOBALS)
+                                            var offset = TrueOffset = CURR_BASES + (bo * 8);
+
+                                            var offset_pfn = offset >> MagicNumbers.PAGE_SHIFT;
+                                            // next page, may be faster with larger chunks but it's simple to view 1 page at a time
+                                            long IndexedOffset_pfn = 0;
+                                            do
+                                            {
+                                                IndexedOffset_pfn = vtero.MemAccess.OffsetToMemIndex(offset_pfn + RunShift);
+                                                if (IndexedOffset_pfn == -1)
+                                                {
+                                                    RunShift++;
+                                                    continue;
+                                                }
+                                                if (IndexedOffset_pfn == -2)
+                                                    break;
+
+                                            } while (IndexedOffset_pfn < 0);
+
+                                            // found shift, accumulate indexes
+                                            offset_pfn += RunShift;
+                                            IndexedOffset_pfn = IndexedOffset_pfn >> MagicNumbers.PAGE_SHIFT;
+
+                                            // Calculate DIFF
+                                            var diff_off_pfn = offset < IndexedOffset_pfn ? IndexedOffset_pfn - offset_pfn : offset_pfn - IndexedOffset_pfn;
+
+                                            // Skew Offset
+                                            offset += (diff_off_pfn << MagicNumbers.PAGE_SHIFT);
+
+
+                                            ///// !!! DO CHECK !!!
+                                            check(bo, offset);
+                                        }
 
                                     }), () =>
-                                    {
-                                        if (CurrMapBase < mapSize)
-                                            UnsafeHelp.ReadBytes(reader, CurrMapBase, ref buffers[filled]);
-                                    }
+                                        {
+                                            if (CurrMapBase < mapSize)
+                                            {
+                                                var total_count_remain = ((mapSize - CurrMapBase) / 8);
+                                                var read_in_count = total_count_remain > block_count ? block_count : total_count_remain;
+                                                UnsafeHelp.ReadBytes(reader, CurrMapBase, ref buffers[filled], (int) read_in_count);
+                                            }
+                                        }
                                     );
                                     if (ExitAfter > 0 && (ExitAfter == DetectedProcesses.Count())) // || FoundValueOffsets.Count() >= ExitAfter))
                                         return DetectedProcesses.Count();
-
-                                    var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
-                                    if (progress != ProgressBarz.Progress)
-                                        ProgressBarz.RenderConsoleProgress(progress);
                                 }
                             } // close current window
 
@@ -789,6 +799,11 @@ namespace inVtero.net
 
                             if (CurrWindowBase + mapSize > FileSize)
                                 mapSize = FileSize - CurrWindowBase;
+
+                            var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
+                            if (progress != ProgressBarz.Progress)
+                                ProgressBarz.RenderConsoleProgress(progress);
+
                         }
                     }
                 } // close map
@@ -833,7 +848,6 @@ namespace inVtero.net
 
         /// <summary>
         /// Scan for a class configured variable "HexScanDword"
-        /// 
         /// This is a specialized thing we are trying to avoid over scanning
         /// Turns out the physical memory run data maintained by the OS is typically very deep physically
         /// So in start-up we may use this depending on input file
