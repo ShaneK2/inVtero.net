@@ -68,161 +68,54 @@ using System.Text;
 using System.Runtime.InteropServices;
 using inVtero.net.ConsoleUtils;
 using static inVtero.net.Misc;
-using PowerArgs;
-using PowerArgs.Cli;
 using System.Threading.Tasks;
 
 namespace inVtero.net
 {
-    // demo of inVtero !!!
-    /*[ArgExceptionBehavior(ArgExceptionPolicy.StandardExceptionHandling, ShowTypeColumn = true, ShowPossibleValues = true),
-        TabCompletion(Indicator = "> ", REPL = true, HistoryToSave = 1000)]  // ,CompletionSourceType = typeof(ItemNameCompletion), 
-    [ArgExample("Dump -f filename", "dumps"), ArgExample("scan", "-f filename scan's memory")]
-   */
     public class quickdumps
     {
-        #region inactive
-        private class OSPicker : ISmartTabCompletionSource
-        {
-            public OSPicker()
-            {
-                
-            }
-
-            public bool TryComplete(TabCompletionContext context, out string completion)
-            {
-                var allRemotes = new List<string>
-                {
-                    "windows",
-                    "hyperv",
-                    "linux",
-                    "freebsd",
-                    "openbsd",
-                    "netbsd",
-                    "generic",
-                    "all",
-                    "vmcs"
-                };
-
-                var list = allRemotes.Where(r => r.StartsWith(context.CompletionCandidate.ToLower(), StringComparison.InvariantCultureIgnoreCase))
-                    .Select(r => ContextAssistSearchResult.FromString(r))
-                    .ToList();
-
-                completion = list.FirstOrDefault().RichDisplayText.StringValue;
-                return !string.IsNullOrWhiteSpace(completion);
-            }
-        }
-
-        //[ArgActionMethod, ArgumentAwareTabCompletion(typeof(PTType)),
-        //    ArgDescription("OS Support to enable"),
-        //    ArgContextualAssistant(typeof(OSPicker)),
-        //    DefaultValue("Windows")]
         PTType OS { get; set; }
-        #endregion
-        /*
-        [ArgActionMethod, ArgDescription("Run scan")]
-        public void scan(ScanOptions oo)
-
-        {
-            CliHelper cli = new CliHelper();
-
-            var scanit = new Scan();
-
-            vtero = scanit.Scanit(oo);
-
-            return;
-        }
-
-        [ArgActionMethod, ArgDescription("Run default dump routine")]
-        public void dump(DumpOptions oo)
-        {
-            var ops = new DumpOptions();
-
-            vtero = new Vtero();
-
-            var saveStateFile = $"{ops.Global.FileName }.inVtero.net";
-            if (File.Exists(saveStateFile))
-            {
-                vtero = vtero.CheckpointRestoreState(saveStateFile);
-                vtero.OverRidePhase = true;
-            }
-
-            // TODO: fail when no state
-
-            Timer = Stopwatch.StartNew();
-
-            //var dumper = new Dumper(vtero, string.Empty, null);
-
-            //dumper.DumpIt();
-            return;
-        }
-
-        [ArgActionMethod, ArgDescription("Run default analyze routine")]
-        public void analyze(AnalyzeOptions ops)
-        {
-
-            if (!string.IsNullOrWhiteSpace(FileName))
-                ops.Global.FileName = FileName;
-
-            vtero = new Vtero();
-
-            var saveStateFile = $"{ops.Global.FileName}.inVtero.net";
-            if (File.Exists(saveStateFile))
-            {
-                vtero = vtero.CheckpointRestoreState(saveStateFile);
-                vtero.OverRidePhase = true;
-            }
-
-            Mem.InitMem(ops.Global.FileName, null, vtero.DetectedDesc);
-
-            var analyzer = new Analyze();
-
-            Timer = Stopwatch.StartNew();
-            analyzer.StartAnalyze(ops, vtero);
-
-            return;
-        }
-        */
-
-
 
         public static int Main(string[] args)
         {
             try
             {
+                List<string> FullArgs = new List<string>(args);
+
                 CancelKeyPress += Console_CancelKeyPress;
                 AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
 
-                if (args.Length < 1)
-                    args = new string[] { "python" };
+                if (Environment.GetEnvironmentVariable("TERM") == null)
+                    Environment.SetEnvironmentVariable("TERM", "ANSI");
 
-                RunCLIREPL._Main(args);
+                WriteColor(ConsoleColor.Cyan, "QuickDumps is an IronPython shell.");
+                WriteColor(ConsoleColor.Cyan, "use dir() help() and the python language.");
+                var pch = new PythonConsoleHost();
 
-                var p = new quickdumps();
-                
+                FullArgs.Add("-i");
+                FullArgs.Add("-O");
 
-
-
-                /*
-
-                // I wanted a flexible syntax that I didn't know how to (yet) attribute with CommandLine 2.0beta :\
-                if (args.Length > 1 && File.Exists(args[0]))
+                if (File.Exists("Analyze.py"))
                 {
-                    p.FileName = args[0];
-                    var tmp = new string[args.Length-1];
-                    Array.Copy(args, 1, tmp, 0, args.Length - 1);
-                    args = tmp;
+                    Write("Analyze.py has been injected, ");
+                    ForegroundColor = ConsoleColor.Green;
+                    Write("test()");
+                    ForegroundColor = ConsoleColor.Cyan;
+                    Write(" is the default method that will digest memory dump files from the ");
+                    ForegroundColor = ConsoleColor.Green;
+                    Write("MemList");
+
+                    WriteColor(ConsoleColor.Cyan, " array.");  
+                    FullArgs.Add("Analyze.py");
                 }
 
-                var parser = new Parser(with => with.EnableDashDash = true);
 
-                return CommandLine.Parser.Default.ParseArguments<ScanOptions, DumpOptions, AnalyzeOptions>(args)
-                    .MapResult(
-                      (ScanOptions opts) => p.InitialPhaseScans(opts),
-                      (DumpOptions opts) => p.DoDumping(opts),
-                      (AnalyzeOptions opts) => p.DoAnalyze(opts),
-                      errs => 1);
-                      */
+                FullArgs.Add("-X:FullFrames");
+                FullArgs.Add("-X:TabCompletion");
+                FullArgs.Add("-X:ColorfulConsole");
+
+                ForegroundColor = ConsoleColor.White;
+                pch.Run(FullArgs.ToArray());
             }
             catch (Exception ex)
             {
@@ -237,9 +130,6 @@ namespace inVtero.net
             return 0;
         }
 
-
-        #region Utilities
-       
         private static void CurrentDomain_ProcessExit(object sender, EventArgs e)
         {
             ResetColor();
@@ -247,29 +137,6 @@ namespace inVtero.net
         private static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
         {
             ResetColor();
-        }
-
-
-        #endregion
-    }
-
-    public class ScanTypeScanTypeCompletionSource : SimpleTabCompletionSource
-    {
-        public ScanTypeScanTypeCompletionSource() : base(new string[] {
-            "Windows",
-            "HyperV",
-            "FreeBSD",
-            "OpenBSD",
-            "NetBSD",
-            "HyperV", 
-            "Linux",
-            "Generic",
-            "ALL",
-            "VMCS"
-
-        })
-        {
-            this.MinCharsBeforeCyclingBegins = 0;
         }
     }
 }

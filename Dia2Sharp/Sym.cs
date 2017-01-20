@@ -13,7 +13,6 @@ namespace Dia2Sharp
 {
     public class Sym
     {
-        //public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
         public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
 
         public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_DEBUG)

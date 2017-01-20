@@ -27,8 +27,6 @@ using static System.Console;
 using static inVtero.net.Misc;
 using System.IO;
 using System.Diagnostics;
-using PowerArgs;
-using ConsoleUtils;
 
 namespace inVtero.net.ConsoleUtils
 {
@@ -72,7 +70,7 @@ namespace inVtero.net.ConsoleUtils
             if (!vtero.OverRidePhase)
             {
                 Mem.InitMem(co.FileName, vtero.MRD);
-                ProgressBarz.BaseMessage = new ConsoleString("First pass, looking for processes");
+                //ProgressBarz.BaseMessage = new ConsoleString("First pass, looking for processes");
                 ForegroundColor = ConsoleColor.Cyan;
 #if TESTING
             Timer = Stopwatch.StartNew();
@@ -125,17 +123,17 @@ namespace inVtero.net.ConsoleUtils
 #endif
             }
             // basic perf checking
-            QuickOptions.Timer = Stopwatch.StartNew();
+            //QuickOptions.Timer = Stopwatch.StartNew();
                 
             var procCount = vtero.ProcDetectScan(co.VersionsToEnable);
 
             if (!vtero.OverRidePhase)
             {
                 if (co.VerboseLevel > 1)
-                    WriteColor(ConsoleColor.Blue, ConsoleColor.Black, $"{procCount} candidate process page tables. Time so far: {QuickOptions.Timer.Elapsed}, second pass starting. {QuickOptions.FormatRate(vtero.FileSize, QuickOptions.Timer.Elapsed)}");
+                    ;//   WriteColor(ConsoleColor.Blue, ConsoleColor.Black, $"{procCount} candidate process page tables. Time so far: {QuickOptions.Timer.Elapsed}, second pass starting. {QuickOptions.FormatRate(vtero.FileSize, QuickOptions.Timer.Elapsed)}");
                 if (procCount < 3)
                 {
-                    WriteColor(ConsoleColor.Red, "Seems like a fail. Try generic scanning or implement a state scan like LinuxS");
+                    //WriteColor(ConsoleColor.Red, "Seems like a fail. Try generic scanning or implement a state scan like LinuxS");
                     return null;
                 }
             }
@@ -161,17 +159,17 @@ namespace inVtero.net.ConsoleUtils
             }
             else
             {
-                ProgressBarz.BaseMessage = new ConsoleString("Second pass, correlating for VMCS pages");
+                //ProgressBarz.BaseMessage = new ConsoleString("Second pass, correlating for VMCS pages");
 
                 var VMCSCount = vtero.VMCSScan();
                 //Timer.Stop();
 
                 if (!vtero.OverRidePhase)
                 {
-                    WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"{VMCSCount} candidate VMCS pages. Time to process: {QuickOptions.Timer.Elapsed}, Data scanned: {vtero.FileSize:N}");
+                    //WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"{VMCSCount} candidate VMCS pages. Time to process: {QuickOptions.Timer.Elapsed}, Data scanned: {vtero.FileSize:N}");
 
                     // second time 
-                    WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"Second pass done. {QuickOptions.FormatRate(vtero.FileSize * 2, QuickOptions.Timer.Elapsed)}");
+                    //WriteColor(ConsoleColor.Blue, ConsoleColor.Yellow, $"Second pass done. {QuickOptions.FormatRate(vtero.FileSize * 2, QuickOptions.Timer.Elapsed)}");
 
                     // each of these depends on a VMCS scan/pass having been done at the moment
                     WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, "grouping and joining all memory");

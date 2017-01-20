@@ -7,13 +7,19 @@ using Microsoft.Scripting.Hosting.Shell;
 
 using IronPython.Hosting;
 using IronPython.Runtime;
-
+using Microsoft.Scripting;
 
 namespace inVtero.net.ConsoleUtils
 {
     public class PythonConsoleHost : ConsoleHost
     {
-        Vtero Vtero;
+        ScriptEngine EngineCtx;
+        CommandLine CmdCtx;
+        PythonOptionsParser OptionsCtx;
+
+        public PythonConsoleHost()
+        {
+        }
 
         protected override Type Provider
         {
@@ -22,12 +28,14 @@ namespace inVtero.net.ConsoleUtils
 
         protected override CommandLine CreateCommandLine()
         {
-            return new PythonCommandLine();
+            CmdCtx = new PythonCommandLine();
+            return CmdCtx;
         }
 
         protected override OptionsParser CreateOptionsParser()
         {
-            return new PythonOptionsParser();
+            OptionsCtx = new PythonOptionsParser();
+            return OptionsCtx;
         }
 
         protected override ScriptRuntimeSetup CreateRuntimeSetup()
@@ -60,24 +68,8 @@ namespace inVtero.net.ConsoleUtils
 
         protected override void ExecuteInternal()
         {
-            var pc = HostingHelpers.GetLanguageContext(Engine) as PythonContext;
-            pc.SetModuleState(typeof(ScriptEngine), Engine);
+
             base.ExecuteInternal();
-        }
-
-        /// <summary>
-        /// Runs the console.
-        /// </summary>
-        public void RunConsole(string[] Args)
-        {
-
-            List<string> moreArgs = Args == null ? new List<string>() : new List<string>(Args);
-
-            moreArgs.Add("-X:FullFrames");
-            moreArgs.Add("-X:TabCompletion");
-            moreArgs.Add("-X:ColorfulConsole");
-
-            this.Run(moreArgs.ToArray());
         }
 
         public static void RunREPL(string []Args)
@@ -88,8 +80,9 @@ namespace inVtero.net.ConsoleUtils
             }
 
             var pch = new PythonConsoleHost();
-            pch.RunConsole(Args);
+            pch.Run(Args);
         }
+
     }
 
 }

@@ -32,7 +32,6 @@ using System.Text;
 using Reloc;
 using System.ComponentModel;
 using System.Diagnostics;
-using PowerArgs;
 using RaptorDB;
 using softwareunion;
 using Dia2Sharp;
@@ -42,7 +41,6 @@ using static inVtero.net.Misc;
 // TODO: Use git issues ;)
 // TODO: Implement 5 level page table traversal (new intel spec)
 using System.Dynamic;
-using PowerArgs.Cli;
 
 namespace inVtero.net
 {
@@ -60,9 +58,6 @@ namespace inVtero.net
         public string MemFile;
         public long FileSize;
         public double GroupThreshold;
-
-        // Do not think debughelp api is MT safe really so careful
-        public static IntPtr hCurrentProcess = Process.GetCurrentProcess().Handle;
 
         // Preserve detected results to avoid aggressive kernel / symbol scanning loading
         public DetectedProc KernelProc;
@@ -185,8 +180,8 @@ namespace inVtero.net
         [ProtoAfterDeserialization]
         void DeriveMemoryDescriptors()
         {
-            if (ProgressBarz.BaseMessage == null || string.IsNullOrWhiteSpace(ProgressBarz.BaseMessage.ToString()))
-                ProgressBarz.BaseMessage = new ConsoleString("Value Scan for memory descriptors in progress");
+          //  if (ProgressBarz.BaseMessage == null || string.IsNullOrWhiteSpace(ProgressBarz.BaseMessage.ToString()))
+          //      ProgressBarz.BaseMessage = new ConsoleString("Value Scan for memory descriptors in progress");
 
             AMemoryRunDetector Detected = null;
 
@@ -218,13 +213,8 @@ namespace inVtero.net
                     Detected.IsSupportedFormat(this);
             }
 
-            if (Vtero.VerboseOutput)
-            {
-               // if (Detected.LogicalPhysMemDesc != null)
-               //     WriteColor(ConsoleColor.Yellow, $"Windows/Logical Memory Run: {Detected.LogicalPhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
-               // else if (Detected.PhysMemDesc != null)
-                    WriteColor(ConsoleColor.Green, $"HW Memory Run: {Detected.PhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
-            }
+            if (Vtero.VerboseLevel > 1)
+                WriteColor(ConsoleColor.Green, $"HW Memory Run: {Detected.PhysMemDesc}" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
 
             MRD = Detected;
             MemAccess = Mem.InitMem(MemFile, Detected);
@@ -582,9 +572,6 @@ namespace inVtero.net
         }
 
         /// <summary>
-        /// This is a global context (hCurrentProcess) so do not forget that we will need to avoid overlapping
-        /// or release resources consuming VA ranges we expired from scope...
-        /// 
         /// We use sympath environment variable
         /// </summary>
         /// <param name="cv_data"></param>
@@ -1028,7 +1015,7 @@ namespace inVtero.net
                                     sx++;
                                     curr++;
                                 }
-                                var progress = Convert.ToInt32((Convert.ToDouble(curr) / Convert.ToDouble(tot) * 100.0) + 0.5);
+                                var progress = Convert.ToInt32(Convert.ToDouble(curr) / Convert.ToDouble(tot) * 100.0);
                                 ProgressBarz.RenderConsoleProgress(progress);
                             }
                             catch (ExtendedPageNotFoundException eptpX)

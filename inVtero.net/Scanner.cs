@@ -800,7 +800,7 @@ namespace inVtero.net
                             if (CurrWindowBase + mapSize > FileSize)
                                 mapSize = FileSize - CurrWindowBase;
 
-                            var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
+                            var progress = Convert.ToInt32(Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0);
                             if (progress != ProgressBarz.Progress)
                                 ProgressBarz.RenderConsoleProgress(progress);
 
@@ -899,7 +899,8 @@ namespace inVtero.net
                         yield return offset;
 
                     CurrWindowBase += (1 * ReadSize);
-                    var progress = Convert.ToInt32((Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0) + 0.5);
+                    CurrWindowBase  = CurrWindowBase > FileSize ? FileSize : CurrWindowBase;
+                    var progress = Convert.ToInt32(Convert.ToDouble(CurrWindowBase) / Convert.ToDouble(FileSize) * 100.0);
                     if (progress != ProgressBarz.Progress)
                         ProgressBarz.RenderConsoleProgress(progress);
 

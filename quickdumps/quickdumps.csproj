@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>quickdumps</RootNamespace>
     <AssemblyName>quickdumps</AssemblyName>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <SccProjectName>SAK</SccProjectName>
@@ -28,7 +28,7 @@
     <UpdatePeriodically>false</UpdatePeriodically>
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
-    <ApplicationRevision>14</ApplicationRevision>
+    <ApplicationRevision>15</ApplicationRevision>
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
@@ -79,6 +79,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.Dynamic, Version=1.1.1.21, Culture=neutral, PublicKeyToken=7f709c5b713576e1, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\..\..\..\dev\IronPython\Platforms\Net45\Microsoft.Dynamic.dll</HintPath>
+    </Reference>
     <Reference Include="protobuf-net, Version=2.1.0.0, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
       <HintPath>..\packages\protobuf-net.2.1.0\lib\net451\protobuf-net.dll</HintPath>
       <Private>True</Private>
@@ -105,10 +109,6 @@
     <ProjectReference Include="..\ConsoleUtils\ConsoleUtils.csproj">
       <Project>{1e44f5eb-ad5f-4def-a9fb-e754ab732390}</Project>
       <Name>ConsoleUtils</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\Externals\PowerArgs\PowerArgs\PowerArgs.csproj">
-      <Project>{35809fab-7fbd-4663-8409-2d6a312c8265}</Project>
-      <Name>PowerArgs</Name>
     </ProjectReference>
     <ProjectReference Include="..\inVtero.net\inVtero.net.csproj">
       <Project>{bba65fad-57b1-4b78-b262-e542a88440d6}</Project>
@@ -149,9 +149,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="dbghelp.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="msdia120.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="MSDIA140.dll">

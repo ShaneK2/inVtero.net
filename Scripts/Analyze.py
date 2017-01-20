@@ -16,54 +16,55 @@
 #
 # NtBuildNumber == kernel version
 #
-
+# BELOW LIST IS USED BY "test()" method. 
 MemList = [
 "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
 "c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
 "c:\\temp\\win10.64.xendump",
 "C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
-"d:\\temp\\2012R2.debug.MEMORY.DMP",
-"d:\\temp\\server2016.xendump",
+"c:\\temp\\2012R2.debug.MEMORY.DMP",
+"c:\\temp\\server2016.xendump",
 "c:\\temp\\2012R2.xendump",
-"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-Snapshot1.vmem",
-"D:\\Users\\files\\VMs\\10-ENT-1607\\10 ENT 1607-bbbe109e.vmem",
-"D:\\Users\\files\\VMs\\Windows Development\\Windows Development-6d08357c.vmem"
+"c:\\temp\\10 ENT 1607-Snapshot1.vmem",
+#"c:\\temp\\Windows Development-6d08357c.vmem",
+#"c:\\temp\\MEMORY.4g.DMP",
+#"c:\\temp\memory.64GB.dmp"
 ]
 
-import clr,sys
+print "Configured input files"
+for line in MemList:
+    print line
 
+import clr,sys
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
-
 from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
-from ConsoleUtils import *
 from System.IO import Directory, File, FileInfo, Path
 from System import Environment, String, Console, ConsoleColor
 from System import Text
 from System.Diagnostics import Stopwatch
 
-TotalSizeAnalyzed = 0
+# This script can be pretty chatty to stdout, configure various output here
 Vtero.VerboseOutput = True
 Vtero.DiagOutput = False
 Vtero.VerboseLevel = 1
 Vtero.DisableProgressBar = False
+
+# More option handling for each file 
+copts = ConfigOptions()
+copts.IgnoreSaveData = True
+copts.VersionsToEnable = PTType.GENERIC
+copts.VerboseLevel = 0
 
 # This code fragment can be removed but it's a reminder you need symbols working
 sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH")
 if String.IsNullOrWhiteSpace(sympath):
     sympath = "SRV*http://msdl.microsoft.com/download/symbols"
 
-def ScanDump(MemoryDump):
+def ScanDump(MemoryDump, copts):
     MemoryDumpSize = FileInfo(MemoryDump).Length
-    # Basic option handling
-    # This script can be pretty chatty to stdout 
-    copts = ConfigOptions()
-    copts.IgnoreSaveData = False
     copts.FileName = MemoryDump
-    copts.VersionsToEnable = PTType.GENERIC
-    # To get some additional output 
-    copts.VerboseLevel = 0
     # Check StopWatch
     runTime = Stopwatch.StartNew()
     # since we are not ignoring SaveData, this just get's our state from
@@ -88,7 +89,8 @@ def ScanDump(MemoryDump):
     else:
         proc.LoadSymbols()
     kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
-    print "kernel minor version " + kMinorVer.ToString()
+    Console.ForegroundColor = ConsoleColor.Cyan
+    print "kernel build: " + kMinorVer.ToString()
     # Use dynamic typing to walk EPROCES 
     logicalList = vtero.WalkProcList(proc)
     print "Physical Proc Count: " + proc_arr.Count.ToString()
@@ -130,26 +132,6 @@ def ScanDump(MemoryDump):
     print "PART RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP SIZE: " + MemoryDumpSize.ToString("N") + " bytes."
     print "SPEED: " + ((MemoryDumpSize / 1024) / ((runTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
     return vtero
-
-# Check StopWatch
-TotalRunTime = Stopwatch.StartNew()
-TotalSizeAnalyzed = 0
-
-for MemoryDump in MemList:
-    print " ++++++++++++++++++++++++++++++ ANALYZING INPUT [" + MemoryDump + "] ++++++++++++++++++++++++++++++ "
-    if not File.Exists(MemoryDump):
-        print "Can not find dump to analyze: " + MemoryDump
-        continue
-    vtero = ScanDump(MemoryDump)
-    TotalSizeAnalyzed += vtero.FileSize
-    print " ++++++++++++++++++++++++++++++ DONE WITH INPUT [" + MemoryDump + "] ++++++++++++++++++++++++++++++ "
-
-print " ++++++++++++++++++++++++++++++ ALL DONE... Please explore! ++++++++++++++++++++++++++++++"
-print "TOTAL RUNTIME: " + TotalRunTime.Elapsed.ToString() + " (seconds), TOTAL DATA ANALYZED: " + TotalSizeAnalyzed.ToString("N") + " bytes."
-print "SPEED: " + ((TotalSizeAnalyzed / 1024) / ((TotalRunTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
-for MemoryDump in MemList:
-    "INPUT: " + MemoryDump
-
 
 # This one is recursive down a tree
 def ListVAD(proc, VadRoot):
@@ -257,3 +239,27 @@ def WalkProcListExample(proc):
             return
         _EPROC = proc.xStructInfo("_EPROCESS", _EPROC_ADDR - ProcListOffsetOf)
             
+
+def test():
+    TotalRunTime = Stopwatch.StartNew()
+    TotalSizeAnalyzed = 0
+    for MemoryDump in MemList:
+        print " ++++++++++++++++++++++++++++++ ANALYZING INPUT [" + MemoryDump + "] ++++++++++++++++++++++++++++++ "
+        if not File.Exists(MemoryDump):
+            print "Can not find dump to analyze: " + MemoryDump
+            continue
+        copts.FileName = MemoryDump
+        vtero = ScanDump(MemoryDump, copts)
+        TotalSizeAnalyzed += vtero.FileSize
+        print " ++++++++++++++++++++++++++++++ DONE WITH INPUT [" + MemoryDump + "] ++++++++++++++++++++++++++++++ "
+    print " ++++++++++++++++++++++++++++++ ALL DONE... Please explore! ++++++++++++++++++++++++++++++"
+    print "TOTAL RUNTIME: " + TotalRunTime.Elapsed.ToString() + " (seconds), TOTAL DATA ANALYZED: " + TotalSizeAnalyzed.ToString("N") + " bytes."
+    print "SPEED: " + ((TotalSizeAnalyzed / 1024) / ((TotalRunTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
+    return vtero
+
+
+
+
+
+
+

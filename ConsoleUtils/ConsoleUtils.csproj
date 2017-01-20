@@ -67,23 +67,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AnalyzeOptions.cs" />
-    <Compile Include="BaseOptions.cs" />
-    <Compile Include="CLI.cs" />
-    <Compile Include="Dump.cs" />
-    <Compile Include="DumpOptions.cs" />
     <Compile Include="IronPython.cs" />
-    <Compile Include="List.cs" />
-    <Compile Include="MemoryRegionSource.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="QuickOptions.cs" />
     <Compile Include="Scan.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Externals\PowerArgs\PowerArgs\PowerArgs.csproj">
-      <Project>{35809fab-7fbd-4663-8409-2d6a312c8265}</Project>
-      <Name>PowerArgs</Name>
-    </ProjectReference>
     <ProjectReference Include="..\inVtero.net\inVtero.net.csproj">
       <Project>{bba65fad-57b1-4b78-b262-e542a88440d6}</Project>
       <Name>inVtero.net</Name>

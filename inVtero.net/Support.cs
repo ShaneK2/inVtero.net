@@ -72,14 +72,12 @@ namespace inVtero.net
         public static void WriteColor(string var)
         {
             WriteLine(var);
-            //LowerBoundOutput();
         }
         public static void WriteColor(ConsoleColor ForeGround, string var)
         {
             if (ForegroundColor != ForeGround)
                 ForegroundColor = ForeGround;
             WriteLine(var);
-            //LowerBoundOutput();
         }
         public static void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
         {
@@ -90,8 +88,6 @@ namespace inVtero.net
 
             WriteLine(var.PadRight(var.Length % WindowWidth, ' '));
             WriteLine(var);
-            //LowerBoundOutput();
-
         }
 
         static void LowerBoundOutput()

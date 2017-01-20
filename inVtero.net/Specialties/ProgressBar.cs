@@ -19,28 +19,21 @@
 using System;
 using System.Text;
 using static System.Console;
-using PowerArgs.Cli;
-using PowerArgs;
 
 namespace inVtero.net.Support
 {
     public static class ProgressBarz
     {
-        public static ConsoleColor pBarColor;
-        public static int Progress;
+        public static ConsoleColor pBarColor = ConsoleColor.Yellow;
+        public static int Progress = 0;
 
         public static bool DisableProgressBar = false;
         public static bool TextInfo = false;
 
-        public static ConsoleString BaseMessage;
         private static char progressBarCharacter = '\u2592';
-        static int LastProgLine;
         static int SavePos;
 
-        public static CliProgressBar Bar;
-
         static ProgressBarz() {
-            Bar = new CliProgressBar("Initalizing...");
         }
 
         public static void RenderConsoleProgress(int percentage)
@@ -48,68 +41,48 @@ namespace inVtero.net.Support
             if (Progress == percentage)
                 return;
 
+            Progress = percentage;
+
             CursorVisible = false;
-            const int BarHeight = 3;
+            const int BarHeight = 1;
             var BarStart = (WindowTop + WindowHeight - 1) - BarHeight;
 
             CursorTop = BarStart;
 
             if (!DisableProgressBar)
             {
-                Bar.Progress = percentage / 100.00;
-                Bar.Message = BaseMessage.AppendUsingCurrentFormat($".  {percentage} %");
-                Bar.Render();
-            } else if(TextInfo && percentage != Progress)
+                CursorTop = BarStart - 1;
+                CursorVisible = false;
+
+                var BottomOfCon = WindowTop + WindowHeight - 1;
+                var BottomOfBuffer = BufferHeight - WindowHeight - BarHeight;
+                var MaxText = (WindowTop + WindowHeight - 1) - BarHeight;
+                var BarLine = MaxText + 1;
+
+                var originalColor = ForegroundColor;
+                var origback = BackgroundColor;
+                ForegroundColor = pBarColor;
+                CursorLeft = 0;
+
+                var width = Console.WindowWidth - 4;
+                var newWidth = ((width * percentage) / 100);  
+
+                CursorTop = BarLine;
+
+                var progBar = new StringBuilder(new string(progressBarCharacter, newWidth)).Append(new string(' ', width - newWidth));
+                Write(progBar.ToString());
+
+                CursorLeft = 0;
+                ForegroundColor = originalColor;
+                CursorTop = BottomOfCon;
+                CursorVisible = true;
+            }
+            else if (TextInfo && percentage != Progress)
             {
                 ForegroundColor = ConsoleColor.DarkBlue;
                 BackgroundColor = ConsoleColor.Yellow;
                 WriteLine($" {percentage} % ");
             }
-
-            CursorTop = BarStart-1;
-
-            Progress = percentage;
-
-
-            /*
-            Progress = percentage;
-            CursorVisible = false;
-
-            var BottomOfCon = WindowTop + WindowHeight - 1;
-            var BottomOfBuffer = BufferHeight - WindowHeight - BarHeight;
-            SavePos = CursorTop;
-            var MaxText = (WindowTop + WindowHeight - 1) - BarHeight;
-            var BarLine = MaxText + 1;
-            while (SavePos-- >= MaxText)
-                WriteLine("\t\t\t\t\t".PadRight(WindowWidth));
-            SavePos = CursorTop;
-
-            //if (LastProgLine != SavePos && CursorTop + BarHeight >= BufferHeight)
-            //WriteLine();
-
-            var originalColor = ForegroundColor;
-            var origback = BackgroundColor;
-            ForegroundColor = pBarColor;
-            CursorLeft = 0;
-
-            //LastProgLine = CursorTop = BottomOfCon - BarHeight;
-            var width = Console.WindowWidth - 4;
-            var newWidth = ((width * percentage) / 100);  // incase some change happened
-
-            CursorTop = BarLine;
-            Bar.Width = newWidth; 
-            Bar.Progress = percentage / 100.00;
-            Bar.Render();
-
-//            var progBar = new StringBuilder(new string(progressBarCharacter, newWidth)).Append(new string(' ', width - newWidth));
-//            Write(progBar.ToString());
-
-            CursorLeft = 0;
-            ForegroundColor = originalColor;
-            CursorTop = SavePos;
-            CursorVisible = true;
-            */
-
         }
     }
 }

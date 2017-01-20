@@ -242,7 +242,11 @@ namespace inVtero.net
 
                 if (block != null)
                 {
-                    UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block, block.Length);
+                    var copy_len = block.Length;
+                    if (BlockOffset + (block.Length * 8) > NewMapViewSize)
+                        copy_len = (int) ((NewMapViewSize - BlockOffset) / 8);
+
+                    UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block, copy_len);
                     rv = block[((AbsOffset >> 3) & 0x1ff)];
                 }
                 // FIX: ReadInt64 uses byte address so when we use it must adjust, check for other callers
