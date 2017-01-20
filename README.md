@@ -1,16 +1,16 @@
 # inVtero.net
-
-![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
-
-
 ## Binary Setup package
 https://github.com/ShaneK2/inVtero.net/blob/master/quickdumps/publish.zip
 
-You do need to have msdia120.dll registered "regsvr32 msdia120.dll" (see zip)
+## IMPORTANT => You do need to have msdia140.dll registered "cmd /c regsvr32 msdia140.dll" (see zip)
 
 No configuration needed, completely dynamic / duck typing
 
 ## Windows 64 bit all versions
+![In Vtero](https://raw.githubusercontent.com/ShaneK2/inVtero.net/gh-pages/images/inVtero.jpg)
+
+
+
 
 ### Use Quickdumps + python to automatically analyze any memory dump
 
