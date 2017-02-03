@@ -18,7 +18,7 @@
 #
 # BELOW LIST IS USED BY "test()" method. 
 MemList = [
-"c:\\temp\\win2k8R264bit-Snapshot5.vmsn"
+"c:\\temp\\win2k8R264bit-Snapshot5.vmsn",
 "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
 "c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
 "c:\\temp\\win10.64.xendump",
@@ -112,6 +112,7 @@ def ScanDump(MemoryDump, copts):
             for hwproc in proc_arr:
                 if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
                     found=True
+                    #print "Found logical proc[" + hwproc.CR3Value.ToString("X") + "] in physical array"
             if found == False:
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 if proc.VadRoot == 0:
@@ -120,16 +121,15 @@ def ScanDump(MemoryDump, copts):
                 print "Logical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
         print "Checking that all physical processes exist in the logical list"
         for hwproc in proc_arr:
-            Found=False
+            found=False
             for proc in logicalList:
                 if proc.Dictionary["Pcb.DirectoryTableBase"] == hwproc.CR3Value:
                     found=True
+                    #print "Found physical proc[" + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + "] in logical array"
             if found == False:
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                if proc.VadRoot == 0:
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    print "An expected, ",
-                print "physical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
+                print "physical miss for " + hwproc.ToString()
+    Console.ForegroundColor = ConsoleColor.White
     print "PART RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP SIZE: " + MemoryDumpSize.ToString("N") + " bytes."
     print "SPEED: " + ((MemoryDumpSize / 1024) / ((runTime.ElapsedMilliseconds / 1000)+1)).ToString("N0") + " KB / second  (all phases aggregate time)"
     return vtero
