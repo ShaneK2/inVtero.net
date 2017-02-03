@@ -344,7 +344,6 @@ namespace Dia2Sharp
                 if (def.Value.Item2 > 8)
                     continue;
 
-                // TODO: make recursive and expand on this dynamic object foo.bar working etc...
                 var defName = def.Key.Substring(Name.Length + 1); //.Replace('.', '_');
 
                 switch (def.Value.Item2)

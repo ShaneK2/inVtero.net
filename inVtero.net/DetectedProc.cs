@@ -86,6 +86,8 @@ namespace inVtero.net
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
+        // logical memory representation
+
 
 
         public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntkrnlmp")

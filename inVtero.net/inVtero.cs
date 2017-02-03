@@ -180,9 +180,6 @@ namespace inVtero.net
         [ProtoAfterDeserialization]
         void DeriveMemoryDescriptors()
         {
-          //  if (ProgressBarz.BaseMessage == null || string.IsNullOrWhiteSpace(ProgressBarz.BaseMessage.ToString()))
-          //      ProgressBarz.BaseMessage = new ConsoleString("Value Scan for memory descriptors in progress");
-
             AMemoryRunDetector Detected = null;
 
             if (MemFile.EndsWith(".dmp"))
@@ -190,7 +187,7 @@ namespace inVtero.net
                 Detected = new CrashDump(MemFile);
                 Detected.IsSupportedFormat(this);
 
-            } else if (MemFile.EndsWith(".vmem"))
+            } else if (MemFile.Contains(".vm"))
             {
                 Detected = new VMWare(MemFile);
                 if (Detected.IsSupportedFormat(this))

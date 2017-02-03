@@ -18,6 +18,7 @@
 #
 # BELOW LIST IS USED BY "test()" method. 
 MemList = [
+"c:\\temp\\win2k8R264bit-Snapshot5.vmsn"
 "C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
 "c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
 "c:\\temp\\win10.64.xendump",
@@ -26,7 +27,7 @@ MemList = [
 "c:\\temp\\server2016.xendump",
 "c:\\temp\\2012R2.xendump",
 "c:\\temp\\10 ENT 1607-Snapshot1.vmem",
-#"c:\\temp\\Windows Development-6d08357c.vmem",
+"c:\\temp\\Windows Development-6d08357c.vmem",
 #"c:\\temp\\MEMORY.4g.DMP",
 #"c:\\temp\memory.64GB.dmp"
 ]
@@ -47,7 +48,7 @@ from System.Diagnostics import Stopwatch
 
 # This script can be pretty chatty to stdout, configure various output here
 Vtero.VerboseOutput = True
-Vtero.DiagOutput = False
+Vtero.DiagOutput = True
 Vtero.VerboseLevel = 1
 Vtero.DisableProgressBar = False
 
@@ -55,7 +56,7 @@ Vtero.DisableProgressBar = False
 copts = ConfigOptions()
 copts.IgnoreSaveData = True
 copts.VersionsToEnable = PTType.GENERIC
-copts.VerboseLevel = 0
+copts.VerboseLevel = 1
 
 # This code fragment can be removed but it's a reminder you need symbols working
 sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH")

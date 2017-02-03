@@ -120,7 +120,7 @@ namespace inVtero.net
 #endif
         }
         Mem()
-        {
+        {  
             // common init
             MapViewBase = 0;
             MapViewSize = 0x1000 * 0x1000 * 4L;

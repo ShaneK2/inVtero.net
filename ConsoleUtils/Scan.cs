@@ -127,16 +127,6 @@ namespace inVtero.net.ConsoleUtils
                 
             var procCount = vtero.ProcDetectScan(co.VersionsToEnable);
 
-            if (!vtero.OverRidePhase)
-            {
-                if (co.VerboseLevel > 1)
-                    ;//   WriteColor(ConsoleColor.Blue, ConsoleColor.Black, $"{procCount} candidate process page tables. Time so far: {QuickOptions.Timer.Elapsed}, second pass starting. {QuickOptions.FormatRate(vtero.FileSize, QuickOptions.Timer.Elapsed)}");
-                if (procCount < 3)
-                {
-                    //WriteColor(ConsoleColor.Red, "Seems like a fail. Try generic scanning or implement a state scan like LinuxS");
-                    return null;
-                }
-            }
             // second pass
             // with the page tables we acquired, locate candidate VMCS pages in the format
             // [31-bit revision id][abort indicator]

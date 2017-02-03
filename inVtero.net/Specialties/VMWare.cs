@@ -47,15 +47,16 @@ namespace inVtero.net.Specialties
             if (!File.Exists(vDeviceFile) || !File.Exists(MemFile))
                 return rv;
 
-            using (var dstream = File.OpenRead(vDeviceFile))
-            {
-                using (var dbin = new BinaryReader(dstream))
-                {
-                    // D2BE is really easy to extract data from
-                    if (dbin.ReadUInt32() != 0xBED2BED2)
-                        return rv;
-                }
-            }
+            // Let's seee how far we can get w/o being to aggressive here
+            //using (var dstream = File.OpenRead(vDeviceFile))
+            //{
+            //    using (var dbin = new BinaryReader(dstream))
+            //    {
+            //        // D2BE is really easy to extract data from
+            //        if (dbin.ReadUInt32() != 0xBED2BED2)
+            //            return rv;
+            //    }
+            //}
 
             rv = true;
 
@@ -63,7 +64,13 @@ namespace inVtero.net.Specialties
             // vmem files are contagious starting from 0
             MemRunDescriptor.StartOfMemmory = 0;
             
-            var stateData = File.ReadAllBytes(vDeviceFile);
+            var inFile = File.OpenRead(vDeviceFile);
+
+            // TODO: make this (parsing) more precise for additional versions
+            var stateData = new byte[0x40000];
+
+            inFile.Read(stateData, 0, stateData.Length);
+
             var ToFind = ASCIIEncoding.ASCII.GetBytes("regionsCount");
             var rpn = ASCIIEncoding.ASCII.GetBytes("regionPageNum");
             var ppn = ASCIIEncoding.ASCII.GetBytes("regionPPN");
@@ -119,20 +126,26 @@ namespace inVtero.net.Specialties
 
             MemRunDescriptor.NumberOfPages = TotalPages;
             PhysMemDesc = MemRunDescriptor;
-
+            // adjust start of memory to 
+            if(vDeviceFile == MemFile)
+            {
+                var x = (int)(Math.Ceiling((decimal) i / 0x10000) * 0x10000);
+                StartOfMem = x;
+            }
             return rv;
         }
 
         /// <summary>
-        /// 
-        /// INPUT IS VMEM
-        /// 
-        /// MATCHING VMSS OR VMSN MUST BE IN SAME FOLDER
-        /// 
+        /// Single File: 
+        ///     * (ESX SERVERS) Specify a VMSN or VMSS
+        /// Multiple Files:
+        ///     * (WORKSTATIONS) Specify the VMEM
+        ///     * MATCHING VMSS OR VMSN MUST BE IN SAME FOLDER
         /// </summary>
         /// <param name="VMEM">The path to the virtual machine MEMORY</param>
         public VMWare(string VMEM)
         {
+            // this is likely a WORKSTATION version (2 fiels, vmem and vmss/vmsd)
             if (VMEM.EndsWith(".vmem"))
             {
                 MemFile = VMEM;
@@ -141,6 +154,13 @@ namespace inVtero.net.Specialties
                     vDeviceFile = GuessName;
                 else
                     vDeviceFile = Path.Combine(Path.Combine(Path.GetDirectoryName(VMEM)), Path.GetFileNameWithoutExtension(VMEM) + ".vmsn");
+            }
+            else  
+            // This is likely a combined file Virtual Device + MEM in one (SERVERS like ESX do this)
+            {
+                MemFile = VMEM;
+                vDeviceFile = VMEM;
+                
             }
         }
 
