@@ -527,7 +527,7 @@ namespace inVtero.net
                                 for (int p = 0; p < 0x200; p++)
                                 {
                                     if (block[x+p] != 0)
-                                        dp.TopPageTablePage.Add(x+p, block[x+p]);
+                                        dp.TopPageTablePage.Add(p, block[x+p]);
                                 }
                                 DetectedProcesses.TryAdd(offset, dp);
                                 if (Vtero.DiagOutput)

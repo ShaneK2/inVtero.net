@@ -110,6 +110,7 @@ namespace inVtero.net
 
             var rv = new List<Extract>();
 
+            // large page read
             if (entry != null && entry.PTE.LargePage)
             {
                 var block = new long[0x40000];
@@ -117,6 +118,16 @@ namespace inVtero.net
                 if (GotData)
                     rv = FastPE(Start, block);
             }
+            // use supplied page sized physical entry
+            else if(entry != null && Stop - Start == MagicNumbers.PAGE_SIZE)
+            {
+                var block = new long[0x200];
+                memAxss.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
+                if (GotData)
+                    rv = FastPE(Start, block);
+            }
+            // just use the virtual addresses and attempt to locate phys from page walk
+            // this is a really slow way to enumerate memory
             else
             {
                 // convert index to an address 
@@ -136,7 +147,7 @@ namespace inVtero.net
                     Curr = i;
                     i += 0x1000;
 
-                    if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys))
+                    if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys) || !locPhys.Valid )
                         continue;
 
                     memAxss.GetPageForPhysAddr(locPhys, ref block, ref GotData);

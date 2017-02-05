@@ -41,6 +41,7 @@ using static inVtero.net.Misc;
 // TODO: Use git issues ;)
 // TODO: Implement 5 level page table traversal (new intel spec)
 using System.Dynamic;
+using libyaraNET;
 
 namespace inVtero.net
 {
@@ -316,6 +317,30 @@ namespace inVtero.net
         {
             return dp.ExtractCVDebug(sec);
         }
+
+
+        public ScanResult[] YaraAll(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
+        {
+            ConcurrentBag<ScanResult> rv = new ConcurrentBag<ScanResult>();
+
+            Parallel.ForEach<DetectedProc>(Processes, proc =>
+            {
+                var doKernel = (proc.CR3Value == KernelProc.CR3Value);
+
+                using (proc.MemAccess = new Mem(MemAccess))
+                {
+                    var prv = proc.YaraScan(RulesFile, IncludeData, doKernel);
+                    foreach (var r in prv)
+                        rv.Add(r);
+
+                    if (Vtero.VerboseLevel > 0)
+                        WriteColor(ConsoleColor.Cyan, $"Done yara on proc {proc}, {prv.Length} signature matches.");
+                }
+            });
+
+            return rv.ToArray();
+        }
+
 
         /// <summary>
         /// Prefer symbol loading.
@@ -604,7 +629,7 @@ namespace inVtero.net
 
             if (!symStatus)
             {
-                WriteLine($"Symbol returned {symStatus}: {new Win32Exception(Marshal.GetLastWin32Error()).Message }, attempting less precise request.");
+                WriteColor(ConsoleColor.Yellow, $" Symbol locate returned {symStatus}: {new Win32Exception(Marshal.GetLastWin32Error()).Message }, attempting less precise request.");
 
                 flags = DebugHelp.SSRVOPT_DWORDPTR;
                 var refBytes = BitConverter.GetBytes(cv_data.TimeDateStamp);
@@ -614,7 +639,7 @@ namespace inVtero.net
                 symStatus = DebugHelp.SymFindFileInPath(Handle, null, cv_data.PdbName, pointer, cv_data.VSize, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
                 pinnedArray.Free();
                 if (!symStatus)
-                    WriteColor(ConsoleColor.Red, $"Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
+                    WriteColor(ConsoleColor.Red, $" Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
 
                 sym = null;
             }
@@ -622,7 +647,7 @@ namespace inVtero.net
             {
                 var symLoaded = DebugHelp.SymLoadModuleEx(Handle, IntPtr.Zero, sbx.ToString(), null, BaseVA, cv_data.VSize, IntPtr.Zero, 0);
                 if (symLoaded == 0)
-                    WriteColor(ConsoleColor.Red, $"Load Failed: [{new Win32Exception(Marshal.GetLastWin32Error()).Message }]");
+                    WriteColor(ConsoleColor.Red, $"Symbols file located @ {sbx.ToString()} yet load Failed: [{new Win32Exception(Marshal.GetLastWin32Error()).Message }]");
 
                 cv_data.PDBFullPath = sbx.ToString();
             }
@@ -638,7 +663,7 @@ namespace inVtero.net
             var PageTables = new Dictionary<VIRTUAL_ADDRESS, PFN>();
             int level = 3;
             long entries = 0;
-
+            long ContigSize = -1;
 
             if (Proc.PT == null)
                 PageTable.AddProcess(Proc, MemAccess);
@@ -652,29 +677,29 @@ namespace inVtero.net
                 // Top level for page table
                 PageTables.Add(VA, pfn);
 
-                foreach (var DirectoryPointerOffset in Proc.PT.ExtractNextLevel(pfn, true, level))
+                foreach (var DirectoryPointerOffset in Proc.PT.ExtractNextLevel(pfn, level))
                 {
                     if (DirectoryPointerOffset == null) continue;
-                    foreach (var DirectoryOffset in Proc.PT.ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level - 1))
+                    foreach (var DirectoryOffset in Proc.PT.ExtractNextLevel(DirectoryPointerOffset, level - 1))
                     {
                         if (DirectoryOffset == null) continue;
 
-                        foreach (var TableOffset in Proc.PT.ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
+                        foreach (var TableOffset in Proc.PT.ExtractNextLevel(DirectoryOffset, level - 2))
                         {
                             if (TableOffset == null) continue;
 
                             entries++;
                             if (IncludeData == TableOffset.PTE.NoExecute)
-                                WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess);
+                                WriteRange(TableOffset.VA, TableOffset, Folder, ref ContigSize, MemAccess);
                             if (!TableOffset.PTE.NoExecute)
-                            WriteRange(TableOffset.VA, TableOffset, Folder, MemAccess);
+                            WriteRange(TableOffset.VA, TableOffset, Folder, ref ContigSize, MemAccess);
 
                         }
                         entries++;
                         if (IncludeData == DirectoryOffset.PTE.NoExecute)
-                            WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess);
+                            WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, ref ContigSize, MemAccess);
                         if (!DirectoryOffset.PTE.NoExecute)
-                            WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, MemAccess);
+                            WriteRange(DirectoryOffset.VA, DirectoryOffset, Folder, ref ContigSize, MemAccess);
                     }
                     entries++;
                 }
@@ -1115,6 +1140,7 @@ namespace inVtero.net
 
         /// <summary>
         /// Memory Dump routines
+        /// WARNING: THIS IS LEGACY NON-PYTHON COMPAT STUFF
         /// </summary>
         /// <param name="AS_ToDump"></param>
         public void DumpASToFile(IDictionary<int, List<DetectedProc>> AS_ToDump = null)
@@ -1140,7 +1166,7 @@ namespace inVtero.net
             List<string> DumpedToDisk = new List<string>();
             Stack<PFN> PFNStack = new Stack<PFN>();
             // instance member
-            ContigSize = -1;
+            long ContigSize = -1;
 
             ForegroundColor = ConsoleColor.Gray;
 
@@ -1231,7 +1257,7 @@ DoubleBreak:
                             // If we have 0 entries, ensure there really are none and we did
                             // not optimize out pre-buffering everything
                             if (TableEntries.Count() == 0)
-                                foreach (var pfn in tdp.PT.ExtractNextLevel(table, true, level)) ;
+                                foreach (var pfn in tdp.PT.ExtractNextLevel(table, level, true)) ;
 
                             if (TableEntries.Count() == 0)
                             {
@@ -1352,7 +1378,7 @@ DoubleBreak:
 
                             foreach (var mr in MemRanges)
                             {
-                                LastDumped = WriteRange(mr.Key, mr.Value, saveLoc, memAxs);
+                                LastDumped = WriteRange(mr.Key, mr.Value, saveLoc, ref ContigSize, memAxs);
                                 DumpedToDisk.Add(LastDumped);
                                 cntDumped++;
                             }
@@ -1360,7 +1386,7 @@ DoubleBreak:
                         else
                         {
                             var a_range = new KeyValuePair<VIRTUAL_ADDRESS, PFN>(next_table.VA, next_table);
-                            LastDumped = WriteRange(a_range.Key, a_range.Value, saveLoc, memAxs);
+                            LastDumped = WriteRange(a_range.Key, a_range.Value, saveLoc, ref ContigSize, memAxs);
                             DumpedToDisk.Add(LastDumped);
                             cntDumped++;
                         }
@@ -1379,6 +1405,7 @@ DoubleBreak:
             PageTable.AddProcess(tdp, memAxs, true);
         }
 
+        // legacy code
         public void ReScanNextLevel(DetectedProc tdp, bool DisplayOutput = false)
         {
             bool validInput, ignoreSlat;
@@ -1435,7 +1462,6 @@ DoubleBreak:
         }
 
 
-        long ContigSize;
         /// <summary>
         /// Single Instance Storage bitmap
         /// </summary>
@@ -1444,7 +1470,7 @@ DoubleBreak:
         // TODO: Figure out if MemoryCopy or BlockCopy ...
          
 
-        public string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, Mem PhysMemReader = null, bool SinglePFNStore = false, bool DumpNULL = false)
+        public static string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, ref long ContigSize, Mem PhysMemReader = null, bool SinglePFNStore = false, bool DumpNULL = false)
         {
             if (SinglePFNStore && SISmap == null)
                 SISmap = new WAHBitArray();

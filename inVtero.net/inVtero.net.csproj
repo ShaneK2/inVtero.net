@@ -74,6 +74,10 @@
       <HintPath>..\packages\Gee.External.Capstone.1.2.2\lib\net45\Gee.External.Capstone.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="libyara.NET, Version=3.5.0.2, Culture=neutral, PublicKeyToken=176e062142c9110f, processorArchitecture=AMD64">
+      <HintPath>..\packages\libyara.NET.3.5.1\lib\net45\libyara.NET.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="LinqOptimizer.Base, Version=0.6.3.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\LinqOptimizer.CSharp.0.6.3\lib\LinqOptimizer.Base.dll</HintPath>
       <Private>True</Private>

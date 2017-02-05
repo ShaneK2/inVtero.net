@@ -271,11 +271,9 @@ namespace inVtero.net
             return entries;
         }
 
-        public IEnumerable<PFN> ExtractNextLevel(PFN PageContext, bool RedundantKernelSpaces, int Level = 4)
+        public IEnumerable<PFN> ExtractNextLevel(PFN PageContext, int Level = 4, bool RedundantKernelSpaces = false)
         {
             if (PageContext == null) yield break;
-
-            RedundantKernelSpaces = true;
 
             var SLAT = Root.SLAT;
             var CR3 = Root.CR3;
@@ -316,7 +314,8 @@ namespace inVtero.net
 
             for (int i = 0; i < 512; i++)
             {
-                if (!RedundantKernelSpaces && i >= MagicNumbers.KERNEL_PT_INDEX_START_USUALLY)
+                // kernel indexes are only relevant on the top level 
+                if (Level == 4 && (!RedundantKernelSpaces && i >= MagicNumbers.KERNEL_PT_INDEX_START_USUALLY))
                     continue;
 
                 if (page[i] == 0)
@@ -359,8 +358,9 @@ namespace inVtero.net
         [ProtoIgnore]
         public ConcurrentQueue<PFN> PageQueue;
 
-        public int FillPageQueue(bool OnlyLarge = false)
+        public int FillPageQueue(bool OnlyLarge = false, bool RedundantKernelSpaces = false)
         {
+            KernelSpace = RedundantKernelSpaces;
             PageQueue = new ConcurrentQueue<PFN>();
             VIRTUAL_ADDRESS VA;
             VA.Address = 0;
@@ -368,17 +368,21 @@ namespace inVtero.net
             if (DP.PT == null)
                 PageTable.AddProcess(DP, DP.MemAccess);
 
-            Parallel.ForEach(DP.TopPageTablePage, (kvp) =>
-            //foreach (var kvp in DP.TopPageTablePage)
+            //Parallel.ForEach(DP.TopPageTablePage, (kvp) =>
+            foreach (var kvp in DP.TopPageTablePage)
             {
                 // were at the top level (4th)
                 VA.PML4 = kvp.Key;
                 var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4 << 39) };
 
-                foreach (var DirectoryPointerOffset in DP.PT.ExtractNextLevel(pfn, true, 3))
+                // do redundant check here
+                if (!RedundantKernelSpaces && (kvp.Key >= MagicNumbers.KERNEL_PT_INDEX_START_USUALLY))
+                    continue;
+
+                foreach (var DirectoryPointerOffset in DP.PT.ExtractNextLevel(pfn, 3))
                 {
                     if (DirectoryPointerOffset == null) continue;
-                    foreach (var DirectoryOffset in DP.PT.ExtractNextLevel(DirectoryPointerOffset, KernelSpace, 2))
+                    foreach (var DirectoryOffset in DP.PT.ExtractNextLevel(DirectoryPointerOffset, 2))
                     {
                         if (DirectoryOffset == null) continue;
                         // if we have a large page we add it now
@@ -387,7 +391,7 @@ namespace inVtero.net
                         // otherwise were scanning lower level entries
                         else if(!OnlyLarge)
                         {
-                            foreach (var TableOffset in DP.PT.ExtractNextLevel(DirectoryOffset, KernelSpace, 1))
+                            foreach (var TableOffset in DP.PT.ExtractNextLevel(DirectoryOffset, 1))
                             {
                                 if (TableOffset == null) continue;
 
@@ -396,12 +400,13 @@ namespace inVtero.net
                         }
                     }
                 }
-            //}
-            });
+            }
+            //});
             return PageQueue.Count();
         }
 
 
+        // TODO: Remove this call, only seen called by legacy stuff
         public long FillTable(bool RedundantKernelSpaces, int depth = 4)
         {
             var entries = 0L;
@@ -412,8 +417,7 @@ namespace inVtero.net
             VIRTUAL_ADDRESS VA;
             VA.Address = 0;
 
-
-            int level = 3;
+            // making use of the cached top level
             foreach (var kvp in DP.TopPageTablePage)
             {
                 // Only extract user portion, kernel will be mostly redundant
@@ -430,16 +434,16 @@ namespace inVtero.net
 
                 // We will only do one level if were not buffering
                 if(depth > 1)
-                foreach(var DirectoryPointerOffset in ExtractNextLevel(pfn, KernelSpace, level))
+                foreach(var DirectoryPointerOffset in ExtractNextLevel(pfn, 3))
                 {
                     if (DirectoryPointerOffset == null) continue;
                     if(depth > 2 /* && !DirectoryPointerOffset.PTE.LargePage */)
-                    foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, KernelSpace, level-1))
+                    foreach (var DirectoryOffset in ExtractNextLevel(DirectoryPointerOffset, 2))
                     {   
                         if (DirectoryOffset == null) continue;
 
                         if(depth > 3 /* && !DirectoryOffset.PTE.LargePage && EnvLimits.MAX_PageTableEntriesToScan > entries */)
-                        foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, KernelSpace, level - 2))
+                        foreach (var TableOffset in ExtractNextLevel(DirectoryOffset, 1))
                         {
                             if (TableOffset == null) continue;
                             entries++;

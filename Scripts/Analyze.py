@@ -63,6 +63,8 @@ sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH")
 if String.IsNullOrWhiteSpace(sympath):
     sympath = "SRV*http://msdl.microsoft.com/download/symbols"
 
+hwmiss = []
+
 def ScanDump(MemoryDump, copts):
     MemoryDumpSize = FileInfo(MemoryDump).Length
     copts.FileName = MemoryDump
@@ -104,7 +106,7 @@ def ScanDump(MemoryDump, copts):
             if proc.Dictionary.ContainsKey("VadRoot.BalancedRoot.RightChild"):
                 proc.VadRoot = proc.Dictionary["VadRoot.BalancedRoot.RightChild"]
             print proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
-        Console.ForegroundColor = ConsoleColor.Green;
+        Console.ForegroundColor = ConsoleColor.Green
         print "checking that all logical processes exist in the physical list."
         # Miss list mostly bad for yellow printing  
         for proc in logicalList:
@@ -114,9 +116,9 @@ def ScanDump(MemoryDump, copts):
                     found=True
                     #print "Found logical proc[" + hwproc.CR3Value.ToString("X") + "] in physical array"
             if found == False:
-                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.ForegroundColor = ConsoleColor.Yellow
                 if proc.VadRoot == 0:
-                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.ForegroundColor = ConsoleColor.Green
                     print "An expected, ",
                 print "Logical miss for " + proc.ImagePath + " : " + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + " : " + proc.VadRoot.ToString("X") +  " : " + proc.UniqueProcessId.ToString("X") 
         print "Checking that all physical processes exist in the logical list"
@@ -127,7 +129,8 @@ def ScanDump(MemoryDump, copts):
                     found=True
                     #print "Found physical proc[" + proc.Dictionary["Pcb.DirectoryTableBase"].ToString("X") + "] in logical array"
             if found == False:
-                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.ForegroundColor = ConsoleColor.Yellow
+                hwmiss.append(hwproc)
                 print "physical miss for " + hwproc.ToString()
     Console.ForegroundColor = ConsoleColor.White
     print "PART RUNTIME: " + runTime.Elapsed.ToString() + " (seconds), INPUT DUMP SIZE: " + MemoryDumpSize.ToString("N") + " bytes."
@@ -206,6 +209,15 @@ def hives(proc):
         print "FileUserName: " + _CMHIVE.FileUserName.Value
         _CMHIVE = proc.xStructInfo("_CMHIVE", _CMHIVE.HiveList.Value - hiveOffsetOf, typedef.Length)
 
+# YaraRules = "c:\\temp\\yara\\index.yar"
+# Do a parallel Yara Scan
+def YaraAll(YaraRules, vtero):
+    Vtero.VerboseLevel = 1
+    Vtero.DiagOutput = False
+    dumptime = Stopwatch.StartNew()
+    yall = vtero.YaraAll(YaraRules, True, False)
+    print "elapsed " + dumptime.Elapsed.ToString()
+    return yall
  
 # Example of walking process list
 def WalkProcListExample(proc):

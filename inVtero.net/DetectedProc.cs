@@ -30,6 +30,7 @@ using Dia2Sharp;
 using System.Linq;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using libyaraNET;
 
 namespace inVtero.net
 {
@@ -211,16 +212,16 @@ namespace inVtero.net
         /// you can still scan for * by passing null or empty string
         /// </summary>
         /// <param name="OnlyModule">Stop when the first module named this is found</param>
-        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp")
+        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp", bool OnlyLarge = true, bool IncludeKernelSpace = true)
         {
             const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
             PageTable.AddProcess(this, new Mem(MemAccess));
-            var cnt = PT.FillPageQueue(true);
+            var cnt = PT.FillPageQueue(OnlyLarge, IncludeKernelSpace);
 
             var KVS = new VirtualScanner(this, new Mem(MemAccess));
 
             // single threaded worked best so far 
-            //Parallel.For(0, cnt, (i, loopState) =>
+            //Parallel.For(0, cnt, (i, loopState) => x
             for (int i = 0; i < cnt; i++)
             {
                 PFN range;
@@ -235,12 +236,16 @@ namespace inVtero.net
                 }
                 if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid && !range.PTE.NoExecute)
                 {
-                    foreach (var artifact in KVS.Run(range.VA.Address, range.VA.Address + LARGE_PAGE_SIZE, range))
+                    foreach (var artifact in KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? LARGE_PAGE_SIZE : MagicNumbers.PAGE_SIZE), range))
                     {
                         var ms = new MemSection() { IsExec = true, Module = artifact, VA = new VIRTUAL_ADDRESS(artifact.VA) };
                         var extracted = ExtractCVDebug(ms);
                         if (extracted == null)
+                        {
+                            if(Vtero.VerboseLevel > 1)
+                                WriteColor(ConsoleColor.Yellow, $"failed debug info for PE @address {range.VA.Address:X}, extracted headers: {artifact}");
                             continue;
+                        }
 
                         if (!string.IsNullOrWhiteSpace(OnlyModule) && OnlyModule != ms.Name)
                             continue;
@@ -251,8 +256,11 @@ namespace inVtero.net
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
                         sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
-                        if (Vtero.VerboseOutput)
-                            WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.DebugDetails.PDBFullPath}]");
+                        if (Vtero.VerboseOutput) {
+                            WriteColor((sym != null) ? ConsoleColor.Green : ConsoleColor.Yellow, $" symbol loaded = [{sym != null}] PDB [{ms.DebugDetails.PDBFullPath}] @ {range.VA.Address:X}, {ms.Name}");
+                            if(Vtero.VerboseLevel > 1)
+                                WriteColor((sym != null) ? ConsoleColor.Green : ConsoleColor.Yellow, $"headers: { artifact} ");
+                        }
 
                         if (!string.IsNullOrWhiteSpace(OnlyModule))
                         {
@@ -276,6 +284,114 @@ namespace inVtero.net
             }
             return KVS;
         }
+
+        public ScanResult[] YaraScan(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
+        {
+            var rv = new List<ScanResult>();
+
+            using (var ctx = new YaraContext())
+            {
+                Rules rules = null;
+                try
+                {
+                    // Rules and Compiler objects must be disposed.
+                    using (var compiler = new Compiler())
+                    {
+                        compiler.AddRuleFile(RulesFile);
+                        rules = compiler.GetRules();
+                    }
+
+                    PageTable.AddProcess(this, MemAccess);
+                    var cnt = PT.FillPageQueue(false, KernelSpace);
+
+                    // single threaded worked best so far 
+                    //Parallel.For(0, cnt, (i, loopState) => x
+                    for (int i = 0; i < cnt; i++)
+                    {
+                        PFN range;
+                        if (Vtero.VerboseLevel > 1)
+                        {
+                            var curr = cnt - PT.PageQueue.Count;
+                            var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
+                            Console.CursorLeft = 0;
+                            Console.Write($"{done:F3}% scanned");
+                        }
+                        if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid)
+                        {
+                            // skip data as requested
+                            if (!IncludeData && range.PTE.NoExecute)
+                                continue;
+
+                            List<ScanResult> res = new List<ScanResult>();
+
+                            // Scanner and ScanResults do not need to be disposed.
+                            var scanner = new libyaraNET.Scanner();
+                            unsafe {
+                                long[] block = null;
+                                bool GotData = false;
+
+                                if (range.PTE.LargePage)
+                                    block = new long[0x40000];
+                                else
+                                    block = new long[0x200];
+
+                                MemAccess.GetPageForPhysAddr(range.PTE, ref block, ref GotData);
+                                if (GotData)
+                                {
+                                    fixed (void* lp = block)
+                                    {
+                                        res = scanner.ScanMemory((byte *) lp, block.Length, rules, ScanFlags.None);
+                                        rv.AddRange(res);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    // Rules and Compiler objects must be disposed.
+                    if (rules != null) rules.Dispose();
+                }
+            }
+            return rv.ToArray();
+        }
+
+        public void DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true)
+        {
+            //// TODO: BOILER PLATE check perf of using callbacks 
+            const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
+            PageTable.AddProcess(this, new Mem(MemAccess));
+            var cnt = PT.FillPageQueue(false, KernelSpace);
+
+            Directory.CreateDirectory(Folder);
+
+            long ContigSizeState = 0;
+            // single threaded worked best so far 
+            //Parallel.For(0, cnt, (i, loopState) => x
+            for (int i = 0; i < cnt; i++)
+            {
+                PFN range;
+                bool stop = false;
+
+                if (Vtero.VerboseLevel > 1)
+                {
+                    var curr = cnt - PT.PageQueue.Count;
+                    var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
+                    Console.CursorLeft = 0;
+                    Console.Write($"{done:F3}% scanned");
+                }
+                if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid)
+                {
+                    // skip data as requested
+                    if (!IncludeData && range.PTE.NoExecute)
+                        continue;
+
+                     Vtero.WriteRange(range.VA, range, Folder, ref ContigSizeState, MemAccess);
+                }
+            }
+        }
+
 
         /// <summary>
         ///  This guy names the section and establishes the codeview data needed for symbol handling
