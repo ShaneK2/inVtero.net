@@ -1,20 +1,17 @@
-﻿// Shane.Macaulay@IOActive.com Copyright (C) 2013-2015
-
-//Copyright(C) 2015 Shane Macaulay
-
-//This program is free software; you can redistribute it and/or
-//modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation.
-
+﻿// Copyright(C) 2017 Shane Macaulay smacaulay@gmail.com
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or(at your option) any later version.
+//
 //This program is distributed in the hope that it will be useful,
-//but WITHOUT ANY WARRANTY; without even the implied warranty of
-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
-//GNU General Public License for more details.
-
-//You should have received a copy of the GNU General Public License
-//along with this program; if not, write to the Free Software
-//Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.If not, see<http://www.gnu.org/licenses/>.
 
 using ProtoBuf;
 using Reloc;
@@ -70,7 +67,6 @@ namespace inVtero.net
         public CODEVIEW_HEADER DebugData;
         public Extract ext;
         */
-
         public Dictionary<int, long> TopPageTablePage;
 
         // Since we have a known PT, start collecting meta info
@@ -87,9 +83,9 @@ namespace inVtero.net
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
-        // logical memory representation
-
-
+        [ProtoIgnore]
+        public List<ScanResult> YaraOutput;
+        public long YaraTotalScanned;
 
         public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntkrnlmp")
         {
@@ -142,6 +138,16 @@ namespace inVtero.net
             SymbolStore.Add(SymName, value);
 
             return value;
+        }
+
+        public Tuple<String, ulong>[] MatchSymbols(string Match, string Module = "ntkrnlmp")
+        {
+            List<Tuple<String, ulong>> rv = new List<Tuple<string, ulong>>();
+            foreach(var sec in Sections)
+                if(sec.Value.DebugDetails.PDBFullPath.Contains(Module) || string.IsNullOrWhiteSpace(Module))
+                    rv.AddRange(sym.MatchSyms(Match, sec.Value.DebugDetails.PDBFullPath, sec.Value.VA.FullAddr));
+
+            return rv.ToArray();
         }
 
         public long GetSymAddress(string SymName)
@@ -215,30 +221,31 @@ namespace inVtero.net
         public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp", bool OnlyLarge = true, bool IncludeKernelSpace = true)
         {
             const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
+            var curr=0;
             PageTable.AddProcess(this, new Mem(MemAccess));
-            var cnt = PT.FillPageQueue(OnlyLarge, IncludeKernelSpace);
+            //var cnt = PT.FillPageQueue(OnlyLarge, IncludeKernelSpace);
 
             var KVS = new VirtualScanner(this, new Mem(MemAccess));
 
             // single threaded worked best so far 
             //Parallel.For(0, cnt, (i, loopState) => x
-            for (int i = 0; i < cnt; i++)
+            foreach(var range in PT.FillPageQueue(OnlyLarge, IncludeKernelSpace))
+            //for (int i = 0; i < cnt; i++)
             {
-                PFN range;
+                curr++;
                 bool stop = false;
-
                 if (Vtero.VerboseLevel > 1)
                 {
-                    var curr = cnt - PT.PageQueue.Count;
-                    var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
+                    //var curr = cnt - PT.PageQueue.Count;
+                    //var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
                     Console.CursorLeft = 0;
-                    Console.Write($"{done:F3}% scanned");
+                    Console.Write($"{curr} scanned");
                 }
-                if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid && !range.PTE.NoExecute)
+                if (range.PTE.Valid && !range.PTE.NoExecute)
                 {
                     foreach (var artifact in KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? LARGE_PAGE_SIZE : MagicNumbers.PAGE_SIZE), range))
                     {
-                        var ms = new MemSection() { IsExec = true, Module = artifact, VA = new VIRTUAL_ADDRESS(artifact.VA) };
+                        var ms = new MemSection() { IsExec = true, Module = artifact, VA = new VIRTUAL_ADDRESS(artifact.VA), Source = range };
                         var extracted = ExtractCVDebug(ms);
                         if (extracted == null)
                         {
@@ -285,10 +292,9 @@ namespace inVtero.net
             return KVS;
         }
 
-        public ScanResult[] YaraScan(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
+        public List<ScanResult> YaraScan(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
         {
             var rv = new List<ScanResult>();
-
             using (var ctx = new YaraContext())
             {
                 Rules rules = null;
@@ -302,27 +308,27 @@ namespace inVtero.net
                     }
 
                     PageTable.AddProcess(this, MemAccess);
-                    var cnt = PT.FillPageQueue(false, KernelSpace);
-
+                    //var cnt = PT.FillPageQueue(false, KernelSpace);
+                    var curr = 0;
+                    YaraTotalScanned = 0;
                     // single threaded worked best so far 
                     //Parallel.For(0, cnt, (i, loopState) => x
-                    for (int i = 0; i < cnt; i++)
+                    foreach(var range in PT.FillPageQueue(false, KernelSpace, true, false))
+                    //for (int i = 0; i < cnt; i++)
                     {
-                        PFN range;
+                        curr++;
                         if (Vtero.VerboseLevel > 1)
                         {
-                            var curr = cnt - PT.PageQueue.Count;
-                            var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
+                            //var curr = cnt - PT.PageQueue.Count;
+                            //var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
                             Console.CursorLeft = 0;
-                            Console.Write($"{done:F3}% scanned");
+                            Console.Write($"{curr} scanned");
                         }
-                        if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid)
+                        if (range.PTE.Valid)
                         {
                             // skip data as requested
                             if (!IncludeData && range.PTE.NoExecute)
                                 continue;
-
-                            List<ScanResult> res = new List<ScanResult>();
 
                             // Scanner and ScanResults do not need to be disposed.
                             var scanner = new libyaraNET.Scanner();
@@ -340,8 +346,9 @@ namespace inVtero.net
                                 {
                                     fixed (void* lp = block)
                                     {
-                                        res = scanner.ScanMemory((byte *) lp, block.Length, rules, ScanFlags.None);
+                                        var res = scanner.ScanMemory((byte *) lp, block.Length, rules, ScanFlags.None);
                                         rv.AddRange(res);
+                                        YaraTotalScanned += block.Length;
                                     }
                                 }
                             }
@@ -354,34 +361,34 @@ namespace inVtero.net
                     if (rules != null) rules.Dispose();
                 }
             }
-            return rv.ToArray();
+            YaraOutput = rv;
+            return YaraOutput;
         }
 
-        public void DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true)
+        public void DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true, bool OnlyExec = true)
         {
             //// TODO: BOILER PLATE check perf of using callbacks 
             const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
             PageTable.AddProcess(this, new Mem(MemAccess));
             var cnt = PT.FillPageQueue(false, KernelSpace);
 
+            Folder = Folder + Path.DirectorySeparatorChar.ToString();
             Directory.CreateDirectory(Folder);
 
-            long ContigSizeState = 0;
+            long ContigSizeState = 0, curr = 0;
             // single threaded worked best so far 
             //Parallel.For(0, cnt, (i, loopState) => x
-            for (int i = 0; i < cnt; i++)
+            foreach(var range in PT.FillPageQueue(false, KernelSpace))
             {
-                PFN range;
-                bool stop = false;
-
+                curr++;
                 if (Vtero.VerboseLevel > 1)
                 {
-                    var curr = cnt - PT.PageQueue.Count;
-                    var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
+                    //var curr = cnt - PT.PageQueue.Count;
+                    //var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
                     Console.CursorLeft = 0;
-                    Console.Write($"{done:F3}% scanned");
+                    Console.Write($"{curr} scanned");
                 }
-                if (PT.PageQueue.TryDequeue(out range) && range.PTE.Valid)
+                if (range.PTE.Valid)
                 {
                     // skip data as requested
                     if (!IncludeData && range.PTE.NoExecute)

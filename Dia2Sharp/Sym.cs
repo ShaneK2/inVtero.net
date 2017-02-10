@@ -1,4 +1,19 @@
-﻿using System;
+﻿// Copyright(C) 2017 Shane Macaulay smacaulay@gmail.com
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or(at your option) any later version.
+//
+//This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.If not, see<http://www.gnu.org/licenses/>.
+
+using System;
 using System.Collections.Generic;
 using Dia2Lib;
 using static System.Console;
@@ -457,6 +472,47 @@ namespace Dia2Sharp
                 DumpStructs(sType, currName, typeName, Pos);
 
             } while (compileFetched == 1);
+        }
+
+        public List<Tuple<String, ulong>> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
+        {
+            List<Tuple<String, ulong>> rv = new List<Tuple<string, ulong>>();
+            IDiaSession Session;
+            IDiaEnumSymbols EnumSymbols = null;
+            IDiaSymbol Master = null;
+            int level = 2;
+            uint compileFetched = 0;
+
+            var foo = new DiaSource();
+            foo.loadDataFromPdb(PDBFile);
+            foo.openSession(out Session);
+            if (Session == null)
+                return rv;
+            // 10 is regex
+            Session.globalScope.findChildren(SymTagEnum.SymTagNull, Match, 10, out EnumSymbols);
+
+            if (Session == null)
+                return rv;
+
+            Session.loadAddress = LoadAddr;
+
+            var GlobalScope = Session.globalScope;
+
+            var tot = EnumSymbols.count;
+            do
+            {
+                EnumSymbols.Next(1, out Master, out compileFetched);
+                if (Master == null)
+                    continue;
+
+                rv.Add(Tuple.Create<String, ulong>(Master.name, Master.virtualAddress));
+#if DEBUGX
+                ForegroundColor = ConsoleColor.White;
+                WriteLine($"Name = [{Master.name}] VA = {Master.virtualAddress}");
+#endif
+            } while (compileFetched == 1);
+
+            return rv;
         }
     }
 }

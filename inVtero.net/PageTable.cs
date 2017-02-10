@@ -1,21 +1,17 @@
-﻿// Shane.Macaulay @IOActive.com Copyright (C) 2013-2015
-
-//Copyright(C) 2015 Shane Macaulay
-
-//This program is free software; you can redistribute it and/or
-//modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation.
-
+﻿// Copyright(C) 2017 Shane Macaulay smacaulay@gmail.com
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or(at your option) any later version.
+//
 //This program is distributed in the hope that it will be useful,
-//but WITHOUT ANY WARRANTY; without even the implied warranty of
-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
-//GNU General Public License for more details.
-
-//You should have received a copy of the GNU General Public License
-//along with this program; if not, write to the Free Software
-//Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-
-// Shane.Macaulay@IOActive.com (c) copyright 2014,2015,2016 all rights reserved. GNU GPL License
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.If not, see<http://www.gnu.org/licenses/>.
 
 using System;
 using System.Collections.Generic;
@@ -355,13 +351,14 @@ namespace inVtero.net
             yield break;
         }
 
-        [ProtoIgnore]
-        public ConcurrentQueue<PFN> PageQueue;
-
-        public int FillPageQueue(bool OnlyLarge = false, bool RedundantKernelSpaces = false)
+        //[ProtoIgnore]
+        //public List<PFN> PageQueue;
+        //TODO: this should really take a PFN with various bit's set we can test with a .Match
+        //TODO: fix all callers of this to use a callback also
+        public IEnumerable<PFN> FillPageQueue(bool OnlyLarge = false, bool RedundantKernelSpaces = false, bool OnlyValid = true, bool OnlyExec = true)
         {
             KernelSpace = RedundantKernelSpaces;
-            PageQueue = new ConcurrentQueue<PFN>();
+            //PageQueue = new List<PFN>();
             VIRTUAL_ADDRESS VA;
             VA.Address = 0;
 
@@ -379,30 +376,48 @@ namespace inVtero.net
                 if (!RedundantKernelSpaces && (kvp.Key >= MagicNumbers.KERNEL_PT_INDEX_START_USUALLY))
                     continue;
 
+                if (OnlyExec && pfn.PTE.NoExecute)
+                    continue;
+
                 foreach (var DirectoryPointerOffset in DP.PT.ExtractNextLevel(pfn, 3))
                 {
                     if (DirectoryPointerOffset == null) continue;
+                    if (OnlyExec && DirectoryPointerOffset.PTE.NoExecute)
+                        continue;
+
                     foreach (var DirectoryOffset in DP.PT.ExtractNextLevel(DirectoryPointerOffset, 2))
                     {
                         if (DirectoryOffset == null) continue;
                         // if we have a large page we add it now
-                        if (DirectoryOffset.PTE.LargePage)
-                            PageQueue.Enqueue(DirectoryOffset);
+                        if (DirectoryOffset.PTE.LargePage || (OnlyValid && !DirectoryOffset.PTE.Valid))
+                        {
+                            if (OnlyExec && DirectoryOffset.PTE.NoExecute)
+                                continue;
+
+                            yield return DirectoryOffset;
+                            //PageQueue.Add(DirectoryOffset);
+                            continue;
+                        }
                         // otherwise were scanning lower level entries
-                        else if(!OnlyLarge)
+                        // unless we are only large page scanning.
+                        else if (!OnlyLarge)
                         {
                             foreach (var TableOffset in DP.PT.ExtractNextLevel(DirectoryOffset, 1))
                             {
-                                if (TableOffset == null) continue;
+                                if (OnlyExec && TableOffset.PTE.NoExecute)
+                                    continue;
 
-                                PageQueue.Enqueue(TableOffset);
+                                if (TableOffset == null || (OnlyValid && !TableOffset.PTE.Valid))
+                                    continue;
+                                yield return TableOffset;
+                                //PageQueue.Add(TableOffset);
                             }
                         }
                     }
                 }
             }
             //});
-            return PageQueue.Count();
+            yield break;
         }
 
 

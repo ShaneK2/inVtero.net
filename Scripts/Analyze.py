@@ -218,7 +218,14 @@ def YaraAll(YaraRules, vtero):
     yall = vtero.YaraAll(YaraRules, True, False)
     print "elapsed " + dumptime.Elapsed.ToString()
     return yall
+
+# pretty print symbols matching string
+def SymList(proc, MatchString):
+    for match in proc.MatchSymbols(MatchString):
+        print match.Item1 + " @ 0x" + match.Item2.ToString("x")
  
+
+
 # Example of walking process list
 def WalkProcListExample(proc):
     #
