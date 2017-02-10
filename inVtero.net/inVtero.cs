@@ -399,6 +399,7 @@ namespace inVtero.net
 #endif
         }
 
+
         /// <summary>
         /// Manages SymForKernel  
         /// </summary>
@@ -424,7 +425,6 @@ namespace inVtero.net
             long[] memRead = null;
 
             var PsHeadAddr = GetSymValueLong(dp, "PsActiveProcessHead");
-
 
             // TODO: update this to be used instead of legacy .Dictionary kludge ;)
             //var rv = SymForKernel.xStructInfo(pdbFile, "_EPROCESS");
@@ -750,7 +750,7 @@ namespace inVtero.net
 
             // we trim out the known recursive/self entries since they will naturally not be equivalent
             var AlikelyKernelSet = from ptes in p.First().TopPageTablePage
-                                   where ptes.Key > 255 && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
+                                   where ptes.Key > (MagicNumbers.KERNEL_PT_INDEX_START_USUALLY - 1) && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
                                    select ptes.Value;
 
             int totUngrouped = Processes.Count();
@@ -768,7 +768,7 @@ namespace inVtero.net
                 Parallel.ForEach(p, (proc) =>
                 {
                     var currKern = from ptes in proc.TopPageTablePage
-                                   where ptes.Key > 255 && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
+                                   where ptes.Key > (MagicNumbers.KERNEL_PT_INDEX_START_USUALLY-1) && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
                                    select ptes.Value;
 
                     var interSection = currKern.Intersect(AlikelyKernelSet);
@@ -849,7 +849,7 @@ namespace inVtero.net
                                    select nextProc;
 
                 AlikelyKernelSet = from ptes in UnGroupedProc.First().TopPageTablePage
-                                   where ptes.Key > 255 && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
+                                   where ptes.Key > (MagicNumbers.KERNEL_PT_INDEX_START_USUALLY - 1) && MagicNumbers.Each.All(ppx => ppx != ptes.Key)
                                    select ptes.Value;
             }
             if (Vtero.DiagOutput)

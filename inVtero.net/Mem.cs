@@ -439,16 +439,16 @@ namespace inVtero.net
                                     var PTE = (HARDWARE_ADDRESS_ENTRY)GetValueAtPhysicalAddr(Attempted);
                                     ConvertedV2P.Add(PTE);
                                     //Console.WriteLine($"PTE = {PTE.PTE:X16}");
-
+                                    //rv = PTE;
                                     // page is normal 4kb
                                     if (PTE.Valid)
-                                        rv = PTE.NextTableAddress | va.Offset;
+                                        rv = PTE.PTE | (PTE.NextTableAddress | va.Offset);
                                     else
                                         rv.Valid = false;
                                 }
                                 else
                                 {   // we have a 2MB page
-                                    rv = (PDE.PTE & 0xFFFFFFE00000) | va.TableOffset << 12;
+                                    rv = PDE.PTE | ((PDE.PTE & 0xFFFFFFE00000) | va.TableOffset << 12);
                                 }
                             }
                             else
@@ -456,7 +456,9 @@ namespace inVtero.net
                         }
                         else
                         {   // we have a 1GB page
-                            rv = (PDPTE.PTE & 0xFFFFC0000000) | va.DirectoryOffset << 12 << 9;
+
+                            rv = PDPTE.PTE | ((PDPTE.PTE & 0xFFFFC0000000) | va.DirectoryOffset << 12 << 9);
+                            //rv = PDPTE;
                         }
                     }
                     else

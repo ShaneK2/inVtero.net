@@ -35,7 +35,7 @@ namespace inVtero.net
         Mem BackingBlocks;
         //ConcurrentDictionary<int, Mem> MemoryBank;
         PhysicalMemoryStream BackingStream;
-
+        bool HeaderScan;
         /// <summary>
         /// Detected processes are the fundamental unit were after since a process maintains the address
         /// space configuration information.  Naturally there can be (bad)things running outside of this context
@@ -54,11 +54,12 @@ namespace inVtero.net
         {
         }
 
-        public VirtualScanner(DetectedProc Ctx, Mem backingBlocks) : this()
+        public VirtualScanner(DetectedProc Ctx, Mem backingBlocks, bool DoHeaderScan = false) : this()
         {
             DPContext = Ctx;
             BackingBlocks = backingBlocks;
             BackingStream = new PhysicalMemoryStream(backingBlocks, Ctx);
+            HeaderScan = DoHeaderScan;
         }
         
 
@@ -103,58 +104,68 @@ namespace inVtero.net
             bool GotData = false;
             var memAxss = Instance == null ? BackingBlocks : Instance;
             long i = Start, Curr = 0;
-
+            long[] block;
             var rv = new List<Extract>();
 
             // large page read
             if (entry != null && entry.PTE.LargePage)
             {
-                var block = new long[0x40000];
+                block = new long[0x40000];
                 memAxss.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
                 if (GotData)
                     rv = FastPE(Start, block);
+
+                return rv;
             }
+            else
             // use supplied page sized physical entry
-            else if(entry != null && Stop - Start == MagicNumbers.PAGE_SIZE)
-            {
-                var block = new long[0x200];
+            if(entry != null && Stop - Start == MagicNumbers.PAGE_SIZE)
+            { 
+                block = new long[0x200];
                 memAxss.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
                 if (GotData)
                     rv = FastPE(Start, block);
+
+                // we only header scan when asked and if the page read is 1 from an alignment 
+                if (!HeaderScan)
+                    return rv;
+                if ((Start & 0xF000) != 0x1000)
+                    return rv;
+                // if were doing a header scan back up i so we do the previous page 
+                i -= 0x1000;
+                // back up Stop also so we just scan this current page one time
+                Stop -= 0x1000; 
             }
             // just use the virtual addresses and attempt to locate phys from page walk
             // this is a really slow way to enumerate memory
-            else
+            // convert index to an address 
+            // then add start to it
+            block = new long[0x200]; // 0x200 * 8 = 4k
+            while (i < Stop)
             {
-                // convert index to an address 
-                // then add start to it
-                var block = new long[0x200]; // 0x200 * 8 = 4k
-                while (i < Stop)
-                {
-                    if (pState != null && pState.IsStopped)
-                        return rv;
+                if (pState != null && pState.IsStopped)
+                    return rv;
 
-                    HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
-                    if (DPContext.vmcs != null)
-                        locPhys = memAxss.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
-                    else
-                        locPhys = memAxss.VirtualToPhysical(DPContext.CR3Value, i);
+                HARDWARE_ADDRESS_ENTRY locPhys = HARDWARE_ADDRESS_ENTRY.MinAddr;
+                if (DPContext.vmcs != null)
+                    locPhys = memAxss.VirtualToPhysical(DPContext.vmcs.EPTP, DPContext.CR3Value, i);
+                else
+                    locPhys = memAxss.VirtualToPhysical(DPContext.CR3Value, i);
 
-                    Curr = i;
-                    i += 0x1000;
+                Curr = i;
+                i += 0x1000;
 
-                    if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys) || !locPhys.Valid )
-                        continue;
+                if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys) || !locPhys.Valid )
+                    continue;
 
-                    memAxss.GetPageForPhysAddr(locPhys, ref block, ref GotData);
-                    if (!GotData)
-                        continue;
+                memAxss.GetPageForPhysAddr(locPhys, ref block, ref GotData);
+                if (!GotData)
+                    continue;
 
-                    var new_pe = FastPE(Curr, block);
-                    rv.AddRange(new_pe);
-                    if (Vtero.VerboseOutput && new_pe.Count > 0)
-                        Console.WriteLine($"Detected PE @ VA {Curr:X}");
-                }
+                var new_pe = FastPE(Curr, block);
+                rv.AddRange(new_pe);
+                if (Vtero.VerboseOutput && new_pe.Count > 0)
+                    Console.WriteLine($"Detected PE @ VA {Curr:X}");
             }
             return rv;
         }

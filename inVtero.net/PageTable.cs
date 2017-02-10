@@ -436,7 +436,7 @@ namespace inVtero.net
             foreach (var kvp in DP.TopPageTablePage)
             {
                 // Only extract user portion, kernel will be mostly redundant
-                if(!RedundantKernelSpaces && kvp.Key >= 255)
+                if(!RedundantKernelSpaces && kvp.Key >= (MagicNumbers.KERNEL_PT_INDEX_START_USUALLY - 1))
                     continue;
 
                 // were at the top level (4th)

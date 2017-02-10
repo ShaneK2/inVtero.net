@@ -197,6 +197,13 @@ def WalkModules(proc, ModLinkHead, Verbose):
             return modlist
 
 
+def LoadAllUserSymbols(vtero):
+    psx = vtero.Processes.ToArray()
+    for px in psx:
+        px.MemAccess = vtero.MemAccess
+        px.ScanAndLoadModules("", False, False, True, False, True)
+
+
 def hives(proc):
     _HIVE_HEAD_ADDR = proc.GetSymValueLong("CmpHiveListHead")
     typedef = proc.xStructInfo("_CMHIVE")

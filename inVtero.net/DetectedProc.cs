@@ -214,22 +214,22 @@ namespace inVtero.net
 
         /// <summary>
         /// Currently we scan hard for only kernel regions (2MB pages + ExEC)
-        /// If there are kernel modules named the OnlyModule it may cause us to ignore the real one in that case
+        /// If there are kernel modules named the OnlyModule it may cause us to ignore the real one in   that case
         /// you can still scan for * by passing null or empty string
         /// </summary>
         /// <param name="OnlyModule">Stop when the first module named this is found</param>
-        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp", bool OnlyLarge = true, bool IncludeKernelSpace = true)
+        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp", bool OnlyLarge = true, bool IncludeKernelSpace = true, bool OnlyValid = true, bool IncludeData = false, bool DoExtraHeaderScan = false)
         {
             const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
             var curr=0;
             PageTable.AddProcess(this, new Mem(MemAccess));
             //var cnt = PT.FillPageQueue(OnlyLarge, IncludeKernelSpace);
 
-            var KVS = new VirtualScanner(this, new Mem(MemAccess));
+            var KVS = new VirtualScanner(this, new Mem(MemAccess), DoExtraHeaderScan);
 
             // single threaded worked best so far 
             //Parallel.For(0, cnt, (i, loopState) => x
-            foreach(var range in PT.FillPageQueue(OnlyLarge, IncludeKernelSpace))
+            foreach(var range in PT.FillPageQueue(OnlyLarge, IncludeKernelSpace, OnlyValid, IncludeData))
             //for (int i = 0; i < cnt; i++)
             {
                 curr++;
@@ -413,49 +413,39 @@ namespace inVtero.net
             long VA = sec.VA.Address;
 
             var _va = VA + Ext.DebugDirPos;
-            var block = VGetBlock(_va);
-            if (block == null)
-                return null;
+            var block = GetVirtualByte(_va);
 
-            var TimeDate2 = BitConverter.ToUInt32(block, ((int)Ext.DebugDirPos & 0xfff) + 4);
+            var TimeDate2 = BitConverter.ToUInt32(block, 4);
             if (TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
             {
                 WriteColor(ConsoleColor.Yellow, "Unable to lock on to CV data.");
                 return null;
             }
 
-            var max_offset = (int)(_va & 0xfff) + 28;
-            if (max_offset > 0x1000)
-                return null;
+            SizeData = BitConverter.ToUInt32(block, 16);
+            RawData = BitConverter.ToUInt32(block,  20);
+            PointerToRawData = BitConverter.ToUInt32(block, 24);
 
-            SizeData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 16);
-            RawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 20);
-            PointerToRawData = BitConverter.ToUInt32(block, (int)(_va & 0xfff) + 24);
+            // Advance to the debug section where we may find the code view info
 
             _va = VA + RawData;
-            block = VGetBlock(_va);
-            if (block == null)
-                return null;
-
-            var bytes = new byte[16];
-            // first 4 bytes
-            var sig = block[((int)_va & 0xfff)];
-            Array.ConstrainedCopy(block, (((int)_va & 0xfff) + 4), bytes, 0, 16);
-            var gid = new Guid(bytes);
-
+            var b2 = GetVirtualByte(_va);
+            var bytes2 = new byte[16];
+            var s2 = b2[0];
+            Array.ConstrainedCopy(b2, 4, bytes2, 0, 16);
+            var gid2 = new Guid(bytes2);
             // after GUID
-            var age = block[((int)_va & 0xfff) + 20];
+            var age2 = b2[20];
 
             // char* at end
-            var str = Encoding.Default.GetString(block, (((int)_va & 0xfff) + 24), 32).Trim();
-            var cv = new CODEVIEW_HEADER { VSize = (int)Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes, Age = age, aGuid = gid, Sig = sig, PdbName = str };
-            if (str.Contains("."))
-                sec.Name = str.Substring(0, str.IndexOf('.')).ToLower();
+            var str2 = Encoding.Default.GetString(b2, 24, 32).Trim();
+            var cv2 = new CODEVIEW_HEADER { VSize = (int)Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes2, Age = age2, aGuid = gid2, Sig = s2, PdbName = str2 };
+            if (str2.Contains(".") && str2.Contains(".pdb"))
+                sec.Name = str2.Substring(0, str2.IndexOf(".pdb")).ToLower();
             else
-                sec.Name = str;
-            sec.DebugDetails = cv;
-
-            return cv;
+                sec.Name = str2.ToLower();
+            sec.DebugDetails = cv2;
+            return cv2;
         }
 
 
@@ -648,13 +638,17 @@ namespace inVtero.net
         {
             long startIndex = VA & 0xfff;
             long count = 4096 - startIndex;
+            var rv = new byte[count + 4096];
 
             var block = VGetBlock(VA);
+            if (block == null)
+                return rv;
 
-            var rv = new byte[count];
-
-            if(block != null)
-                Array.Copy(block, startIndex, rv, 0, count);
+            Array.Copy(block, startIndex, rv, 0, count);
+            VA += 4096;
+            var block2 = VGetBlock(VA);
+            if(block2 != null)
+                Array.Copy(block2, 0, rv, count, 4096);
             return rv;
         }
         #endregion
