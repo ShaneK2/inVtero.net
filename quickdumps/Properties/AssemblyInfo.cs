@@ -6,11 +6,11 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("invtero.net")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("AGPL3")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("IOActive")]
+[assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("invtero.net")]
-[assembly: AssemblyCopyright("Copyright  © 2016 Shane.Macaulay@ioactive.com")]
+[assembly: AssemblyCopyright("Copyright  © 2017 smacaulay@gmail.com Shane Macaulay")]
 [assembly: AssemblyTrademark("inVtero.net")]
 [assembly: AssemblyCulture("")]
 

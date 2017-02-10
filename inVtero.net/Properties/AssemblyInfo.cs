@@ -8,9 +8,9 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("inVtero.net")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("IOActive")]
+[assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("inVtero.net")]
-[assembly: AssemblyCopyright("Copyright  © 2016 Shane.Macaulay@ioactive.com")]
+[assembly: AssemblyCopyright("Copyright  © 2017 smacaulay@gmail.com Shane Macaulay")]
 [assembly: AssemblyTrademark("inVtero.net")]
 [assembly: AssemblyCulture("")]
 
