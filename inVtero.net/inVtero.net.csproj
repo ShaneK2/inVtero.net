@@ -70,10 +70,6 @@
       <HintPath>..\packages\EntityFramework.6.1.3\lib\net45\EntityFramework.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="Gee.External.Capstone, Version=1.2.2.0, Culture=neutral, processorArchitecture=x86">
-      <HintPath>..\packages\Gee.External.Capstone.1.2.2\lib\net45\Gee.External.Capstone.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="libyara.NET, Version=3.5.0.2, Culture=neutral, PublicKeyToken=176e062142c9110f, processorArchitecture=AMD64">
       <HintPath>..\packages\libyara.NET.3.5.1\lib\net45\libyara.NET.dll</HintPath>
       <Private>True</Private>
@@ -167,8 +163,6 @@
     <Content Include="agpl-3.0.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="capstone.dll" />
-    <Content Include="Gee.External.Capstone.Proxy.dll" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

@@ -89,12 +89,12 @@ namespace inVtero.net.Support
 
     public static class Capstone
     {
-        [DllImport("$DllPath")]
+        [DllImport("capstone.dll")]
         public static extern cs_err cs_open(
             cs_arch arch,
             cs_mode mode,
             ref IntPtr handle);
-        [DllImport("$DllPath")]
+        [DllImport("capstone.dll")]
         public static extern UInt32 cs_disasm(
             IntPtr handle,
             byte[] code,
@@ -102,23 +102,23 @@ namespace inVtero.net.Support
             ulong address,
             int count,
             ref IntPtr insn);
-        [DllImport("$DllPath")]
+        [DllImport("capstone.dll")]
         public static extern bool cs_free(
             IntPtr insn,
             int count);
-        [DllImport("$DllPath")]
+        [DllImport("capstone.dll")]
         public static extern cs_err cs_close(
             ref IntPtr handle);
-        [DllImport("$DllPath")]
+        [DllImport("capstone.dll")]
         public static extern cs_err cs_option(
             IntPtr handle,
             int type,
             int value);
-        [DllImport("$DllPath", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("capstone.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr cs_reg_name(
             IntPtr handle,
             uint reg_id);
-        [DllImport("$DllPath")]
+        [DllImport("capstone.dll")]
         public static extern int cs_version(
             uint major,
             uint minor);

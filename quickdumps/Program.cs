@@ -91,18 +91,18 @@ namespace inVtero.net
                 FullArgs.Add("-i");
                 FullArgs.Add("-O");
 
-                if (File.Exists("Analyze.py"))
+                if (File.Exists("Main.py"))
                 {
-                    Write("Analyze.py has been injected, ");
+                    Write("Main.py has been injected, ");
                     ForegroundColor = ConsoleColor.Green;
-                    Write("test()");
+                    Write("test(MemList)");
                     ForegroundColor = ConsoleColor.Cyan;
                     Write(" is the default method that will digest memory dump files from the ");
                     ForegroundColor = ConsoleColor.Green;
                     Write("MemList");
 
                     WriteColor(ConsoleColor.Cyan, " array.");  
-                    FullArgs.Add("Analyze.py");
+                    FullArgs.Add("Main.py");
                 }
 
 

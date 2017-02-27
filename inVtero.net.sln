@@ -27,8 +27,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{9214
 	ProjectSection(SolutionItems) = preProject
 		Scripts\Analyze.py = Scripts\Analyze.py
 		Scripts\Basic.py = Scripts\Basic.py
+		Scripts\CloudLeech.py = Scripts\CloudLeech.py
 		Scripts\Dump.py = Scripts\Dump.py
 		Scripts\List.py = Scripts\List.py
+		Scripts\Main.py = Scripts\Main.py
 		Scripts\Scan.py = Scripts\Scan.py
 	EndProjectSection
 EndProject

@@ -54,6 +54,8 @@ namespace Reloc
         public uint RelocSize;
         public uint DebugDirPos;
         public uint DebugDirSize;
+        public uint EntryPoint;
+        public uint BaseOfCode;
         public ulong ImageBase;
         public long ImageBaseOffset;
         public uint TimeStamp;
@@ -197,13 +199,17 @@ namespace Reloc
 
             if (extracted_struct.Is64)
             {
-                pos += 22;
+                pos += 14;
+                extracted_struct.EntryPoint = BitConverter.ToUInt32(block, pos); pos += 4;
+                extracted_struct.BaseOfCode = BitConverter.ToUInt32(block, pos); pos += 4;
                 extracted_struct.ImageBaseOffset = pos;
                 extracted_struct.ImageBase = BitConverter.ToUInt64(block, pos); pos += 8;
             }
             else
             {
-                pos += 26;
+                pos += 18;
+                extracted_struct.EntryPoint = BitConverter.ToUInt32(block, pos); pos += 4;
+                extracted_struct.BaseOfCode = BitConverter.ToUInt32(block, pos); pos += 4;
                 extracted_struct.ImageBaseOffset = pos;
                 extracted_struct.ImageBase = BitConverter.ToUInt32(block, pos); pos += 4;
             }

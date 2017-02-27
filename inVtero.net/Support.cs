@@ -82,7 +82,6 @@ namespace inVtero.net
             if (ForegroundColor != ForeGround)
                 ForegroundColor = ForeGround;
 
-            WriteLine(var.PadRight(var.Length % WindowWidth, ' '));
             WriteLine(var);
         }
 

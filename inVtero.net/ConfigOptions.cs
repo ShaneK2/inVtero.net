@@ -12,6 +12,8 @@ namespace inVtero.net
         public string FileName {get;set;}
 
         public bool IgnoreSaveData { get; set; }
+
+        public bool ForceSingleFlatMemRun { get; set; }
         
         public PTType VersionsToEnable { get; set; }
 

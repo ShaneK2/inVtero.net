@@ -166,9 +166,13 @@ namespace inVtero.net
 
         }
 
-        public Vtero(string MemoryDump, AMemoryRunDetector MD) : this(MemoryDump)
+        public Vtero(string MemoryDump, AMemoryRunDetector MD) : this()
         {
+            MemFile = MemoryDump.ToLower();
+            FileSize = new FileInfo(MemFile).Length;
             MRD = MD;
+            MemAccess = Mem.InitMem(MemFile, MRD);
+            scan = new Scanner(MemFile, this);
         }
 
         /// <summary>
@@ -412,7 +416,7 @@ namespace inVtero.net
             // expected kernel hardcoded
 
             var pdbFile = (from kern in dp.Sections
-                           where kern.Value.Name == "ntkrnlmp"
+                           where kern.Value.Name.Contains("ntkrnlmp")
                            select kern.Value.DebugDetails.PDBFullPath).FirstOrDefault();
 
             if (string.IsNullOrWhiteSpace(pdbFile))
@@ -508,8 +512,20 @@ namespace inVtero.net
                 } 
 
                 lproc.ImagePath = ImagePath;
-
                 dp.LogicalProcessList.Add(lproc);
+
+                // also bind the specific entry to the hw entry
+                foreach (var hw in Processes)
+                {
+                    if (hw.CR3Value == EprocCR3)
+                    {
+                        hw.EProc = lproc;
+                        hw.VadRootPtr = VadRootPtr;
+                        hw.OSPath = ImagePath;
+                        hw.ProcessID = ProcessID;
+                        break;
+                    }
+                }
 
                 // move flink to next list entry
                 flink = memRead[offset_of / 8];
@@ -607,7 +623,7 @@ namespace inVtero.net
             if ((BaseVA & 0xf00000000000) != 0)
                 BaseVA |= (long)KernRange;
 
-            var sym = Sym.Initalize(Handle, null, DebugHelp.SymOptions.SYMOPT_DEBUG);
+            var sym = Sym.Initalize(Handle, null, DebugHelp.SymOptions.SYMOPT_UNDNAME);
 
             if(sym == null)
                 WriteLine($"Can not initialize symbols for ${Handle}, error:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");

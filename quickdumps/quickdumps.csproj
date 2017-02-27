@@ -137,6 +137,10 @@
       <Link>Basic.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\Scripts\CloudLeech.py">
+      <Link>CloudLeech.py</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\Scripts\Dump.py">
       <Link>Dump.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -145,11 +149,18 @@
       <Link>List.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\Scripts\Main.py">
+      <Link>Main.py</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\Scripts\Scan.py">
       <Link>Scan.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="agpl-3.0.txt" />
+    <Content Include="capstone.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="dbghelp.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>

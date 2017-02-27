@@ -30,7 +30,7 @@ namespace Dia2Sharp
     {
         public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
 
-        public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_DEBUG)
+        public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_UNDNAME)
         {
             DebugHelp.SymSetOptions(Options);
 
@@ -273,16 +273,18 @@ namespace Dia2Sharp
                         }
                         else
                         {
+                            var shift = (Pos % 8 * 8);
                             switch (sType.length)
                             {
                                 case 4:
-                                    lvalue = (int)lvalue & 0xffffffffff;
+                                    lvalue = (lvalue >> shift) & 0xffffffff;
                                     break;
                                 case 2:
-                                    lvalue = (short)lvalue & 0xffffff;
+                                    
+                                    lvalue = (lvalue >> shift) & 0xffff;
                                     break;
                                 case 1:
-                                    lvalue = (byte)lvalue & 0xff;
+                                    lvalue = (lvalue >> shift) & 0xff;
                                     break;
                                 default:
                                     break;
@@ -474,13 +476,12 @@ namespace Dia2Sharp
             } while (compileFetched == 1);
         }
 
-        public List<Tuple<String, ulong>> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
+        public List<Tuple<String, ulong, ulong>> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
         {
-            List<Tuple<String, ulong>> rv = new List<Tuple<string, ulong>>();
+            List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
             IDiaSession Session;
             IDiaEnumSymbols EnumSymbols = null;
             IDiaSymbol Master = null;
-            int level = 2;
             uint compileFetched = 0;
 
             var foo = new DiaSource();
@@ -505,7 +506,9 @@ namespace Dia2Sharp
                 if (Master == null)
                     continue;
 
-                rv.Add(Tuple.Create<String, ulong>(Master.name, Master.virtualAddress));
+                var len = Master.length;
+
+                rv.Add(Tuple.Create<String, ulong, ulong>(Master.name, Master.virtualAddress, len));
 #if DEBUGX
                 ForegroundColor = ConsoleColor.White;
                 WriteLine($"Name = [{Master.name}] VA = {Master.virtualAddress}");

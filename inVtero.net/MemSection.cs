@@ -48,6 +48,10 @@ namespace inVtero.net
         // Per module debug support
         public CODEVIEW_HEADER DebugDetails;
 
+        public string VadFile;
+        public long VadLength;
+        public long VadAddr; 
+
         // Often PE section data will overlap the MM system's protection scheme
         public List<MemSection> SubSections;
 

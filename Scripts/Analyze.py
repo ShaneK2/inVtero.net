@@ -16,27 +16,9 @@
 #
 # NtBuildNumber == kernel version
 #
-# BELOW LIST IS USED BY "test()" method. 
-MemList = [
-"c:\\temp\\win2k8R264bit-Snapshot5.vmsn",
-"C:\\Users\\files\\VMs\\Windows Server 2008 x64 Standard\\Windows Server 2008 x64 Standard-ef068a0c.vmem",
-"c:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem",
-"c:\\temp\\win10.64.xendump",
-"C:\\Users\\files\\VMs\\Windows 1511\\Windows.1511.vmem",
-"c:\\temp\\2012R2.debug.MEMORY.DMP",
-"c:\\temp\\server2016.xendump",
-"c:\\temp\\2012R2.xendump",
-"c:\\temp\\10 ENT 1607-Snapshot1.vmem",
-"c:\\temp\\Windows Development-6d08357c.vmem",
-#"c:\\temp\\MEMORY.4g.DMP",
-#"c:\\temp\memory.64GB.dmp"
-]
-
-print "Configured input files"
-for line in MemList:
-    print line
 
 import clr,sys
+import System
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
 from inVtero.net import *
@@ -45,6 +27,8 @@ from System.IO import Directory, File, FileInfo, Path
 from System import Environment, String, Console, ConsoleColor
 from System import Text
 from System.Diagnostics import Stopwatch
+
+print "\n\n\tCurrent directory [" + Directory.GetCurrentDirectory() + "]"
 
 # This script can be pretty chatty to stdout, configure various output here
 Vtero.VerboseOutput = True
@@ -55,8 +39,11 @@ Vtero.DisableProgressBar = False
 # More option handling for each file 
 copts = ConfigOptions()
 copts.IgnoreSaveData = True
-copts.VersionsToEnable = PTType.GENERIC
+copts.VersionsToEnable = PTType.GENERIC 
 copts.VerboseLevel = 1
+# in the case of some dump tools (ENCASE) use this option 
+#copts.ForceSingleFlatMemRun = True
+
 
 # This code fragment can be removed but it's a reminder you need symbols working
 sympath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH")
@@ -91,6 +78,7 @@ def ScanDump(MemoryDump, copts):
         vtero.CheckpointSaveState()
     else:
         proc.LoadSymbols()
+    #apply some setup
     kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
     Console.ForegroundColor = ConsoleColor.Cyan
     print "kernel build: " + kMinorVer.ToString()
@@ -161,6 +149,8 @@ def ListVAD(proc, VadRoot):
         if control_area.FilePointer.Value != 0:
             file_pointer = proc.xStructInfo("_FILE_OBJECT", control_area.FilePointer.Value & -16)
             print "Mapped File: " + file_pointer.FileName.Value 
+        else:
+            print "Mapped anonymous memory " + mmvad.Core.StartingVpn.Value.ToString("x")
     # Core is the more recent kernels
     if mmvad.Dictionary.ContainsKey("Core"):
         ListVAD(proc, mmvad.Core.VadNode.Left.Value)
@@ -267,7 +257,7 @@ def WalkProcListExample(proc):
         _EPROC = proc.xStructInfo("_EPROCESS", _EPROC_ADDR - ProcListOffsetOf)
             
 
-def test():
+def test(MemList):
     TotalRunTime = Stopwatch.StartNew()
     TotalSizeAnalyzed = 0
     for MemoryDump in MemList:

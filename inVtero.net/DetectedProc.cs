@@ -86,19 +86,36 @@ namespace inVtero.net
         [ProtoIgnore]
         public List<ScanResult> YaraOutput;
         public long YaraTotalScanned;
+        [ProtoIgnore]
+        public dynamic EProc;
+
+        public long VadRootPtr;
+        public long ProcessID;
+        public String OSPath;
+        public MemSection KernelSection;
+
 
         public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntkrnlmp")
         {
+            MemSection pdb = null;
 
-            var pdbPaths = from files in Sections.Values
-                           where files.DebugDetails != null &&
-                           files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
-                           select files;
+            if (Module == "ntkrnlmp" && KernelSection != null)
+                pdb = KernelSection;
+            else
+            {
 
-            var pdb = pdbPaths.FirstOrDefault();
+                var pdbPaths = from files in Sections.Values
+                               where files.DebugDetails != null &&
+                               !string.IsNullOrWhiteSpace(files.DebugDetails.PDBFullPath) &&
+                               files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
+                               select files;
+
+                pdb = pdbPaths.FirstOrDefault();
+                KernelSection = pdb;
+            }
 
             long[] memRead = null;
-            if(Address != 0)
+            if (Address != 0)
                 memRead = GetVirtualLongLen(Address, minLen);
 
             var rv = sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByte, GetVirtualLong);
@@ -109,14 +126,23 @@ namespace inVtero.net
 
         public dynamic xStructInfo(string Struct, long[] memRead = null, string Module = "ntkrnlmp")
         {
+            MemSection pdb = null;
 
-            var pdbPaths = from files in Sections.Values
-                           where files.DebugDetails != null &&
-                           files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
-                           select files;
+            if (Module == "ntkrnlmp" && KernelSection != null)
+                pdb = KernelSection;
+            else
+            {
+                var pdbPaths = from files in Sections.Values
+                               where files.DebugDetails != null &&
+                               !string.IsNullOrWhiteSpace(files.DebugDetails.PDBFullPath) &&
+                               files.DebugDetails.PDBFullPath.ToLower().Contains(Module.ToLower())
+                               select files;
 
-            var pdb = pdbPaths.FirstOrDefault();
-
+                pdb = pdbPaths.FirstOrDefault();
+                KernelSection = pdb;
+            }
+            if(sym == null)
+                sym = Vtero.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
             return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByte, GetVirtualLong);
         }
 
@@ -140,11 +166,12 @@ namespace inVtero.net
             return value;
         }
 
-        public Tuple<String, ulong>[] MatchSymbols(string Match, string Module = "ntkrnlmp")
+        public Tuple<String, ulong, ulong>[] MatchSymbols(string Match, string Module = "ntkrnlmp")
         {
-            List<Tuple<String, ulong>> rv = new List<Tuple<string, ulong>>();
-            foreach(var sec in Sections)
-                if(sec.Value.DebugDetails.PDBFullPath.Contains(Module) || string.IsNullOrWhiteSpace(Module))
+           List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
+            foreach (var sec in Sections)
+                if (sec.Value.DebugDetails != null &&
+                    !string.IsNullOrWhiteSpace(sec.Value.DebugDetails.PDBFullPath) && sec.Value.DebugDetails.PDBFullPath.Contains(Module) || string.IsNullOrWhiteSpace(Module))
                     rv.AddRange(sym.MatchSyms(Match, sec.Value.DebugDetails.PDBFullPath, sec.Value.VA.FullAddr));
 
             return rv.ToArray();
@@ -177,7 +204,7 @@ namespace inVtero.net
         {
             var KVS = new VirtualScanner(this, new Mem(MemAccess));
 
-            foreach(var artifact in KVS.Run(VA, VA + length))
+            foreach (var artifact in KVS.Run(VA, VA + length))
             {
                 var ms = new MemSection() { IsExec = true, Module = artifact, VA = new VIRTUAL_ADDRESS(artifact.VA) };
                 var extracted = ExtractCVDebug(ms);
@@ -201,9 +228,9 @@ namespace inVtero.net
 
         public void LoadSymbols(MemSection OnlyMS = null)
         {
-            foreach(var ms in Sections)
+            foreach (var ms in Sections)
             {
-                if(OnlyMS == null || (OnlyMS != null && OnlyMS.VA.Address == ms.Key))
+                if (OnlyMS == null || (OnlyMS != null && OnlyMS.VA.Address == ms.Key))
                 {
                     sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
                     if (Vtero.VerboseOutput)
@@ -218,10 +245,10 @@ namespace inVtero.net
         /// you can still scan for * by passing null or empty string
         /// </summary>
         /// <param name="OnlyModule">Stop when the first module named this is found</param>
-        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp", bool OnlyLarge = true, bool IncludeKernelSpace = true, bool OnlyValid = true, bool IncludeData = false, bool DoExtraHeaderScan = false)
+        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp.pdb", bool OnlyLarge = true, bool IncludeKernelSpace = true, bool OnlyValid = true, bool IncludeData = false, bool DoExtraHeaderScan = true)
         {
             const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
-            var curr=0;
+            var curr = 0;
             PageTable.AddProcess(this, new Mem(MemAccess));
             //var cnt = PT.FillPageQueue(OnlyLarge, IncludeKernelSpace);
 
@@ -229,7 +256,7 @@ namespace inVtero.net
 
             // single threaded worked best so far 
             //Parallel.For(0, cnt, (i, loopState) => x
-            foreach(var range in PT.FillPageQueue(OnlyLarge, IncludeKernelSpace, OnlyValid, IncludeData))
+            foreach (var range in PT.FillPageQueue(OnlyLarge, IncludeKernelSpace, OnlyValid, IncludeData))
             //for (int i = 0; i < cnt; i++)
             {
                 curr++;
@@ -249,7 +276,7 @@ namespace inVtero.net
                         var extracted = ExtractCVDebug(ms);
                         if (extracted == null)
                         {
-                            if(Vtero.VerboseLevel > 1)
+                            if (Vtero.VerboseLevel > 1)
                                 WriteColor(ConsoleColor.Yellow, $"failed debug info for PE @address {range.VA.Address:X}, extracted headers: {artifact}");
                             continue;
                         }
@@ -263,9 +290,10 @@ namespace inVtero.net
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
                         sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
-                        if (Vtero.VerboseOutput) {
+                        if (Vtero.VerboseOutput)
+                        {
                             WriteColor((sym != null) ? ConsoleColor.Green : ConsoleColor.Yellow, $" symbol loaded = [{sym != null}] PDB [{ms.DebugDetails.PDBFullPath}] @ {range.VA.Address:X}, {ms.Name}");
-                            if(Vtero.VerboseLevel > 1)
+                            if (Vtero.VerboseLevel > 1)
                                 WriteColor((sym != null) ? ConsoleColor.Green : ConsoleColor.Yellow, $"headers: { artifact} ");
                         }
 
@@ -285,7 +313,7 @@ namespace inVtero.net
                 }
 
                 //if (loopState.IsStopped)
-                //    return;
+                //    return;e
                 //});
                 if (stop) break;
             }
@@ -313,7 +341,7 @@ namespace inVtero.net
                     YaraTotalScanned = 0;
                     // single threaded worked best so far 
                     //Parallel.For(0, cnt, (i, loopState) => x
-                    foreach(var range in PT.FillPageQueue(false, KernelSpace, true, false))
+                    foreach (var range in PT.FillPageQueue(false, KernelSpace, true, false))
                     //for (int i = 0; i < cnt; i++)
                     {
                         curr++;
@@ -332,7 +360,8 @@ namespace inVtero.net
 
                             // Scanner and ScanResults do not need to be disposed.
                             var scanner = new libyaraNET.Scanner();
-                            unsafe {
+                            unsafe
+                            {
                                 long[] block = null;
                                 bool GotData = false;
 
@@ -346,7 +375,7 @@ namespace inVtero.net
                                 {
                                     fixed (void* lp = block)
                                     {
-                                        var res = scanner.ScanMemory((byte *) lp, block.Length, rules, ScanFlags.None);
+                                        var res = scanner.ScanMemory((byte*)lp, block.Length, rules, ScanFlags.None);
                                         rv.AddRange(res);
                                         YaraTotalScanned += block.Length;
                                     }
@@ -365,10 +394,153 @@ namespace inVtero.net
             return YaraOutput;
         }
 
+        public void ListVad(long AddressRoot = 0)
+        {
+            if (AddressRoot == 0)
+                return;
+            try
+            {
+                var memRead = GetVirtualLong(AddressRoot);
+                var mmvad = xStructInfo("_MMVAD", memRead);
+                long StartingVPN = 0, EndingVPN = 0;
+
+                bool IsExec = false;
+                if (mmvad.Dictionary.ContainsKey("Core"))
+                {
+                    if ((mmvad.Core.u.VadFlags.Protection.Value & 2) != 0)
+                    {
+                        IsExec = true;
+                        StartingVPN = (mmvad.Core.StartingVpnHigh.Value << 32) | mmvad.Core.StartingVpn.Value;
+                        EndingVPN = (mmvad.Core.EndingVpnHigh.Value << 32) | mmvad.Core.EndingVpn.Value;
+                    }
+                }
+                else
+                {
+                    if ((mmvad.u.VadFlags.Protection.Value & 2) != 0)
+                    {
+                        IsExec = true;
+                        StartingVPN = (mmvad.u.StartingVpnHigh.Value << 32) | mmvad.u.StartingVpn.Value;
+                        EndingVPN = (mmvad.u.EndingVpnHigh.Value << 32) | mmvad.u.EndingVpn.Value;
+                    }
+
+                }
+
+                long StartingAddress = StartingVPN << MagicNumbers.PAGE_SHIFT;
+                long Length = (EndingVPN - StartingVPN) * MagicNumbers.PAGE_SIZE;
+                if (IsExec)
+                {
+                    var subsect = xStructInfo("_SUBSECTION", mmvad.Subsection.Value);
+                    var control_area = xStructInfo("_CONTROL_AREA", subsect.ControlArea.Value);
+                    var segment = xStructInfo("_SEGMENT", control_area.Segment.Value);
+                    if (control_area.FilePointer.Value != 0)
+                    {
+                        var file_pointer = xStructInfo("_FILE_OBJECT", control_area.FilePointer.Value & -16);
+                        //print "Mapped File: " + file_pointer.FileName.Value
+                        String FileName = file_pointer.FileName.Value;
+
+                        if (Vtero.VerboseLevel > 2 & Vtero.DiagOutput)
+                            WriteColor($"VAD found executable file mapping {FileName} Mapped @ [{StartingAddress:X}] Length [{Length:X}]");
+
+                        bool KnownSection = false;
+                        // walk memsections and bind this information 
+                        foreach (var sec in Sections)
+                        {
+                            // We have a section that is known 
+                            // populate extra details
+                            if (sec.Key >= StartingAddress && sec.Key < StartingAddress + Length)
+                            {
+                                KnownSection = true;
+                                sec.Value.VadFile = FileName;
+                                sec.Value.VadAddr = StartingAddress;
+                                sec.Value.VadLength = Length;
+                                break;
+                            }
+                        }
+
+                        // if it's unknown, that the VAD is the sole source of information
+                        if (!KnownSection)
+                            Sections.TryAdd(StartingAddress, new MemSection()
+                            {
+                                Length = Length,
+                                VadLength = Length,
+                                VadAddr = StartingAddress,
+                                VadFile = FileName,
+                                Name = FileName,
+                                VA = new VIRTUAL_ADDRESS(StartingAddress)
+                            });
+                    }
+                }
+                if (mmvad.Dictionary.ContainsKey("Core"))
+                {
+                    ListVad(mmvad.Core.VadNode.Left.Value);
+                    ListVad(mmvad.Core.VadNode.Right.Value);
+                }
+                else
+                {
+                    ListVad(mmvad.LeftChild.Value);
+                    ListVad(mmvad.RightChild.Value);
+                }
+            } catch(Exception all)
+            {
+                // dynamic drop exceptions
+            }
+        }
+
+
+        /// <summary>
+        /// Process specialized 
+        /// 
+        /// 
+        /// Ensure we have symbols & kernel meta data parsed into our type info
+        /// 
+        /// Also We need vtero.WalkProcList to have been called which isolates vadroot
+        /// 
+        /// </summary>
+        public void MergeVAMetaData()
+        {
+            // setup kernel in optimized scan
+            ScanAndLoadModules();
+            // Load as much as possible from full user space scan for PE / load debug data
+            ScanAndLoadModules("", false, false);
+
+            /// All page table entries 
+            var execPages = PT.FillPageQueue();
+            // Walk Vad and inject into 'sections'
+            // scan VAD data to additionally bind 
+            ListVad(VadRootPtr);
+
+            // find section's with no "Module"
+            foreach(var sec in Sections.Values)
+            {
+                if(sec.Module == null)
+                {
+                    var test = GetVirtualByte(sec.VadAddr);
+                    var ext = Extract.IsBlockaPE(test);
+                    sec.Module = ext;
+                }
+            }
+
+        }
+
+
+        public void LogicalDump(string Folder)
+        {
+
+            // PT set
+
+
+            ScanAndLoadModules("");
+
+
+            foreach (var ms in Sections)
+            {
+
+            }
+        }
+
         public void DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true, bool OnlyExec = true)
         {
             //// TODO: BOILER PLATE check perf of using callbacks 
-            const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
             PageTable.AddProcess(this, new Mem(MemAccess));
             var cnt = PT.FillPageQueue(false, KernelSpace);
 
@@ -378,7 +550,7 @@ namespace inVtero.net
             long ContigSizeState = 0, curr = 0;
             // single threaded worked best so far 
             //Parallel.For(0, cnt, (i, loopState) => x
-            foreach(var range in PT.FillPageQueue(false, KernelSpace))
+            foreach (var range in PT.FillPageQueue(false, KernelSpace))
             {
                 curr++;
                 if (Vtero.VerboseLevel > 1)
@@ -394,7 +566,7 @@ namespace inVtero.net
                     if (!IncludeData && range.PTE.NoExecute)
                         continue;
 
-                     Vtero.WriteRange(range.VA, range, Folder, ref ContigSizeState, MemAccess);
+                    Vtero.WriteRange(range.VA, range, Folder, ref ContigSizeState, MemAccess);
                 }
             }
         }
@@ -423,11 +595,10 @@ namespace inVtero.net
             }
 
             SizeData = BitConverter.ToUInt32(block, 16);
-            RawData = BitConverter.ToUInt32(block,  20);
+            RawData = BitConverter.ToUInt32(block, 20);
             PointerToRawData = BitConverter.ToUInt32(block, 24);
 
             // Advance to the debug section where we may find the code view info
-
             _va = VA + RawData;
             var b2 = GetVirtualByte(_va);
             var bytes2 = new byte[16];
@@ -441,7 +612,7 @@ namespace inVtero.net
             var str2 = Encoding.Default.GetString(b2, 24, 32).Trim();
             var cv2 = new CODEVIEW_HEADER { VSize = (int)Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes2, Age = age2, aGuid = gid2, Sig = s2, PdbName = str2 };
             if (str2.Contains(".") && str2.Contains(".pdb"))
-                sec.Name = str2.Substring(0, str2.IndexOf(".pdb")).ToLower();
+                sec.Name = str2.Substring(0, str2.IndexOf(".pdb") + 4).ToLower();
             else
                 sec.Name = str2.ToLower();
             sec.DebugDetails = cv2;
@@ -470,13 +641,13 @@ namespace inVtero.net
 
         public long GetLongValue(long VA)
         {
-           var data = VGetBlock(VA);
-           return BitConverter.ToInt64(data, (int) (VA & 0xfff));
+            var data = VGetBlock(VA);
+            return BitConverter.ToInt64(data, (int)(VA & 0xfff));
         }
 
         public ulong GetULongValue(long VA)
         {
-            var data = VGetBlock((long) VA);
+            var data = VGetBlock((long)VA);
             return BitConverter.ToUInt64(data, (int)(VA & 0xfff));
         }
 
@@ -561,6 +732,7 @@ namespace inVtero.net
         /// <returns></returns>
         public long[] GetVirtualLong(long VA, ref bool GotData)
         {
+            bool GotSomeData = true;
             // offset to index
             long startIndex = (VA & 0xfff) / 8;
             long count = 512 - startIndex;
@@ -568,11 +740,12 @@ namespace inVtero.net
             var block = VGetBlockLong(VA, ref GotData);
 
             // adjust into return array 
-            var rv = new long[count+512];
+            var rv = new long[count + 512];
             Array.Copy(block, startIndex, rv, 0, count);
 
+            // allow for failure of second block
             VA += 4096;
-            var block2 = VGetBlockLong(VA, ref GotData);
+            var block2 = VGetBlockLong(VA, ref GotSomeData);
             Array.Copy(block2, 0, rv, count, 512);
 
             return rv;
@@ -613,16 +786,16 @@ namespace inVtero.net
         {
             // offset to index
             ulong startIndex = (VA & 0xfff) / 8;
-            long count = 512 - (long) startIndex;
+            long count = 512 - (long)startIndex;
             // get data
-            var block = VGetBlockLong((long) VA);
+            var block = VGetBlockLong((long)VA);
 
             // adjust into return array 
             var rv = new long[count + 512];
-            Array.Copy(block, (long) startIndex, rv, 0, count);
+            Array.Copy(block, (long)startIndex, rv, 0, count);
 
             VA += 4096;
-            var block2 = VGetBlockLong((long) VA);
+            var block2 = VGetBlockLong((long)VA);
             Array.Copy(block2, 0, rv, count, 512);
 
             return rv;
@@ -647,7 +820,7 @@ namespace inVtero.net
             Array.Copy(block, startIndex, rv, 0, count);
             VA += 4096;
             var block2 = VGetBlock(VA);
-            if(block2 != null)
+            if (block2 != null)
                 Array.Copy(block2, 0, rv, count, 4096);
             return rv;
         }
@@ -656,17 +829,17 @@ namespace inVtero.net
         [ProtoIgnore]
         public Mem MemAccess { get; set; }
         [ProtoIgnore]
-        public string ShortName {get { if (vmcs != null) return $"{vmcs.EPTP:X}-{CR3Value:X}"; return $"{CR3Value:X}"; } }
+        public string ShortName { get { if (vmcs != null) return $"{vmcs.EPTP:X}-{CR3Value:X}"; return $"{CR3Value:X}"; } }
 
-        public override string ToString() => $"Process CR3 [{CR3Value:X12}] File Offset [{FileOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
+        public override string ToString() => $"Process CR3 [{CR3Value:X12}] True Offset [{TrueOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
 
         public int CompareTo(object obj)
         {
             int vi = 0;
-            if(obj is DetectedProc)
+            if (obj is DetectedProc)
             {
                 DetectedProc dp = obj as DetectedProc;
-                if(vmcs != null || dp.vmcs != null)
+                if (vmcs != null || dp.vmcs != null)
                 {
                     if (vmcs == null && dp.vmcs == null)
                         return FileOffset.CompareTo(dp.FileOffset);
@@ -685,7 +858,7 @@ namespace inVtero.net
         public void Dispose()
         {
             foreach (var addr in Sections)
-                DebugHelp.SymUnloadModule64(ID.GetHashCode(), (ulong) addr.Key);
+                DebugHelp.SymUnloadModule64(ID.GetHashCode(), (ulong)addr.Key);
         }
     }
 

@@ -24,6 +24,7 @@ using static System.Console;
 using static inVtero.net.Misc;
 using System.IO;
 using System.Diagnostics;
+using inVtero.net.Specialties;
 
 namespace inVtero.net.ConsoleUtils
 {
@@ -62,7 +63,19 @@ namespace inVtero.net.ConsoleUtils
             }
 
             if (vtero.Phase < 2)
-                vtero = new Vtero(Filename);
+            {
+                if (!co.ForceSingleFlatMemRun)
+                    vtero = new Vtero(Filename);
+                else
+                {
+                    var siz = new FileInfo(co.FileName).Length;
+                    vtero.MRD = new BasicRunDetector();
+                    vtero.MRD.MemFile = co.FileName;
+                    vtero.MRD.vDeviceFile = co.FileName;
+                    vtero.MRD.PhysMemDesc = new MemoryDescriptor(siz);
+                    vtero = new Vtero(Filename, vtero.MRD);
+                }
+            }
 
             if (!vtero.OverRidePhase)
             {
