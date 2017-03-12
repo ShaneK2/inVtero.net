@@ -13,7 +13,6 @@ namespace inVtero.net.ConsoleUtils
 {
     public class PythonConsoleHost : ConsoleHost
     {
-        ScriptEngine EngineCtx;
         CommandLine CmdCtx;
         PythonOptionsParser OptionsCtx;
 

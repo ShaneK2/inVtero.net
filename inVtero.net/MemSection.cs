@@ -34,9 +34,12 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class MemSection : IComparable
     {
-        public string Name;
+        public string Name { get; set; }
+        [ProtoIgnore]
+        public ulong Address { get { return (ulong) VA.Address; } }
+        public long Length { get; set; }
+
         public VIRTUAL_ADDRESS VA;
-        public long Length;
 
         public bool IsExec;
 

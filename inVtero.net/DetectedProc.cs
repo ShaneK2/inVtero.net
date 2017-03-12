@@ -48,7 +48,7 @@ namespace inVtero.net
         public VMCS vmcs;       // vmcs if available
         public List<VMCS> CandidateList;
         public PageTable PT;    // extracted page table
-        public long CR3Value;
+        public long CR3Value { get; set; }
         public long FileOffset;
         public long TrueOffset;
         public long Diff;
@@ -61,7 +61,7 @@ namespace inVtero.net
         [ProtoIgnore]
         public Sym sym;
 
-        public ConcurrentDictionary<long, MemSection> Sections;
+        public ConcurrentDictionary<long, MemSection> Sections { get; private set; }
 
         /*
         public CODEVIEW_HEADER DebugData;
@@ -91,7 +91,7 @@ namespace inVtero.net
 
         public long VadRootPtr;
         public long ProcessID;
-        public String OSPath;
+        public String OSPath { get; set; }
         public MemSection KernelSection;
 
 
@@ -103,7 +103,6 @@ namespace inVtero.net
                 pdb = KernelSection;
             else
             {
-
                 var pdbPaths = from files in Sections.Values
                                where files.DebugDetails != null &&
                                !string.IsNullOrWhiteSpace(files.DebugDetails.PDBFullPath) &&
@@ -171,7 +170,8 @@ namespace inVtero.net
            List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
             foreach (var sec in Sections)
                 if (sec.Value.DebugDetails != null &&
-                    !string.IsNullOrWhiteSpace(sec.Value.DebugDetails.PDBFullPath) && sec.Value.DebugDetails.PDBFullPath.Contains(Module) || string.IsNullOrWhiteSpace(Module))
+                    !string.IsNullOrWhiteSpace(sec.Value.DebugDetails.PDBFullPath) && 
+                    Path.GetFileNameWithoutExtension(sec.Value.DebugDetails.PDBFullPath).ToLower().Contains(Path.GetFileNameWithoutExtension(Module).ToLower()) || string.IsNullOrWhiteSpace(Module))
                     rv.AddRange(sym.MatchSyms(Match, sec.Value.DebugDetails.PDBFullPath, sec.Value.VA.FullAddr));
 
             return rv.ToArray();
@@ -504,7 +504,7 @@ namespace inVtero.net
             ScanAndLoadModules("", false, false);
 
             /// All page table entries 
-            var execPages = PT.FillPageQueue();
+            //var execPages = PT.FillPageQueue();
             // Walk Vad and inject into 'sections'
             // scan VAD data to additionally bind 
             ListVad(VadRootPtr);
@@ -522,21 +522,6 @@ namespace inVtero.net
 
         }
 
-
-        public void LogicalDump(string Folder)
-        {
-
-            // PT set
-
-
-            ScanAndLoadModules("");
-
-
-            foreach (var ms in Sections)
-            {
-
-            }
-        }
 
         public void DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true, bool OnlyExec = true)
         {
@@ -831,7 +816,7 @@ namespace inVtero.net
         [ProtoIgnore]
         public string ShortName { get { if (vmcs != null) return $"{vmcs.EPTP:X}-{CR3Value:X}"; return $"{CR3Value:X}"; } }
 
-        public override string ToString() => $"Process CR3 [{CR3Value:X12}] True Offset [{TrueOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
+        public override string ToString() => $"Process CR3 [{CR3Value:X12}] Path [{OSPath}] True Offset [{TrueOffset:X12}] Diff [{Diff:X12}] Type [{PageTableType}] VMCS [{vmcs}]";
 
         public int CompareTo(object obj)
         {

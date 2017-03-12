@@ -256,6 +256,7 @@ def WalkProcListExample(proc):
             return
         _EPROC = proc.xStructInfo("_EPROCESS", _EPROC_ADDR - ProcListOffsetOf)
             
+vtero = None
 
 def test(MemList):
     TotalRunTime = Stopwatch.StartNew()

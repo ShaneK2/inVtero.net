@@ -29,7 +29,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <PublisherName>Shane Macaulay %28c%29 2017 smacaulay%40gmail.com</PublisherName>
-    <ApplicationRevision>20</ApplicationRevision>
+    <ApplicationRevision>21</ApplicationRevision>
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
@@ -115,6 +115,10 @@
       <Project>{bba65fad-57b1-4b78-b262-e542a88440d6}</Project>
       <Name>inVtero.net</Name>
     </ProjectReference>
+    <ProjectReference Include="..\inVteroUI\inVteroUI.csproj">
+      <Project>{93055c93-5a53-429b-af8f-3de7db676395}</Project>
+      <Name>inVteroUI</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.5.2">
@@ -162,6 +166,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="dbghelp.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="keystone.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="MSDIA140.dll">

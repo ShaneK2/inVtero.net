@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio 15
+VisualStudioVersion = 15.0.26228.4
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVtero.net", "inVtero.net\inVtero.net.csproj", "{BBA65FAD-57B1-4B78-B262-E542A88440D6}"
 EndProject
@@ -27,6 +27,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{9214
 	ProjectSection(SolutionItems) = preProject
 		Scripts\Analyze.py = Scripts\Analyze.py
 		Scripts\Basic.py = Scripts\Basic.py
+		Capstone.py = Capstone.py
+		Scripts\Capstone.py = Scripts\Capstone.py
 		Scripts\CloudLeech.py = Scripts\CloudLeech.py
 		Scripts\Dump.py = Scripts\Dump.py
 		Scripts\List.py = Scripts\List.py
@@ -35,6 +37,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{9214
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dia2Sharp", "Dia2Sharp\Dia2Sharp.csproj", "{F2CD767A-D27B-44D6-A56E-363AB2DE0C51}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVteroUI", "inVteroUI\inVteroUI.csproj", "{93055C93-5A53-429B-AF8F-3DE7DB676395}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -70,6 +74,14 @@ Global
 		{F2CD767A-D27B-44D6-A56E-363AB2DE0C51}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F2CD767A-D27B-44D6-A56E-363AB2DE0C51}.Release|x64.ActiveCfg = Release|x64
 		{F2CD767A-D27B-44D6-A56E-363AB2DE0C51}.Release|x64.Build.0 = Release|x64
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Debug|x64.Build.0 = Debug|Any CPU
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Release|Any CPU.Build.0 = Release|Any CPU
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Release|x64.ActiveCfg = Release|Any CPU
+		{93055C93-5A53-429B-AF8F-3DE7DB676395}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

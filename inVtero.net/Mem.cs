@@ -95,8 +95,9 @@ namespace inVtero.net
 
         long MapViewBase;
         long MapViewSize;
-
+#if USE_BITMAP
         WAHBitArray pfnTableIdx;
+#endif
         public void DumpPFNIndex()
         {
 #if USE_BITMAP

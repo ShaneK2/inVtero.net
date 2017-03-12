@@ -4,8 +4,11 @@ import System
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
+clr.AddReferenceToFileAndPath("inVteroUI.dll")
+
 from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
+from inVteroUI import *
 from System.IO import Directory, File, FileInfo, Path
 from System import Environment, String, Console, ConsoleColor
 from System import Text
@@ -33,6 +36,7 @@ MemList = [
 #"c:\\temp\\MEMORY.4g.DMP",
 #"c:\\temp\memory.64GB.dmp"
 #"d:\\users\\files\\vms\\Windows Server 2016\\Windows Server 2016-02431799.vmem",
+#"d:\\users\\files\\vms\\RED-Windows 10 x64\\RED-Windows 10 x64-0f643564.vmem"
 ]
 i=1
 print "\nConfigured input files (for test() method); "

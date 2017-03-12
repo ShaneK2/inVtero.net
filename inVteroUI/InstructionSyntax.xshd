@@ -1,0 +1,171 @@
+﻿<?xml version="1.0"?>
+<SyntaxDefinition name="Custom Highlighting" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Conditional" foreground="Green" fontWeight="bold" />
+  <Color name="Symbol" foreground="Blue" />
+  <Color name="Address" foreground="#09A0AB" />
+  <Color name="Null" background="Black" foreground="White" />
+  <Color name="UnVerified" background="Pink" />
+  <Color name="Verified" background="White" />
+  <Color name="RefAddr" foreground="Blue"  fontWeight="bold" />
+  <Color name="Registers" foreground="#FFA52A2A" />
+  <Color name="NoVerified" background="Pink" />
+  <Color name="String" foreground="Gray" />
+  <Color name="AnalysisFailure" foreground="Red" background="Black" fontWeight="bold" />
+
+
+  <RuleSet ignoreCase="false">
+    <!-- Address RULE -->
+    <Rule foreground="#09A0AB">^0x[0-9A-F]{1,16}\s</Rule>
+    <Rule foreground="#FF446611">\.*0x[0-9A-Fa-f]{1,16}^</Rule>
+
+    <Keywords color="AnalysisFailure">
+      <Word>???</Word>
+    </Keywords>
+
+    <Keywords color="Conditional">
+      <Word>jo</Word>
+      <Word>jc</Word>
+      <Word>je</Word>
+      <Word>ja</Word>
+      <Word>js</Word>
+      <Word>jp</Word>
+      <Word>jl</Word>
+      <Word>jg</Word>
+      <Word>jb</Word>
+      <Word>jecxz</Word>
+      <Word>jmp</Word>
+      <Word>call</Word>
+      <Word>ret</Word>
+      <Word>jno</Word>
+      <Word>jnc</Word>
+      <Word>jne</Word>
+      <Word>jna</Word>
+      <Word>jns</Word>
+      <Word>jnp</Word>
+      <Word>jnl</Word>
+      <Word>jng</Word>
+      <Word>jnb</Word>
+    </Keywords>
+
+    <Keywords color="Registers">
+      <Word>eflags</Word>
+      <Word>mxcsr</Word>
+      <Word>gdtr</Word>
+      <Word>ldtr</Word>
+      <Word>idtr</Word>
+      <Word>tr</Word>
+      <Word>rax</Word>
+      <Word>rcx</Word>
+      <Word>rdx</Word>
+      <Word>rbx</Word>
+      <Word>rsp</Word>
+      <Word>rbp</Word>
+      <Word>rsi</Word>
+      <Word>rdi</Word>
+      <Word>r8</Word>
+      <Word>r9</Word>
+      <Word>r10</Word>
+      <Word>r11</Word>
+      <Word>r12</Word>
+      <Word>r13</Word>
+      <Word>r14</Word>
+      <Word>r15</Word>
+      <Word>r8L</Word>
+      <Word>r9L</Word>
+      <Word>r10L</Word>
+      <Word>r11L</Word>
+      <Word>r12L</Word>
+      <Word>r13L</Word>
+      <Word>r14L</Word>
+      <Word>r15L</Word>
+      <Word>eax</Word>
+      <Word>ecx</Word>
+      <Word>edx</Word>
+      <Word>ebx</Word>
+      <Word>esp</Word>
+      <Word>ebp</Word>
+      <Word>esi</Word>
+      <Word>edi</Word>
+      <Word>r8d</Word>
+      <Word>r9d</Word>
+      <Word>r10d</Word>
+      <Word>r11d</Word>
+      <Word>r12d</Word>
+      <Word>r13d</Word>
+      <Word>r14d</Word>
+      <Word>r15d</Word>
+      <Word>r8w</Word>
+      <Word>r9w</Word>
+      <Word>r10w</Word>
+      <Word>r11w</Word>
+      <Word>r12w</Word>
+      <Word>r13w</Word>
+      <Word>r14w</Word>
+      <Word>r15w</Word>
+      <Word>ax</Word>
+      <Word>cx</Word>
+      <Word>dx</Word>
+      <Word>bx</Word>
+      <Word>sp</Word>
+      <Word>bp</Word>
+      <Word>si</Word>
+      <Word>di</Word>
+      <Word>es</Word>
+      <Word>cs</Word>
+      <Word>ss</Word>
+      <Word>ds</Word>
+      <Word>fs</Word>
+      <Word>gs</Word>
+      <Word>cr0</Word>
+      <Word>cr1</Word>
+      <Word>cr2</Word>
+      <Word>cr3</Word>
+      <Word>cr4</Word>
+      <Word>cr5</Word>
+      <Word>cr6</Word>
+      <Word>cr7</Word>
+      <Word>al</Word>
+      <Word>ah</Word>
+      <Word>ch</Word>
+      <Word>cl</Word>
+      <Word>dh</Word>
+      <Word>dl</Word>
+      <Word>bh</Word>
+      <Word>bl</Word>
+      <Word>sih</Word>
+      <Word>sil</Word>
+      <Word>dih</Word>
+      <Word>dil</Word>
+      <Word>bpl</Word>
+      <Word>bph</Word>
+      <Word>spl</Word>
+      <Word>sph</Word>
+    </Keywords>
+
+    <Span color="NoVerified">
+      <Begin>0X</Begin>
+      <End>\s</End>
+    </Span>
+
+    <Span color="String">
+      <Begin>"</Begin>
+      <End>"</End>
+    </Span>
+
+    <Span color="RefAddr">
+      <Begin>\[</Begin>
+      <End>\][,\s]</End>
+    </Span>
+
+    <Span color="Symbol">
+      <Begin>@</Begin>
+      <End>@</End>
+    </Span>
+
+    <Span color="Null">
+      <Begin>--</Begin>
+      <End>--</End>
+    </Span>
+
+  </RuleSet>
+</SyntaxDefinition>

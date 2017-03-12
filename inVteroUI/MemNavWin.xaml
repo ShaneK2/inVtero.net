@@ -1,0 +1,151 @@
+﻿<Window x:Class="inVteroUI.MemNavWin"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:inVteroUI"
+        xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
+        mc:Ignorable="d"
+        
+        Title="Win" 
+        Height="300" Width="800">
+    <Window.Resources>
+        <ItemsPanelTemplate x:Key="virtItemTemplate">
+            <VirtualizingStackPanel IsVirtualizing="True"  VirtualizationMode="Recycling" />
+        </ItemsPanelTemplate>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition />
+        </Grid.ColumnDefinitions>
+        <ToolBar HorizontalAlignment="Stretch">
+            <ComboBox x:Name="cmboSelctedProc"
+                      ItemsSource="{Binding Path=ProcList, Mode=OneTime}"
+                      SelectedItem="{Binding Path=SelectedProc}"
+                      Margin="2"
+                      MinWidth="50"
+                      >
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <WrapPanel Margin="0">
+                            <TextBlock Text="{Binding OSPath}" />
+                            <Separator Width="20" Visibility="Hidden" />
+                            <TextBlock Text="{Binding CR3Value, StringFormat={}{0:x}}" FontWeight="Bold" />
+                        </WrapPanel>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Separator Visibility="Hidden" Width="30" />
+            
+            <!--<Label Margin="2" Content="Filter:" 
+                   ToolTip="Enter search text to scan the scanned code block names"
+                   VerticalContentAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Right" HorizontalContentAlignment="Right"/>
+            <TextBox Margin="2" x:Name="tbSearchMemBlocks" MinWidth="30"
+                     ToolTip="Enter search text to scan the scanned code block names"
+                     HorizontalContentAlignment="Right" HorizontalAlignment="Right" VerticalContentAlignment="Center" VerticalAlignment="Center"/>-->
+        </ToolBar>
+        <ListView 
+            Grid.Row="1"
+            SelectionMode="Single"
+            Grid.Column="0"
+            VerticalAlignment="Stretch"
+            AlternationCount="2" 
+            ItemsSource="{Binding Path=SelectedProc.Sections.Values}"
+            MouseLeftButtonUp="lvBlocks_Selected"
+            x:Name="lvBlocks" 
+            ItemsPanel="{StaticResource virtItemTemplate}"
+            VirtualizingPanel.IsVirtualizing="True"
+            VirtualizingPanel.VirtualizationMode="Recycling"
+            >
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <WrapPanel>
+                        <TextBlock Text="Name: " />
+                        <TextBlock Text="{Binding Name}" FontWeight="Bold" />
+                        <TextBlock Text=" Address: " />
+                        <TextBlock Text="{Binding Address, StringFormat={}{0:x}}" FontWeight="Bold" />
+                    </WrapPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+        <ToolBar  Grid.Column="2" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" >
+            <TextBlock Text="Symbol Search expression: " HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <TextBox x:Name="tbSymMatch" Text="*" PreviewKeyUp="tbSymMatch_PreviewKeyUp" />
+        </ToolBar>
+        <ListView
+            x:Name="lvSymbols"
+            Grid.Row="1"
+            Grid.Column="2"
+            MinWidth="5"
+            VerticalAlignment="Stretch"
+            HorizontalAlignment="Stretch"
+            MouseLeftButtonUp="lvSymbols_MouseLeftButtonUp"
+            >
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <WrapPanel>
+                        <TextBlock Text="Name: " />
+                        <TextBlock Text="{Binding Item1}" FontWeight="Bold" />
+                        <TextBlock Text=" Address: " />
+                        <TextBlock Text="{Binding Item2, StringFormat={}{0:x}}" />
+                        <TextBlock Text=" Length: " />
+                        <TextBlock Text="{Binding Item3, StringFormat={}{0:x}}" />
+                    </WrapPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <DockPanel  
+            Grid.Row="0" 
+            Grid.RowSpan="2"
+            Grid.Column="4" 
+            Margin="0,2,4,2" 
+            VerticalAlignment="Stretch"
+            HorizontalAlignment="Stretch"
+            LastChildFill="True"
+            >
+            <ToolBar DockPanel.Dock="Top" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"  >
+                <TextBlock Text="Address:" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <TextBox x:Name="tbAddress"  MinWidth="50" />
+                <Button Content="ReadMemory" x:Name="btnDiss" Click="btnDiss_Click" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                <ComboBox 
+                  x:Name="cbViewSelector"
+                  Margin="2"
+                 />
+                <TextBlock Text=" Assembe:" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <TextBox x:Name="tbAsm"  MinWidth="50" AcceptsReturn="True" PreviewKeyUp="tbAsm_PreviewKeyUp" />
+                <Button Content="WriteOut" x:Name="btnAss" Click="btnAss_Click" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"  />
+                <TextBlock x:Name="tbAsmOut" />
+
+                <!--<ComboBox 
+                  x:Name="cbViewSelector"
+                  ItemsSource="{Binding Path=DecodeOptions, Mode=OneTime}"
+                  Margin="2"
+                  />-->
+                <!--<Button Command="{Binding Path=LoadSymbolsCommand}" Content="Symbols" Margin="2" />-->
+                <!--<Grid MinWidth="150" >
+                    <ContentPresenter Content="{Binding Path=SelectedDetail.KnownBy}" HorizontalAlignment="Stretch" />
+                    <ProgressBar x:Name="pbLoadBytes"  IsIndeterminate="False" HorizontalAlignment="Stretch"  HorizontalContentAlignment="Stretch" />
+                </Grid>-->
+            </ToolBar>
+            <avalonEdit:TextEditor 
+                x:Name="avaEdit"
+                FontFamily="Consolas"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                DockPanel.Dock="Bottom"
+                FontSize="12"
+                /> 
+        </DockPanel>
+        <GridSplitter Grid.Row="1" Grid.Column="3" HorizontalAlignment="Stretch" Width="5" ResizeBehavior="BasedOnAlignment" />
+        <GridSplitter Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" Width="5" ResizeBehavior="BasedOnAlignment" />
+    </Grid>
+</Window>

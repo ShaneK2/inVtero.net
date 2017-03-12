@@ -28,7 +28,6 @@ namespace inVtero.net.Support
         public static bool TextInfo = false;
 
         private static char progressBarCharacter = '\u2592';
-        static int SavePos;
 
         static ProgressBarz() {
         }
