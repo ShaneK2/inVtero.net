@@ -14,11 +14,27 @@ No configuration needed, completely dynamic / duck typing
 
 ### Use Quickdumps + python to automatically analyze any memory dump
 
+New UI for memory editing (dis/assemble and patch) supported formats.  Use "Loader()" on a vtero instance like;
+
+```
+Loader(test(MemList))
+```
+
+![Internal UI](https://pbs.twimg.com/media/C6v1TvEU0AAXjiM.jpg:large)
+
 Change MemoryDump string to point to a memory dump.  Example memory dump walking and type system
 explanation in analyze.py, see WalkProcListExample() 
 
 ```
-quickdumps python Analyze.py
+quickdumps
+
+>>> MemList = [ "c:\\temp\\win10.64.xendump" ]
+>>> test(MemList)
+ ++++++++++++++++++++++++++++++ ANALYZING INPUT [c:\temp\win10.64.xendump] ++++++++++++++++++++++++++++++
+ PART RUNTIME: 00:00:08.5211677 (seconds), INPUT DUMP SIZE: 4,303,692,448.00 bytes.
+SPEED: 466,980 KB / second  (all phases aggregate time)
+ ++++++++++++++++++++++++++++++ DONE WITH INPUT [c:\temp\win10.64.xendump] ++++++++++++++++++++++++++++++
+ >>> Loader(vtero)
 ```
 
 
