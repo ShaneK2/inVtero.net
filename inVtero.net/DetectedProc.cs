@@ -28,6 +28,7 @@ using System.Linq;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using libyaraNET;
+using inVtero.net.Support;
 
 namespace inVtero.net
 {
@@ -89,6 +90,7 @@ namespace inVtero.net
         [ProtoIgnore]
         public dynamic EProc;
 
+        public long EThreadPtr;
         public long VadRootPtr;
         public long ProcessID;
         public String OSPath { get; set; }
@@ -394,6 +396,66 @@ namespace inVtero.net
             return YaraOutput;
         }
 
+        // tid&buffer
+        List<Tuple<long, long[]>> ThreadStacks;
+        List<Tuple<long, long[]>> UserThreadStacks;
+
+        public void LoadThreads()
+        {
+            if (EThreadPtr == 0)
+                return;
+
+            ThreadStacks = new List<Tuple<long, long[]>>();
+            UserThreadStacks = new List<Tuple<long, long[]>>();
+
+            var _ETHR_ADDR = EThreadPtr;
+
+            // using typedef's & offsetof give's us speedier access to the underlying struct
+            var typedefTEB = xStructInfo("_TEB");
+            var userStackBaseOffsetOf = typedefTEB.NtTib.StackBase.OffsetPos;
+            var userStackLimitOffsetOf = typedefTEB.NtTib.StackLimit.OffsetPos;
+
+            // base area above curr can have lots of random stuff in it...
+            //var sbOffsetOf = typedef.Tcb.StackBase.OffsetPos;
+            var typedef = xStructInfo("_ETHREAD");
+            var ThreadOffsetOf = typedef.ThreadListEntry.OffsetPos;
+            var CurrKerUseOffsetOf = typedef.Tcb.KernelStack.OffsetPos;
+            var sbLimitOf = typedef.Tcb.StackLimit.OffsetPos;
+            var cidOffsetOf = typedef.Cid.UniqueThread.OffsetPos;
+            var tebOffsetOf = typedef.Tcb.Teb.OffsetPos;
+
+            var etr = _ETHR_ADDR - ThreadOffsetOf;
+            var memRead = GetVirtualLong(etr);
+            do
+            {
+                _ETHR_ADDR = memRead[ThreadOffsetOf / 8];
+                if (_ETHR_ADDR == EThreadPtr)
+                    return;
+
+                var ID = memRead[cidOffsetOf / 8];
+                var StackLimit = memRead[sbLimitOf / 8];
+                var CurrentUse = memRead[CurrKerUseOffsetOf / 8];
+                var len = (int)(CurrentUse - StackLimit);
+
+                ThreadStacks.Add(Tuple.Create<long, long[]>(ID, GetVirtualLongLen(StackLimit, len)));
+
+                // read out user space info
+                var teb_tib_read = memRead[tebOffsetOf / 8];
+                memRead = GetVirtualLong(teb_tib_read);
+
+                var UserLim = memRead[userStackLimitOffsetOf / 8];
+                var UserBase = memRead[userStackBaseOffsetOf / 8];
+                var userLen = (int) (UserBase - UserLim);
+
+                UserThreadStacks.Add(Tuple.Create<long, long[]>(ID, GetVirtualLongLen(UserLim, userLen)));
+
+                memRead = GetVirtualLong(_ETHR_ADDR - ThreadOffsetOf);
+            } while (_ETHR_ADDR != EThreadPtr);
+
+            // at this point we habe ThreadStacks saved and can scan for RoP badness
+            // also need to scan the TEB for TEB base/limit and add those ranges for user space roppers
+        }
+
         public void ListVad(long AddressRoot = 0)
         {
             if (AddressRoot == 0)
@@ -490,27 +552,145 @@ namespace inVtero.net
         /// <summary>
         /// Process specialized 
         /// 
+        /// This is a cheat function to basically force deferred execution to occur.
+        /// 
+        /// All of this sort of late bound meta-data from the system needs to be carefully written to not be too expensive.
+        /// (e.g. use the .OffsetPos rather than too heavy on dynamic resolution)
         /// 
         /// Ensure we have symbols & kernel meta data parsed into our type info
         /// 
         /// Also We need vtero.WalkProcList to have been called which isolates vadroot
         /// 
         /// </summary>
-        public void MergeVAMetaData()
+        public void MergeVAMetaData(bool DoStackCheck = false)
         {
             // setup kernel in optimized scan
             ScanAndLoadModules();
             // Load as much as possible from full user space scan for PE / load debug data
             ScanAndLoadModules("", false, false);
 
+            
+            var codeRanges = new ConcurrentDictionary<long, long>();
+
             /// All page table entries 
-            //var execPages = PT.FillPageQueue();
+            /// including kernel
+            var execPages = PT.FillPageQueue(false, true);
+            foreach(var pte in execPages)
+                codeRanges.TryAdd(pte.VA.Address, pte.VA.Address + (pte.PTE.LargePage ? MagicNumbers.LARG_PAGE_SIZE : MagicNumbers.PAGE_SIZE));
+
             // Walk Vad and inject into 'sections'
             // scan VAD data to additionally bind 
             ListVad(VadRootPtr);
 
+            // Dig all threads
+            if (DoStackCheck)
+            {
+                LoadThreads();
+                var checkPtrs = new ConcurrentBag<long>();
+
+                // instead of using memsections we should use apge table info
+                // then push in memsection after this round
+                Parallel.Invoke(() =>
+                {
+                    // each stack
+                    foreach (var userRange in UserThreadStacks)
+                    {
+                        // every value
+                        foreach (var pointer in userRange.Item2)
+                        {
+                            if (pointer > -4096 && pointer < 4096)
+                                continue;
+
+                            // see if in range of code
+                            foreach (var codeRange in codeRanges)
+                                // if so we need to double check that the code ptr is a good one
+                                if (pointer >= codeRange.Key && pointer < codeRange.Value)
+                                        checkPtrs.Add(pointer);
+                        }
+                    }
+                }, () =>
+                {
+                    // each stack
+                    foreach (var kernelRange in ThreadStacks)
+                    {
+                        // every value
+                        foreach (var pointer in kernelRange.Item2)
+                         {
+                            if (pointer > -4096 && pointer < 4096)
+                                continue;
+
+                            // see if in range of code
+                            foreach (var codeRange in codeRanges)
+                                // if so we need to double check that the code ptr is a good one
+                                if (pointer >= codeRange.Key && pointer < codeRange.Value)
+                                        checkPtrs.Add(pointer);
+                        }
+                    }
+                });
+
+                // validate checkPtrs pointers here
+                // TODO: group pointers so we can minimize page reads
+                foreach (var ptr in checkPtrs)
+                {
+                    var idx = ptr & 0xfff;
+                    if (idx < 10)
+                        continue;
+
+                    // every pointer needs to be a function start
+                    // or a properly call/ret pair
+                    var ptrTo = VGetBlock(ptr);
+                    //BYTE* bp = (BYTE*)RefFramePtr;
+
+                    var IsCCBefore = ptrTo[idx - 1];
+                    var IsCallE8 = ptrTo[idx - 5];
+                    var IsCallE8_second = ptrTo[idx - 3]; 
+                    var IsCall9A = ptrTo[idx - 5];  
+                    var IsCall9A_second = ptrTo[idx - 7];
+
+                    bool FoundFFCode = false;
+                    // scan from RoPCheck
+                    for (int i = 2; i < 10; i++)
+                    {
+                        var a = ptrTo[idx - i]; 
+                        var b = ptrTo[idx - i + 1];
+
+                        if (i < 8)
+                        {
+                            if ((a == 0xff) && (b & 0x38) == 0x10)
+                            {
+                                FoundFFCode = true;
+                                break;
+                            }
+                        }
+                        if ((a == 0xff) && (b & 0x38) == 0x18)
+                        {
+                            FoundFFCode = true;
+                            break;
+                        }
+                    }
+
+                    if (!FoundFFCode && IsCCBefore != 0xcc && IsCallE8 != 0xe8 && IsCallE8_second != 0xe8 && IsCall9A != 0x9a && IsCall9A_second != 0x9a)
+                    {
+                        WriteColor(ConsoleColor.Cyan, $"Stack pointer is wild {ptr:x}");
+                        var cs = Capstone.Dissassemble(ptrTo, ptrTo.Length, (ulong) (ptr & -4096));
+                        for(int i=0; i < cs.Length; i++)
+                        {
+                            if(cs[i].insn.address == (ulong) ptr)
+                            {
+                                WriteColor(ConsoleColor.Yellow, $"{cs[i - 1].insn.address:x} {cs[i - 1].insn.bytes[0]:x} {cs[i - 1].insn.mnemonic} {cs[i - 1].insn.operands}");
+                                WriteColor(ConsoleColor.Yellow, $"{cs[i].insn.address:x} {cs[i].insn.bytes[0]:x} {cs[i].insn.mnemonic} {cs[i].insn.operands}");
+                            }
+                        }
+
+
+
+
+                    }
+                }
+            }
+
             // find section's with no "Module"
-            foreach(var sec in Sections.Values)
+            foreach (var sec in Sections.Values)
             {
                 if(sec.Module == null)
                 {
@@ -755,6 +935,9 @@ namespace inVtero.net
             Array.Copy(block, startIndex, rv, 0, count);
 
             var done = count * 8;
+            if (done >= len)
+                return rv;
+
             do
             {
                 VA += 4096;

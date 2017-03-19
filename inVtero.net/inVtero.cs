@@ -440,7 +440,7 @@ namespace inVtero.net
             var sym_ImagePathPtr = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "SeAuditProcessCreationInfo.ImageFileName");
             var sym_procID = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "UniqueProcessId");
             var sym_vadRoot = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "VadRoot");
-
+            var sym_ethr = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "_EPROCESS.ThreadListHead");
             // adjust the first link through 
             //var flink = dp.GetLongValue(PsHeadAddr);
 
@@ -457,6 +457,7 @@ namespace inVtero.net
                 if (!GotData)
                     break;
 
+                var EThrPtr = memRead[sym_ethr.Item1 / 8];
                 // memRead is a long array so we have to divide the length by 8
                 var EprocCR3 = memRead[sym_dtb.Item1 / 8];
                 var ProcessID = memRead[sym_procID.Item1 / 8];
@@ -519,6 +520,7 @@ namespace inVtero.net
                 {
                     if (hw.CR3Value == EprocCR3)
                     {
+                        hw.EThreadPtr = EThrPtr;
                         hw.EProc = lproc;
                         hw.VadRootPtr = VadRootPtr;
                         hw.OSPath = ImagePath;

@@ -122,7 +122,7 @@
                  />
                 <TextBlock Text=" Assembe:" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 <TextBox x:Name="tbAsm"  MinWidth="50" AcceptsReturn="True" PreviewKeyUp="tbAsm_PreviewKeyUp" />
-                <Button Content="WriteOut" x:Name="btnAss" Click="btnAss_Click" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"  />
+                <Button Content="Patch it! " x:Name="btnAss" Click="btnAss_Click" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"  />
                 <TextBlock x:Name="tbAsmOut" />
 
                 <!--<ComboBox 

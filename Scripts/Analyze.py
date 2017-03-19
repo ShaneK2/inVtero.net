@@ -165,6 +165,7 @@ def WalkETHREAD(proc, eThreadHead):
     typedef = proc.xStructInfo("_ETHREAD")
     ThreadOffsetOf = typedef.ThreadListEntry.OffsetPos
     _ETHR_ADDR = eThreadHead
+    print "top reading thread " + _ETHR_ADDR.ToString("x") + "-" + ThreadOffsetOf.ToString("x") + "=" + (_ETHR_ADDR - ThreadOffsetOf).ToString("X")
     _ETHREAD = proc.xStructInfo("_ETHREAD", _ETHR_ADDR - ThreadOffsetOf)
     while True:
         print "Thread [" + _ETHREAD.Cid.UniqueThread.Value.ToString("X") + "] BASE", 
@@ -173,6 +174,8 @@ def WalkETHREAD(proc, eThreadHead):
         if _ETHR_ADDR == eThreadHead:
             return
         _ETHREAD = proc.xStructInfo("_ETHREAD", _ETHR_ADDR - ThreadOffsetOf)
+        print "top reading thread " + _ETHR_ADDR.ToString("x") + "-" + ThreadOffsetOf.ToString("x") + "=" + (_ETHR_ADDR - ThreadOffsetOf).ToString("X")
+
 
 def WalkModules(proc, ModLinkHead, Verbose):
     modlist = []
@@ -248,8 +251,8 @@ def WalkProcListExample(proc):
         if _EPROC.VadRoot.Value != 0:
             ListVAD(proc, _EPROC.VadRoot.Value)
         # Depending on Thr Count this takes too long
-        #if _EPROC.ThreadListHead.Value != 0:
-        #    WalkETHREAD(proc, _EPROC.ThreadListHead.Value)
+        if _EPROC.ThreadListHead.Value != 0:
+            WalkETHREAD(proc, _EPROC.ThreadListHead.Value)
         # We read this 2x, simply readability ? =)
         _EPROC_ADDR = _EPROC.ActiveProcessLinks.Flink.Value
         if _EPROC_ADDR == psHead:
