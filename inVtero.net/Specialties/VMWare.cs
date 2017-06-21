@@ -75,10 +75,11 @@ namespace inVtero.net.Specialties
             var rsiz = ASCIIEncoding.ASCII.GetBytes("regionSize");
 
             int i;
-            for(i=0; i < stateData.Length-ToFind.Length; i++)
+            bool Found = false;
+
+            for (i=0; i < stateData.Length-ToFind.Length; i++)
             {
                 int n = 0;
-                bool Found = false;
                 do
                 {
                     if (stateData[i + n] != ToFind[n])
@@ -129,6 +130,13 @@ namespace inVtero.net.Specialties
             {
                 var x = (int)(Math.Ceiling((decimal) i / 0x10000) * 0x10000);
                 StartOfMem = x;
+            }
+
+            if (TotalPages == 0)
+            {
+                MemRunDescriptor.NumberOfPages = new FileInfo(MemFile).Length >> MagicNumbers.PAGE_SHIFT;
+                PhysMemDesc = MemRunDescriptor;
+                LogicalPhysMemDesc = ExtractMemDesc(vtero);
             }
             return rv;
         }

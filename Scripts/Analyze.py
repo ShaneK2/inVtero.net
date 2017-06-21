@@ -34,7 +34,7 @@ print "\n\n\tCurrent directory [" + Directory.GetCurrentDirectory() + "]"
 Vtero.VerboseOutput = True
 Vtero.DiagOutput = True
 Vtero.VerboseLevel = 1
-Vtero.DisableProgressBar = False
+Vtero.DisableProgressBar = True
 
 # More option handling for each file 
 copts = ConfigOptions()

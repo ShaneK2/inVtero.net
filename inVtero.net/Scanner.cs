@@ -27,6 +27,7 @@ using static inVtero.net.UnsafeHelp;
 using static System.Console;
 using ProtoBuf;
 using static inVtero.net.Misc;
+using System.Diagnostics;
 
 namespace inVtero.net
 {
@@ -508,12 +509,10 @@ namespace inVtero.net
                     if (((block[x+i] & 0xff) == 0x63 || (block[x+i] & 0xff) == 0x67))
                     {
                         // we disqualify entries that have these bits configured
-                        // 111 1111 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 1000 0000
-                        // 
-                        if ((block[x+i] & 0x7FFF000000000480) == 0)
+                        // 111 0101 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 1000 0000
+                        if ((block[x+i] & 0x75FF000000000480) == 0)
                         {
                             var shifted = (block[x+i] & 0xFFFFFFFFF000);
-
                             if (shifted == offset)
                             {
                                 var diff = offset - shifted;
@@ -721,6 +720,10 @@ namespace inVtero.net
                         // TODO: Clean up all the shifts
                         while (CurrWindowBase < FileSize)
                         {
+
+                            // TODO: Realisitically we should be min/fill mapSize to accomidate our scan time 
+                            // one paralallel task marshaling time should be roughly equiv to the scan of that block
+
                             using (var reader = mmap.CreateViewAccessor(CurrWindowBase, mapSize, MemoryMappedFileAccess.Read))
                             {
                                 CurrMapBase = 0;
