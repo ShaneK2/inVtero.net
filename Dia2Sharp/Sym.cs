@@ -219,6 +219,8 @@ namespace Dia2Sharp
                 zym.Tag = (SymTagEnum)Sub.symTag;
                 zym.Length = sType.length;
                 zym.OffsetPos = Pos;
+                if (Sub.locationType == 6)
+                    zym.BitPosition = Sub.bitPosition;
 
                 bool KeepRecur = true;
 
@@ -255,7 +257,7 @@ namespace Dia2Sharp
                         // 6 is a bitfield
                         if (Sub.locationType == 6)
                         {
-                            zym.BitPosition = Sub.bitPosition;
+                            //zym.BitPosition = Sub.bitPosition;
 
                             var mask = 1U;
                             for (int x = (int)sType.length - 1; x > 0; x--)

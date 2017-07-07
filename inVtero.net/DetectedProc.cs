@@ -94,8 +94,8 @@ namespace inVtero.net
         public long VadRootPtr;
         public long ProcessID;
         public String OSPath { get; set; }
+        public String OSFileName { get; set; }
         public MemSection KernelSection;
-
 
         public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntkrnlmp")
         {
@@ -289,6 +289,10 @@ namespace inVtero.net
                         if (!Sections.ContainsKey(artifact.VA))
                             Sections.TryAdd(artifact.VA, ms);
 
+                        // cache this for everybody
+                        if (ms.Name == "ntkrnlmp.pdb")
+                            KernelSection = ms;
+
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
                         sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
@@ -456,49 +460,121 @@ namespace inVtero.net
             // also need to scan the TEB for TEB base/limit and add those ranges for user space roppers
         }
 
+        dynamic _MMVAD_Def, _SUBSECTION_Def, _CONTROL_AREA_Def, _SEGMENT_Def, _FILE_OBJECT_Def;
+        long ssPos, caPos, segPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
+        long startingVPNPos, endingVPNPPos, startHighPos, endHighPos;
+        long rightPos, leftPos;
+
         public void ListVad(long AddressRoot = 0)
         {
+            // use the simple method for VAD parsing since it's a very hot path
+
+            if (_MMVAD_Def == null)
+            {
+                _MMVAD_Def = xStructInfo("_MMVAD");
+                if (_MMVAD_Def.Dictionary.ContainsKey("Core"))
+                {
+                    flagBitPos = _MMVAD_Def.Core.u.VadFlags.Protection.BitPosition;
+                    flagsOffsetPos = _MMVAD_Def.Core.u.VadFlags.Protection.OffsetPos;
+                    flagsLength = (long) _MMVAD_Def.Core.u.VadFlags.Protection.Length;
+                    rightPos = _MMVAD_Def.Core.VadNode.Right.OffsetPos;
+                    leftPos = _MMVAD_Def.Core.VadNode.Left.OffsetPos;
+                    startingVPNPos = _MMVAD_Def.Core.StartingVpn.OffsetPos;
+                    endingVPNPPos = _MMVAD_Def.Core.EndingVpnHigh.OffsetPos;
+                    startHighPos = _MMVAD_Def.Core.StartingVpnHigh.OffsetPos;
+                    endHighPos = _MMVAD_Def.Core.EndingVpn.OffsetPos;
+                } else
+                {
+                    flagBitPos = _MMVAD_Def.u.VadFlags.Protection.BitPosition;
+                    flagsOffsetPos = _MMVAD_Def.u.VadFlags.Protection.OffsetPos;
+                    flagsLength = (long) _MMVAD_Def.u.VadFlags.Protection.Length;
+                    rightPos = _MMVAD_Def.VadNode.Right.OffsetPos;
+                    leftPos = _MMVAD_Def.VadNode.Left.OffsetPos;
+                    startingVPNPos = _MMVAD_Def.u.StartingVpn.OffsetPos;
+                    endingVPNPPos = _MMVAD_Def.u.EndingVpnHigh.OffsetPos;
+                    startHighPos = _MMVAD_Def.u.StartingVpnHigh.OffsetPos;
+                    endHighPos = _MMVAD_Def.u.EndingVpn.OffsetPos;
+                }
+
+                _SUBSECTION_Def = xStructInfo("_SUBSECTION");
+                _CONTROL_AREA_Def = xStructInfo("_CONTROL_AREA");
+               // _SEGMENT_Def = xStructInfo("_SEGMENT");
+                _FILE_OBJECT_Def = xStructInfo("_FILE_OBJECT");
+                ssPos = _MMVAD_Def.Subsection.OffsetPos;
+                caPos = _SUBSECTION_Def.ControlArea.OffsetPos;
+                //segPos = _CONTROL_AREA_Def.Segment.OffsetPos;
+                foPos = _CONTROL_AREA_Def.FilePointer.OffsetPos;
+                fnPos = _FILE_OBJECT_Def.FileName.OffsetPos;
+            }
+
             if (AddressRoot == 0)
                 return;
             try
             {
                 var memRead = GetVirtualLong(AddressRoot);
-                var mmvad = xStructInfo("_MMVAD", memRead);
+
                 long StartingVPN = 0, EndingVPN = 0;
-
+                long LeftPtr = 0, RightPtr = 0, VADflags = 0;
                 bool IsExec = false;
-                if (mmvad.Dictionary.ContainsKey("Core"))
+                VADflags = memRead[flagsOffsetPos / 8];
+                var mask = 1U;
+                for (int x = (int)flagsLength - 1; x > 0; x--)
                 {
-                    if ((mmvad.Core.u.VadFlags.Protection.Value & 2) != 0)
-                    {
-                        IsExec = true;
-                        StartingVPN = (mmvad.Core.StartingVpnHigh.Value << 32) | mmvad.Core.StartingVpn.Value;
-                        EndingVPN = (mmvad.Core.EndingVpnHigh.Value << 32) | mmvad.Core.EndingVpn.Value;
-                    }
+                    mask = mask << 1;
+                    mask |= 1;
                 }
-                else
+                var new_mask = mask << (int)flagBitPos;
+
+                VADflags &= new_mask;
+
+                // move lvalue to bitposition 0 
+                // saves having todo this every time we evaluate Value
+                VADflags = VADflags >> (int)flagBitPos;
+
+                LeftPtr = memRead[leftPos / 8];
+                RightPtr = memRead[rightPos / 8];
+                if ((VADflags & 2) != 0)
                 {
-                    if ((mmvad.u.VadFlags.Protection.Value & 2) != 0)
-                    {
-                        IsExec = true;
-                        StartingVPN = (mmvad.u.StartingVpnHigh.Value << 32) | mmvad.u.StartingVpn.Value;
-                        EndingVPN = (mmvad.u.EndingVpnHigh.Value << 32) | mmvad.u.EndingVpn.Value;
-                    }
+                    IsExec = true;
 
+                    var StartingVPNHighTmp = memRead[ startHighPos / 8] & 0xff;
+                    int shiftStart = ((int) startingVPNPos % 8 * 8);
+                    var StartingVPNTmp = memRead[startingVPNPos / 8];
+                    StartingVPNTmp = (StartingVPNTmp >> shiftStart) & 0xffffffff;
+
+                    var EndingVPNHighTmp = memRead[endHighPos / 8] & 0xff;
+                    int shiftEnd = ((int) endingVPNPPos % 8 * 8);
+                    var EndingVPNTmp = memRead[endingVPNPPos / 8];
+                    EndingVPNTmp = (EndingVPNTmp >> shiftEnd) & 0xffffffff;
+
+                    StartingVPN = StartingVPNHighTmp << 32 | StartingVPNTmp;
+                    EndingVPN = EndingVPNHighTmp << 32 | EndingVPNTmp;
                 }
-
+                
                 long StartingAddress = StartingVPN << MagicNumbers.PAGE_SHIFT;
                 long Length = (EndingVPN - StartingVPN) * MagicNumbers.PAGE_SIZE;
                 if (IsExec)
                 {
-                    var subsect = xStructInfo("_SUBSECTION", mmvad.Subsection.Value);
-                    var control_area = xStructInfo("_CONTROL_AREA", subsect.ControlArea.Value);
-                    var segment = xStructInfo("_SEGMENT", control_area.Segment.Value);
-                    if (control_area.FilePointer.Value != 0)
+                    var ssPtr = memRead[ssPos / 8];
+                    memRead = GetVirtualLong(ssPtr);
+
+                    var caPtr = memRead[caPos / 8];
+                    memRead = GetVirtualLong(caPtr);
+
+                  //  var segPtr = memRead[segPos / 8];
+                  //  memRead = GetVirtualLong(segPtr);
+
+                    var foPtr = memRead[foPos / 8];
+                    memRead = GetVirtualLong(foPtr);
+
+                    var fnPtr = memRead[fnPos / 8];
+
+                    if (foPtr != 0)
                     {
-                        var file_pointer = xStructInfo("_FILE_OBJECT", control_area.FilePointer.Value & -16);
-                        //print "Mapped File: " + file_pointer.FileName.Value
-                        String FileName = file_pointer.FileName.Value;
+                        var ImagePathArr = GetVirtualByte(fnPtr + 0x10);
+                        String FileName = Encoding.Unicode.GetString(ImagePathArr);
+                        var pathTrim = FileName.Split('\x0');
+                        FileName = pathTrim[0];
 
                         if (Vtero.VerboseLevel > 2 & Vtero.DiagOutput)
                             WriteColor($"VAD found executable file mapping {FileName} Mapped @ [{StartingAddress:X}] Length [{Length:X}]");
@@ -518,7 +594,6 @@ namespace inVtero.net
                                 break;
                             }
                         }
-
                         // if it's unknown, that the VAD is the sole source of information
                         if (!KnownSection)
                             Sections.TryAdd(StartingAddress, new MemSection()
@@ -532,16 +607,8 @@ namespace inVtero.net
                             });
                     }
                 }
-                if (mmvad.Dictionary.ContainsKey("Core"))
-                {
-                    ListVad(mmvad.Core.VadNode.Left.Value);
-                    ListVad(mmvad.Core.VadNode.Right.Value);
-                }
-                else
-                {
-                    ListVad(mmvad.LeftChild.Value);
-                    ListVad(mmvad.RightChild.Value);
-                }
+                ListVad(LeftPtr);
+                ListVad(RightPtr);
             } catch(Exception all)
             {
                 // dynamic drop exceptions
@@ -569,7 +636,6 @@ namespace inVtero.net
             // Load as much as possible from full user space scan for PE / load debug data
             ScanAndLoadModules("", false, false);
 
-            
             var codeRanges = new ConcurrentDictionary<long, long>();
 
             /// All page table entries 
@@ -681,10 +747,6 @@ namespace inVtero.net
                                 WriteColor(ConsoleColor.Yellow, $"{cs[i].insn.address:x} {cs[i].insn.bytes[0]:x} {cs[i].insn.mnemonic} {cs[i].insn.operands}");
                             }
                         }
-
-
-
-
                     }
                 }
             }
@@ -703,10 +765,13 @@ namespace inVtero.net
         }
 
 
-        public void DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true, bool OnlyExec = true)
+        public long DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true)
         {
             //// TODO: BOILER PLATE check perf of using callbacks 
             PageTable.AddProcess(this, new Mem(MemAccess));
+            
+            ListVad(VadRootPtr);
+
             var cnt = PT.FillPageQueue(false, KernelSpace);
 
             Folder = Folder + Path.DirectorySeparatorChar.ToString();
@@ -731,9 +796,30 @@ namespace inVtero.net
                     if (!IncludeData && range.PTE.NoExecute)
                         continue;
 
-                    Vtero.WriteRange(range.VA, range, Folder, ref ContigSizeState, MemAccess);
+                    var modName = string.Empty;
+                    foreach (var sec in Sections)
+                        if (range.VA.Address >= sec.Key &&
+                            range.VA.Address < sec.Key + sec.Value.Length)
+                        {
+                            string filename = string.Empty;
+                            var pathTrim = sec.Value.Name.Split('\x0');
+                            var ImagePath = pathTrim[0];
+
+                            if (ImagePath.Contains(Path.DirectorySeparatorChar))
+                                filename = ImagePath.Split(Path.DirectorySeparatorChar).Last();
+                            else
+                                filename = ImagePath;
+
+                            foreach (char c in Path.GetInvalidFileNameChars())
+                                filename = filename.Replace(c, '_');
+                            modName = Path.GetFileName(filename); // Path.GetFileName(sec.Value.Name);
+                            break;
+                        }
+
+                    Vtero.WriteRange(range.VA, range, Folder + modName, ref ContigSizeState, MemAccess);
                 }
             }
+            return curr;
         }
 
 

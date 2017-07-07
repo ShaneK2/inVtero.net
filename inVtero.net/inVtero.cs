@@ -463,13 +463,28 @@ namespace inVtero.net
                 var ProcessID = memRead[sym_procID.Item1 / 8];
                 var VadRootPtr = memRead[sym_vadRoot.Item1 / 8];
 
-                // ImagePath here is a pointer to a struct, get ptr
-                // +0x10 in this unicode string object
-                var ImagePathPtr = memRead[sym_ImagePathPtr.Item1 / 8];
-                var ImagePathArr = dp.GetVirtualByte(ImagePathPtr+0x10);
-                var ImagePath = Encoding.Unicode.GetString(ImagePathArr);
-                var pathTrim = ImagePath.Split('\x0');
-                ImagePath = pathTrim[0];
+                var ImagePath = "";
+                var filename = "";
+
+                if (ProcessID != 4)
+                {
+                    // ImagePath here is a pointer to a struct, get ptr
+                    // +0x10 in this unicode string object
+                    var ImagePathPtr = memRead[sym_ImagePathPtr.Item1 / 8];
+                    var ImagePathArr = dp.GetVirtualByte(ImagePathPtr + 0x10);
+                    ImagePath = Encoding.Unicode.GetString(ImagePathArr);
+                    var pathTrim = ImagePath.Split('\x0');
+                    ImagePath = pathTrim[0];
+                    if (ImagePath.Contains(Path.DirectorySeparatorChar))
+                        filename = ImagePath.Split(Path.DirectorySeparatorChar).Last();
+                    else
+                        filename = ImagePath;
+
+                        foreach (char c in Path.GetInvalidFileNameChars())
+                            filename = filename.Replace(c, '_');
+                }
+                else
+                    filename = ImagePath = "System";
 
                 dynamic lproc = new ExpandoObject();
                 var dproc = (IDictionary<string, object>)lproc;
@@ -486,7 +501,7 @@ namespace inVtero.net
 
                     // TODO: expand on this dynamic object stuff
                     var defName = def.Key.Substring("_EPROCESS".Length + 1); //.Replace('.', '_');
-
+                    
                     switch (def.Value.Item2)
                     {
                         case 4:
@@ -513,6 +528,7 @@ namespace inVtero.net
                 } 
 
                 lproc.ImagePath = ImagePath;
+                lproc.ImageFileName = filename;
                 dp.LogicalProcessList.Add(lproc);
 
                 // also bind the specific entry to the hw entry
@@ -524,6 +540,7 @@ namespace inVtero.net
                         hw.EProc = lproc;
                         hw.VadRootPtr = VadRootPtr;
                         hw.OSPath = ImagePath;
+                        hw.OSFileName = filename;
                         hw.ProcessID = ProcessID;
                         break;
                     }
