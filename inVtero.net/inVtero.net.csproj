@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>inVtero.net</RootNamespace>
     <AssemblyName>inVtero.net</AssemblyName>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <SccProjectName>SAK</SccProjectName>
@@ -66,9 +66,8 @@
       <HintPath>..\packages\ELFSharp.1.0.4\lib\net40\ELFSharp.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
-      <HintPath>..\packages\EntityFramework.6.1.3\lib\net45\EntityFramework.dll</HintPath>
-      <Private>True</Private>
+    <Reference Include="HashLib, Version=2.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\HashLib.2.0.1\lib\net40\HashLib.dll</HintPath>
     </Reference>
     <Reference Include="libyara.NET, Version=3.5.0.2, Culture=neutral, PublicKeyToken=176e062142c9110f, processorArchitecture=AMD64">
       <HintPath>..\packages\libyara.NET.3.5.1\lib\net45\libyara.NET.dll</HintPath>
@@ -91,9 +90,8 @@
       <HintPath>..\packages\JonSkeet.MiscUtil.0.1\lib\net35-Client\MiscUtil.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="protobuf-net, Version=2.1.0.0, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
-      <HintPath>..\packages\protobuf-net.2.1.0\lib\net451\protobuf-net.dll</HintPath>
-      <Private>True</Private>
+    <Reference Include="protobuf-net, Version=2.3.0.0, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
+      <HintPath>..\packages\protobuf-net.2.3.0-alpha\lib\net40\protobuf-net.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.ComponentModel.DataAnnotations" />
@@ -109,8 +107,6 @@
     <Compile Include="Extensions.cs" />
     <Compile Include="extract.cs" />
     <Compile Include="Hashing\Hasher.cs" />
-    <Compile Include="Hashing\tigerhash.cs" />
-    <Compile Include="Hashing\tigersbox.cs" />
     <Compile Include="inVtero.cs" />
     <Compile Include="Mem.cs" />
     <Compile Include="MemSection.cs" />

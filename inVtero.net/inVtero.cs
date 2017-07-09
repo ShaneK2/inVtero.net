@@ -29,7 +29,6 @@ using Reloc;
 using System.ComponentModel;
 using System.Diagnostics;
 using RaptorDB;
-using softwareunion;
 using Dia2Sharp;
 using static inVtero.net.Misc;
 
@@ -318,6 +317,28 @@ namespace inVtero.net
             return dp.ExtractCVDebug(sec);
         }
 
+        // These parallel function's almost always are I/O bound and slwoer 
+        public Tuple<long, string, string>[][] HashAllProcs()
+        {
+            ConcurrentBag<Tuple<long, string, string>[]> rv = new ConcurrentBag<Tuple<long, string, string>[]>();
+
+            KernelProc.InitSymbolsForVad();
+
+            Parallel.ForEach<DetectedProc>(Processes, proc =>
+            {
+                var doKernel = (proc.CR3Value == KernelProc.CR3Value);
+                proc.KernelSection = KernelProc.KernelSection;
+                proc.CopySymbolsForVad(KernelProc);
+
+                using (proc.MemAccess = new Mem(MemAccess))
+                {
+                    var procHashSet = proc.HashGenBlocks(doKernel);
+                    rv.Add(procHashSet);
+                }
+            });
+
+            return rv.ToArray();
+        }
 
         public ScanResult[] YaraAll(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
         {
@@ -927,7 +948,7 @@ namespace inVtero.net
             Phase = 4;
             // were good, all Processes should have a VMCS if applicable and be identifiable by AS ID
         }
-
+        // Everything below here is really useless in current versions
 #region Origional Custom CLI support code
 
         /// <summary>
@@ -1165,6 +1186,8 @@ namespace inVtero.net
             //        WriteLine($"extracted {proc.PageTableType} PTE from process {proc.vmcs.EPTP:X16}:{proc.CR3Value:X16}, high phys address was {proc.PT.HighestFound}");
         }
 
+
+        // TODO: remove below here old stuff
 #region Dumper
 
         // TODO: Move this to Dumper.cs or just get rid of this stuff since it's all the super old CLI stuff
@@ -1594,58 +1617,5 @@ DoubleBreak:
             //}
         }
 #endregion
-        public byte[] HashRange(VIRTUAL_ADDRESS KEY, PFN VALUE)
-        {
-            var rv = new byte[1];
-
-            var block = new long[0x200]; // 0x200 * 8 = 4k
-            var bpage = new byte[0x1000];
-
-            var tigger = new Tiger();
-            tigger.Initialize();
-
-
-            //fixed (void* lp = block, bp = bpage)
-            //{
-
-            if (DiagOutput)
-                WriteColor(VALUE.PTE.Valid ? ConsoleColor.Cyan : ConsoleColor.Red, $"VA: {KEY:X12}  \t PFN: {VALUE.PTE}");
-
-            // if we have invalid (software managed) page table entries
-            // the data may be present, or a prototype or actually in swap.
-            // for the moment were only going to dump hardware managed data
-            // or feel free to patch this up ;)
-            if (!VALUE.PTE.Valid)
-                return rv;
-
-            if (VALUE.PTE.LargePage)
-            {
-                bool GoodRead = false;
-                // 0x200 * 4kb = 2MB
-                for (int i = 0; i < 0x200; i++)
-                {
-                    MemAccess.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead);
-                    VALUE.PTE.PTE += 0x1000;
-                    if (!GoodRead)
-                        block = new long[0x200];
-
-                    Buffer.BlockCopy(block, 0, bpage, 0, 4096);
-                    rv = tigger.ComputeHash(bpage);
-                }
-                return rv;
-            }
-            else
-            {
-                try { MemAccess.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
-
-                if (block != null)
-                {
-                    Buffer.BlockCopy(block, 0, bpage, 0, 4096);
-                    rv = tigger.ComputeHash(bpage);
-                }
-            }
-
-            return rv;
-        }
     }
 }

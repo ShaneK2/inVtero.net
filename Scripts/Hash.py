@@ -1,5 +1,8 @@
 import clr
 import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
 
@@ -11,7 +14,7 @@ from softwareunion import *
 
 # Basic option handling
 copts = ConfigOptions()
-copts.IgnoreSaveData = True
+copts.IgnoreSaveData = False
 copts.FileName = "c:\\temp\\server2016.xendump"   
 copts.VersionsToEnable = PTType.GENERIC
 # To get some additional output 
@@ -25,8 +28,6 @@ vtero = Scan.Scanit(copts)
 
 # Global
 CollectKernel = False
-newdir = copts.FileName + ".dumped"
-topDir = Directory.CreateDirectory(newdir)
 Vtero.DiagOutput = False
 
 proc_arr = vtero.Processes.ToArray()
@@ -41,38 +42,38 @@ vtero.KernelProc = proc
 proc.MemAccess = Mem(vtero.MemAccess)
 
 # by default this will scan for kernel symbols 
-kvs = proc.ScanAndLoadModules()
-vtero.KVS = kvs
+if vtero.KVS is None:
+    kvs = proc.ScanAndLoadModules()
+    vtero.KVS = kvs
+    vtero.CheckpointSaveState()
+else:
+    proc.LoadSymbols()
 #apply some setup
+
 kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
 Console.ForegroundColor = ConsoleColor.Cyan
 print "kernel build: " + kMinorVer.ToString()
 # Use dynamic typing to walk EPROCES 
 logicalList = vtero.WalkProcList(proc)
+
 # At least on Windows the kernel may be in here 2x with the "idle" process
 # It should be safe to remove dupes
 vtero.MemAccess.MapViewSize = 128 * 1024
-vtero.KernelProc.InitSymbolsForVad()
 entries = 0
+#vtero.KernelProc.InitSymbolsForVad()
+
+target = open(copts.FileName + ".hashSet", 'w')
+
 for proc in proc_arr:  
-    if proc.CR3Value == vtero.KernelProc.CR3Value:
-        CollectKernel = True
-    else:
-        CollectKernel = False
-    currProcBase = newdir + "\\" + proc.OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "]"
-    if Directory.Exists(currProcBase):
-        continue
-    dir = Directory.CreateDirectory(currProcBase)
     # only one time get Kernel view 
     # TODO: Implment PFN bitmap so we dump each PFN exactially once
     proc.MemAccess = Mem(vtero.MemAccess)
     proc.KernelSection = vtero.KernelProc.KernelSection 
-    proc.CopySymbolsForVad(vtero.KernelProc)
-    PerProcDumpTime = Stopwatch.StartNew()
-    entries = proc.DumpProc(currProcBase + "\\", False, CollectKernel)
-    print "Dumped Process: %s, size: %d, time: %s " % (proc.ShortName, entries*4096, PerProcDumpTime.Elapsed.ToString())
-    # use Reloc.Delocate.DeLocateFile to repair a dumped section into a block that matches disk representation 
-    # this allows for secure hash validation of memory blocks
+    #proc.CopySymbolsForVad(vtero.KernelProc)
+    hashes = proc.HashGenBlocks(CollectKernel)
+    target.write("\nHash set for process: " + proc.OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "] " + hashes.Length.ToString() + " total hashes generated\n\n" )
+    for hash in hashes:
+        target.write("0x" + hash.Item1.ToString("X") + "\t" + hash.Item3.ToString() + "\t(" + hash.Item2 + ")\n")
 
-
+target.close()
 print "Done! Total runtime: " + TotalRunTime.Elapsed.ToString()

@@ -282,7 +282,6 @@ namespace Dia2Sharp
                                     lvalue = (lvalue >> shift) & 0xffffffff;
                                     break;
                                 case 2:
-                                    
                                     lvalue = (lvalue >> shift) & 0xffff;
                                     break;
                                 case 1:

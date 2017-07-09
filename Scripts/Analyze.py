@@ -32,7 +32,7 @@ print "\n\n\tCurrent directory [" + Directory.GetCurrentDirectory() + "]"
 
 # This script can be pretty chatty to stdout, configure various output here
 Vtero.VerboseOutput = True
-Vtero.DiagOutput = True
+Vtero.DiagOutput = False
 Vtero.VerboseLevel = 1
 Vtero.DisableProgressBar = True
 
@@ -68,9 +68,9 @@ def ScanDump(MemoryDump, copts):
     proc = low_proc
     print "Assumed Kernel Proc: " + proc.ToString()
     vtero.KernelProc = proc
-    vtero.CheckpointSaveState()
+    #vtero.CheckpointSaveState()
     proc.MemAccess = Mem(vtero.MemAccess)
-    swModScan = Stopwatch.StartNew()
+    #swModScan = Stopwatch.StartNew()
     # by default this will scan for kernel symbols 
     if vtero.KVS is None:
         kvs = proc.ScanAndLoadModules()
@@ -144,7 +144,7 @@ def ListVAD(proc, VadRoot):
     if IsExec:
         subsect = proc.xStructInfo("_SUBSECTION", mmvad.Subsection.Value)
         control_area = proc.xStructInfo("_CONTROL_AREA", subsect.ControlArea.Value)
-        segment = proc.xStructInfo("_SEGMENT", control_area.Segment.Value)
+        #segment = proc.xStructInfo("_SEGMENT", control_area.Segment.Value)
         # look for file pointer
         if control_area.FilePointer.Value != 0:
             file_pointer = proc.xStructInfo("_FILE_OBJECT", control_area.FilePointer.Value & -16)
@@ -251,8 +251,8 @@ def WalkProcListExample(proc):
         if _EPROC.VadRoot.Value != 0:
             ListVAD(proc, _EPROC.VadRoot.Value)
         # Depending on Thr Count this takes too long
-        if _EPROC.ThreadListHead.Value != 0:
-            WalkETHREAD(proc, _EPROC.ThreadListHead.Value)
+        #if _EPROC.ThreadListHead.Value != 0:
+        #    WalkETHREAD(proc, _EPROC.ThreadListHead.Value)
         # We read this 2x, simply readability ? =)
         _EPROC_ADDR = _EPROC.ActiveProcessLinks.Flink.Value
         if _EPROC_ADDR == psHead:

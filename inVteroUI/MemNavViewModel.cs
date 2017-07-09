@@ -32,6 +32,7 @@ namespace inVteroUI
                     //selectedProc.ScanAndLoadModules();
                     //selectedProc.ListVad(selectedProc.VadRootPtr);
                     // TODO: there's a lot of exceptions in this call, should trim/optimize it out
+                    selectedProc.CopySymbolsForVad(vtero.KernelProc);
                     selectedProc.MergeVAMetaData();
                     OnPropertyChanged("SelectedProc");
                 }
@@ -40,6 +41,7 @@ namespace inVteroUI
        
         public MemNavViewModel(Vtero v)
         {
+            vtero.KernelProc.InitSymbolsForVad();
             vtero = v;
             ProcList = vtero.Processes.ToList();
             RenderType = BlockType.Instructions64;

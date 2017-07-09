@@ -29,6 +29,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using libyaraNET;
 using inVtero.net.Support;
+using HashLib.Crypto;
 
 namespace inVtero.net
 {
@@ -112,7 +113,8 @@ namespace inVtero.net
                                select files;
 
                 pdb = pdbPaths.FirstOrDefault();
-                KernelSection = pdb;
+                if (Module == "ntkrnlmp")
+                    KernelSection = pdb;
             }
 
             long[] memRead = null;
@@ -140,7 +142,8 @@ namespace inVtero.net
                                select files;
 
                 pdb = pdbPaths.FirstOrDefault();
-                KernelSection = pdb;
+                if (Module == "ntkrnlmp")
+                    KernelSection = pdb;
             }
             if(sym == null)
                 sym = Vtero.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
@@ -460,58 +463,95 @@ namespace inVtero.net
             // also need to scan the TEB for TEB base/limit and add those ranges for user space roppers
         }
 
-        dynamic _MMVAD_Def, _SUBSECTION_Def, _CONTROL_AREA_Def, _SEGMENT_Def, _FILE_OBJECT_Def;
-        long ssPos, caPos, segPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
-        long startingVPNPos, endingVPNPPos, startHighPos, endHighPos;
-        long rightPos, leftPos;
+        [ProtoIgnore]
+        public dynamic _MMVAD_Def, _SUBSECTION_Def, _CONTROL_AREA_Def, _SEGMENT_Def, _FILE_OBJECT_Def;
+        [ProtoIgnore]
+        public long ssPos, caPos, segPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
+        [ProtoIgnore]
+        public long startingVPNPos, endingVPNPPos, startHighPos, endHighPos;
+        [ProtoIgnore]
+        public long rightPos, leftPos;
+        [ProtoIgnore]
+        public int vadLength;
+
+        public void InitSymbolsForVad()
+        {
+            _MMVAD_Def = xStructInfo("_MMVAD");
+            if (_MMVAD_Def.Dictionary.ContainsKey("Core"))
+            {
+                flagBitPos = _MMVAD_Def.Core.u.VadFlags.Protection.BitPosition;
+                flagsOffsetPos = _MMVAD_Def.Core.u.VadFlags.Protection.OffsetPos;
+                flagsLength = (long)_MMVAD_Def.Core.u.VadFlags.Protection.Length;
+
+                rightPos = _MMVAD_Def.Core.VadNode.Right.OffsetPos;
+                leftPos = _MMVAD_Def.Core.VadNode.Left.OffsetPos;
+
+                startingVPNPos = _MMVAD_Def.Core.StartingVpn.OffsetPos;
+                endingVPNPPos = _MMVAD_Def.Core.EndingVpn.OffsetPos;
+                startHighPos = _MMVAD_Def.Core.StartingVpnHigh.OffsetPos;
+                endHighPos = _MMVAD_Def.Core.EndingVpnHigh.OffsetPos;
+            }
+            else
+            {
+                flagBitPos = _MMVAD_Def.u.VadFlags.Protection.BitPosition;
+                flagsOffsetPos = _MMVAD_Def.u.VadFlags.Protection.OffsetPos;
+                flagsLength = (long)_MMVAD_Def.u.VadFlags.Protection.Length;
+
+                rightPos = _MMVAD_Def.RightChild.OffsetPos;
+                leftPos = _MMVAD_Def.LeftChild.OffsetPos;
+
+                startingVPNPos = _MMVAD_Def.u.StartingVpn.OffsetPos;
+                endingVPNPPos = _MMVAD_Def.u.EndingVpn.OffsetPos;
+                startHighPos = _MMVAD_Def.u.StartingVpnHigh.OffsetPos;
+                endHighPos = _MMVAD_Def.u.EndingVpnHigh.OffsetPos;
+            }
+
+            _SUBSECTION_Def = xStructInfo("_SUBSECTION");
+            _CONTROL_AREA_Def = xStructInfo("_CONTROL_AREA");
+            _FILE_OBJECT_Def = xStructInfo("_FILE_OBJECT");
+
+            ssPos = _MMVAD_Def.Subsection.OffsetPos;
+            caPos = _SUBSECTION_Def.ControlArea.OffsetPos;
+            foPos = _CONTROL_AREA_Def.FilePointer.OffsetPos;
+            fnPos = _FILE_OBJECT_Def.FileName.OffsetPos;
+
+            vadLength = (int)_MMVAD_Def.Length;
+        }
+
+        public void CopySymbolsForVad(DetectedProc other)
+        {
+            _MMVAD_Def = other._MMVAD_Def;
+
+            flagBitPos = other.flagBitPos;
+            flagsOffsetPos = other.flagsOffsetPos;
+            flagsLength = other.flagsLength;
+            rightPos = other.rightPos;
+            leftPos = other.leftPos;
+            startingVPNPos = other.startingVPNPos;
+            endingVPNPPos = other.endingVPNPPos;
+            startHighPos = other.startHighPos;
+            endHighPos = other.endHighPos;
+
+            ssPos = other.ssPos;
+            caPos = other.caPos;
+            foPos = other.foPos;
+            fnPos = other.fnPos;
+            vadLength = other.vadLength;
+        }
 
         public void ListVad(long AddressRoot = 0)
         {
-            // use the simple method for VAD parsing since it's a very hot path
-
             if (_MMVAD_Def == null)
-            {
-                _MMVAD_Def = xStructInfo("_MMVAD");
-                if (_MMVAD_Def.Dictionary.ContainsKey("Core"))
-                {
-                    flagBitPos = _MMVAD_Def.Core.u.VadFlags.Protection.BitPosition;
-                    flagsOffsetPos = _MMVAD_Def.Core.u.VadFlags.Protection.OffsetPos;
-                    flagsLength = (long) _MMVAD_Def.Core.u.VadFlags.Protection.Length;
-                    rightPos = _MMVAD_Def.Core.VadNode.Right.OffsetPos;
-                    leftPos = _MMVAD_Def.Core.VadNode.Left.OffsetPos;
-                    startingVPNPos = _MMVAD_Def.Core.StartingVpn.OffsetPos;
-                    endingVPNPPos = _MMVAD_Def.Core.EndingVpnHigh.OffsetPos;
-                    startHighPos = _MMVAD_Def.Core.StartingVpnHigh.OffsetPos;
-                    endHighPos = _MMVAD_Def.Core.EndingVpn.OffsetPos;
-                } else
-                {
-                    flagBitPos = _MMVAD_Def.u.VadFlags.Protection.BitPosition;
-                    flagsOffsetPos = _MMVAD_Def.u.VadFlags.Protection.OffsetPos;
-                    flagsLength = (long) _MMVAD_Def.u.VadFlags.Protection.Length;
-                    rightPos = _MMVAD_Def.VadNode.Right.OffsetPos;
-                    leftPos = _MMVAD_Def.VadNode.Left.OffsetPos;
-                    startingVPNPos = _MMVAD_Def.u.StartingVpn.OffsetPos;
-                    endingVPNPPos = _MMVAD_Def.u.EndingVpnHigh.OffsetPos;
-                    startHighPos = _MMVAD_Def.u.StartingVpnHigh.OffsetPos;
-                    endHighPos = _MMVAD_Def.u.EndingVpn.OffsetPos;
-                }
+                InitSymbolsForVad();
 
-                _SUBSECTION_Def = xStructInfo("_SUBSECTION");
-                _CONTROL_AREA_Def = xStructInfo("_CONTROL_AREA");
-               // _SEGMENT_Def = xStructInfo("_SEGMENT");
-                _FILE_OBJECT_Def = xStructInfo("_FILE_OBJECT");
-                ssPos = _MMVAD_Def.Subsection.OffsetPos;
-                caPos = _SUBSECTION_Def.ControlArea.OffsetPos;
-                //segPos = _CONTROL_AREA_Def.Segment.OffsetPos;
-                foPos = _CONTROL_AREA_Def.FilePointer.OffsetPos;
-                fnPos = _FILE_OBJECT_Def.FileName.OffsetPos;
-            }
-
+            // use the simple method for VAD parsing since it's a very hot path
             if (AddressRoot == 0)
                 return;
             try
             {
-                var memRead = GetVirtualLong(AddressRoot);
+                // for the VAD
+                // limit all these reads with tLongLen read so we do not over read if we do not need
+                var memRead = GetVirtualLongLen(AddressRoot, vadLength);
 
                 long StartingVPN = 0, EndingVPN = 0;
                 long LeftPtr = 0, RightPtr = 0, VADflags = 0;
@@ -537,15 +577,21 @@ namespace inVtero.net
                 {
                     IsExec = true;
 
-                    var StartingVPNHighTmp = memRead[ startHighPos / 8] & 0xff;
-                    int shiftStart = ((int) startingVPNPos % 8 * 8);
-                    var StartingVPNTmp = memRead[startingVPNPos / 8];
-                    StartingVPNTmp = (StartingVPNTmp >> shiftStart) & 0xffffffff;
+                    int shift = ((int) startHighPos % 8 * 8);
+                    var StartingVPNHighTmp = memRead[ startHighPos / 8];
+                    StartingVPNHighTmp = (StartingVPNHighTmp >> shift) & 0xff;
 
-                    var EndingVPNHighTmp = memRead[endHighPos / 8] & 0xff;
-                    int shiftEnd = ((int) endingVPNPPos % 8 * 8);
+                    shift = ((int) startingVPNPos % 8 * 8);
+                    var StartingVPNTmp = memRead[startingVPNPos / 8];
+                    StartingVPNTmp = (StartingVPNTmp >> shift) & 0xffffffff;
+
+                    shift = ((int)endHighPos % 8 * 8);
+                    var EndingVPNHighTmp = memRead[endHighPos / 8];
+                    EndingVPNHighTmp = (EndingVPNHighTmp >> shift) & 0xff;
+
+                    shift = ((int)endingVPNPPos % 8 * 8);
                     var EndingVPNTmp = memRead[endingVPNPPos / 8];
-                    EndingVPNTmp = (EndingVPNTmp >> shiftEnd) & 0xffffffff;
+                    EndingVPNTmp = (EndingVPNTmp >> shift) & 0xffffffff;
 
                     StartingVPN = StartingVPNHighTmp << 32 | StartingVPNTmp;
                     EndingVPN = EndingVPNHighTmp << 32 | EndingVPNTmp;
@@ -556,25 +602,27 @@ namespace inVtero.net
                 if (IsExec)
                 {
                     var ssPtr = memRead[ssPos / 8];
-                    memRead = GetVirtualLong(ssPtr);
+                    memRead = GetVirtualLongLen(ssPtr, (int)caPos + 8);
 
                     var caPtr = memRead[caPos / 8];
-                    memRead = GetVirtualLong(caPtr);
+                    memRead = GetVirtualLongLen(caPtr, (int)foPos + 8);
 
-                  //  var segPtr = memRead[segPos / 8];
-                  //  memRead = GetVirtualLong(segPtr);
+                    var foPtr = memRead[foPos / 8] & -16;
+                    memRead = GetVirtualLongLen(foPtr, (int)fnPos + 0x10);
 
-                    var foPtr = memRead[foPos / 8];
-                    memRead = GetVirtualLong(foPtr);
-
-                    var fnPtr = memRead[fnPos / 8];
+                    var lvalue = memRead[fnPos / 8];
+                    var fnPtr = memRead[(fnPos + 8) / 8];
 
                     if (foPtr != 0)
                     {
-                        var ImagePathArr = GetVirtualByte(fnPtr + 0x10);
-                        String FileName = Encoding.Unicode.GetString(ImagePathArr);
-                        var pathTrim = FileName.Split('\x0');
-                        FileName = pathTrim[0];
+                        var strByteArr = GetVirtualByte(fnPtr);
+                        var strLen = (short)lvalue & 0xffff;
+                        if (strLen > strByteArr.Length / 2 || strLen <= 0)
+                            strLen = strByteArr.Length / 2;
+                        var FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
+
+                        //var pathTrim = FileName.Split('\x0');
+                        //FileName = pathTrim[0];
 
                         if (Vtero.VerboseLevel > 2 & Vtero.DiagOutput)
                             WriteColor($"VAD found executable file mapping {FileName} Mapped @ [{StartingAddress:X}] Length [{Length:X}]");
@@ -764,13 +812,115 @@ namespace inVtero.net
 
         }
 
+        public Tuple<long, string, string>[] HashGenBlocks(bool KernelSpace = false, HashLib.IHash iHasher = null)
+        {
+            List<Tuple<long, string, string>> rv = new List<Tuple<long, string, string>>();
+            string Hash = string.Empty;
+            long VA = 0;
+            HashLib.IHash hasher = iHasher;
+
+            if (hasher == null)
+                hasher = HashLib.HashFactory.Crypto.CreateTiger2();
+
+            //// TODO: BOILER PLATE check perf of using callbacks 
+            PageTable.AddProcess(this, new Mem(MemAccess));
+
+            if(Sections.Count < 2)
+                ListVad(VadRootPtr);
+
+            PT.FillPageQueue(false, KernelSpace);
+
+            foreach (var range in PT.FillPageQueue(false, KernelSpace))
+            {
+                if (range.PTE.Valid)
+                {
+                    VA = range.VA.Address;
+
+                    var Name = GetModuleName(VA);
+                    var block = VGetBlockLong(VA);
+
+                    var binHash = hasher.ComputeLongs(block).GetBytes();
+
+                    rv.Add(Tuple.Create<long, string, string>(VA, Name, Convert.ToBase64String(binHash)));
+                }
+            }
+            return rv.ToArray();
+        }
+
 
         public long DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true)
         {
+            String FileName = string.Empty;
             //// TODO: BOILER PLATE check perf of using callbacks 
             PageTable.AddProcess(this, new Mem(MemAccess));
             
             ListVad(VadRootPtr);
+
+#region optimized type extraction
+            if(KernelSpace)
+            {
+                // add all drivers to sections list
+                var pModuleHead = GetSymValueLong("PsLoadedModuleList");
+                var _LDR_DATA_Def = xStructInfo("_LDR_DATA_TABLE_ENTRY");
+                var _LDR_DATA_ADDR = pModuleHead;
+
+                int LDR_LEN = (int)_LDR_DATA_Def.Length;
+                long DllBaseOffsetOf = _LDR_DATA_Def.DllBase.OffsetPos;
+                long SizeOfImageOffsetOf = _LDR_DATA_Def.SizeOfImage.OffsetPos;
+                long FullDllNameOffsetOf = _LDR_DATA_Def.FullDllName.OffsetPos;
+                long InLoadOrderLinksOffsetOf = _LDR_DATA_Def.InLoadOrderLinks.OffsetPos;
+
+                do
+                {
+                    var _LDR_DATA = GetVirtualLongLen(_LDR_DATA_ADDR, vadLength);
+                    // get->next pointer
+                    _LDR_DATA_ADDR = _LDR_DATA[InLoadOrderLinksOffsetOf / 8];
+
+                    var StartingAddress = _LDR_DATA[DllBaseOffsetOf / 8];
+                    var Length = _LDR_DATA[SizeOfImageOffsetOf / 8];
+                    var lvalue = _LDR_DATA[FullDllNameOffsetOf / 8];
+                    var FileNamePtr = _LDR_DATA[(FullDllNameOffsetOf + 8) / 8];
+                    if (FileNamePtr != 0)
+                    {
+                        var strByteArr = GetVirtualByte(FileNamePtr);
+                        var strLen = (short)lvalue & 0xffff;
+                        if (strLen > strByteArr.Length / 2 || strLen <= 0)
+                            strLen = strByteArr.Length / 2;
+                        FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
+                    }
+#endregion
+                    bool KnownSection = false;
+                    // walk memsections and bind this information 
+                    foreach (var sec in Sections)
+                    {
+                        // kernel ranges < 0 since they sign extend
+                        if (StartingAddress < 0)
+                            StartingAddress = (long) ((ulong) StartingAddress & ~0xffff000000000000);
+
+                        if (sec.Key >= StartingAddress && sec.Key < StartingAddress + Length)
+                        {
+                            KnownSection = true;
+                            sec.Value.VadFile = FileName;
+                            sec.Value.VadAddr = StartingAddress;
+                            sec.Value.VadLength = Length;
+                            break;
+                        }
+                    }
+
+                    // if it's unknown, that the VAD is the sole source of information
+                    if (!KnownSection)
+                        Sections.TryAdd(StartingAddress, new MemSection()
+                        {
+                            Length = Length,
+                            VadLength = Length,
+                            VadAddr = StartingAddress,
+                            VadFile = FileName,
+                            Name = FileName,
+                            VA = new VIRTUAL_ADDRESS(StartingAddress)
+                        });
+
+                } while (_LDR_DATA_ADDR != pModuleHead);
+            }
 
             var cnt = PT.FillPageQueue(false, KernelSpace);
 
@@ -796,32 +946,41 @@ namespace inVtero.net
                     if (!IncludeData && range.PTE.NoExecute)
                         continue;
 
-                    var modName = string.Empty;
-                    foreach (var sec in Sections)
-                        if (range.VA.Address >= sec.Key &&
-                            range.VA.Address < sec.Key + sec.Value.Length)
-                        {
-                            string filename = string.Empty;
-                            var pathTrim = sec.Value.Name.Split('\x0');
-                            var ImagePath = pathTrim[0];
+                    var modName = GetModuleName(range.VA.Address);
 
-                            if (ImagePath.Contains(Path.DirectorySeparatorChar))
-                                filename = ImagePath.Split(Path.DirectorySeparatorChar).Last();
-                            else
-                                filename = ImagePath;
-
-                            foreach (char c in Path.GetInvalidFileNameChars())
-                                filename = filename.Replace(c, '_');
-                            modName = Path.GetFileName(filename); // Path.GetFileName(sec.Value.Name);
-                            break;
-                        }
-
-                    Vtero.WriteRange(range.VA, range, Folder + modName, ref ContigSizeState, MemAccess);
+                    Vtero.WriteRange(range.VA, range, Folder + modName + "-", ref ContigSizeState, MemAccess);
                 }
             }
             return curr;
         }
 
+        public string GetModuleName(long VA)
+        {
+            var modName = string.Empty;
+            foreach (var sec in Sections)
+                if (VA >= sec.Key &&
+                    VA < sec.Key + sec.Value.Length)
+                {
+                    string filename = string.Empty, ImagePath = string.Empty;
+                    var pathTrim = sec.Value.Name.Split('\x0');
+
+                    ImagePath = pathTrim[0];
+
+                    if (ImagePath.Contains("."))
+                        ImagePath = ImagePath.Substring(0, pathTrim[0].LastIndexOf(".")+4);
+
+                    if (ImagePath.Contains(Path.DirectorySeparatorChar))
+                        filename = ImagePath.Split(Path.DirectorySeparatorChar).Last();
+                    else
+                        filename = ImagePath;
+
+                    foreach (char c in Path.GetInvalidFileNameChars())
+                        filename = filename.Replace(c, '_');
+                    modName = Path.GetFileName(filename); // Path.GetFileName(sec.Value.Name);
+                    break;
+                }
+            return modName;
+        }
 
         /// <summary>
         ///  This guy names the section and establishes the codeview data needed for symbol handling
@@ -1060,7 +1219,7 @@ namespace inVtero.net
         /// This is byte aligned
         /// </summary>
         /// <param name="VA"></param>
-        /// <returns>SINGLE PAGE OR LESS</returns>
+        /// <returns></returns>
         public byte[] GetVirtualByte(long VA)
         {
             long startIndex = VA & 0xfff;

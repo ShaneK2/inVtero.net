@@ -37,6 +37,7 @@ def UnLock(vtero):
 
 	p.MemAccess = vtero.MemAccess
 	p.MergeVAMetaData()
+	p.CopySymbolsForVad(vtero.KernelProc)
 	for s in p.Sections.Values:
 		print s.Name + " ",
 		if s.VadFile is not None:

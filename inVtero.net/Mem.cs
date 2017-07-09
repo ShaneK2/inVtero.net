@@ -62,7 +62,7 @@ namespace inVtero.net
         /// </summary>
         [ProtoMember(2)]
         public AMemoryRunDetector MD { get { return ddes; } set { ddes = value; } }
-        
+
         [ProtoMember(4)]
         public bool OverrideBufferLoadInput { get; set; }
 
@@ -92,9 +92,12 @@ namespace inVtero.net
         public long Length { get { return FileSize; } }
 
         const long PAGE_SIZE = 0x1000;
+        const long LARGE_PAGE_SIZE = 1024 * 1024 * 2;
 
-        long MapViewBase;
-        long MapViewSize;
+        [ProtoIgnore]
+        public long MapViewBase;
+        [ProtoIgnore]
+        public long MapViewSize;
 #if USE_BITMAP
         WAHBitArray pfnTableIdx;
 #endif
@@ -120,7 +123,7 @@ namespace inVtero.net
         {  
             // common init
             MapViewBase = 0;
-            MapViewSize = 0x1000 * 0x1000 * 4L;
+            MapViewSize = 0x1000 * 0x1000 * 16L;
         }
 
         void SetupStreams()
@@ -148,6 +151,7 @@ namespace inVtero.net
             StartOfMemory = parent.StartOfMemory;
             MemoryDump = parent.MemoryDump;
             FileSize = parent.FileSize;
+            MapViewSize = parent.MapViewSize;
 
             SetupStreams();
         }
