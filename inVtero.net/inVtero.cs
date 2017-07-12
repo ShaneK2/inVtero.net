@@ -28,7 +28,6 @@ using System.Text;
 using Reloc;
 using System.ComponentModel;
 using System.Diagnostics;
-using RaptorDB;
 using Dia2Sharp;
 using static inVtero.net.Misc;
 
@@ -1516,19 +1515,12 @@ DoubleBreak:
         }
 
 
-        /// <summary>
-        /// Single Instance Storage bitmap
-        /// </summary>
-        static WAHBitArray SISmap;
-
-        // TODO: Figure out if MemoryCopy or BlockCopy ...
-         
 
         public static string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, ref long ContigSize, Mem PhysMemReader = null, bool SinglePFNStore = false, bool DumpNULL = false)
         {
+            /* WAHBitArray is actually really slow! Use my own
             if (SinglePFNStore && SISmap == null)
                 SISmap = new WAHBitArray();
-
             if(SinglePFNStore)
             {
                 if (SISmap.Get((int)VALUE.PTE.PFN))
@@ -1536,6 +1528,8 @@ DoubleBreak:
 
                 SISmap.Set((int)VALUE.PTE.PFN, true);
             }
+                */
+
 
             bool canAppend = false;
             var saveLoc = BaseFileName + KEY.Address.ToString("X") + ".bin";

@@ -29,7 +29,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using libyaraNET;
 using inVtero.net.Support;
-using HashLib.Crypto;
+using static HashLib.HashFactory.Crypto;
 
 namespace inVtero.net
 {
@@ -820,7 +820,7 @@ namespace inVtero.net
             HashLib.IHash hasher = iHasher;
 
             if (hasher == null)
-                hasher = HashLib.HashFactory.Crypto.CreateTiger2();
+                hasher = CreateTiger2();
 
             //// TODO: BOILER PLATE check perf of using callbacks 
             PageTable.AddProcess(this, new Mem(MemAccess));

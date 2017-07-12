@@ -21,7 +21,6 @@ using System.Threading.Tasks;
 using Reloc;
 using System.IO;
 using System.Collections.Concurrent;
-using RaptorDB;
 using ProtoBuf;
 
 namespace inVtero.net

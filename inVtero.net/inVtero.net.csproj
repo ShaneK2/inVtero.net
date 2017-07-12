@@ -106,7 +106,11 @@
     <Compile Include="DetectedProc.cs" />
     <Compile Include="Extensions.cs" />
     <Compile Include="extract.cs" />
+    <Compile Include="HashDB.cs" />
+    <Compile Include="Hashing\FileLoader.cs" />
+    <Compile Include="Hashing\FractHashTree.cs" />
     <Compile Include="Hashing\Hasher.cs" />
+    <Compile Include="Hashing\HashRecord.cs" />
     <Compile Include="inVtero.cs" />
     <Compile Include="Mem.cs" />
     <Compile Include="MemSection.cs" />
@@ -119,13 +123,13 @@
     <Compile Include="Specialties\BasicRunDetector.cs" />
     <Compile Include="Specialties\CrashDump.cs" />
     <Compile Include="Specialties\IMemAwareChecking.cs" />
+    <Compile Include="Specialties\Parallel_sort.cs" />
     <Compile Include="Specialties\ProgressBar.cs" />
     <Compile Include="Specialties\VMWare.cs" />
     <Compile Include="Specialties\XEN.cs" />
     <Compile Include="Support.cs" />
     <Compile Include="Support\Capstone.cs" />
     <Compile Include="Support\Keystone.cs" />
-    <Compile Include="Support\WAHBitarray2.cs" />
     <Compile Include="UnsafeHelp.cs" />
     <Compile Include="VirtualScanner.cs" />
   </ItemGroup>

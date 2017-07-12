@@ -16,14 +16,20 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Text;
 
 namespace inVtero.net
 {
-    public class UnsafeHelp
+    public unsafe class UnsafeHelp
     {
+        const int WORD_MOD_SIZE = 31;
+        const int WORD_BIT_SHIFT = 5; // right shift 5 = /32, 4 = /16
+
         public static unsafe void ReadBytes(MemoryMappedViewAccessor view, long offset, ref long[] arr, int Count = 512)
         {
             //byte[] arr = new byte[num];
@@ -37,7 +43,31 @@ namespace inVtero.net
             Marshal.Copy(ptr_off, arr, 0, Count);
             view.SafeMemoryMappedViewHandle.ReleasePointer();
         }
-    
+
+        int* lp = (int *)0;
+
+        public unsafe void GetBitmapHandle(MemoryMappedViewAccessor view)
+        {
+            var ptr = (byte*)0;
+            view.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            lp = (int*)ptr;
+        }
+
+        public unsafe void ReleaseBitmapHandle(MemoryMappedViewAccessor view)
+        {
+            view.SafeMemoryMappedViewHandle.ReleasePointer();
+        }
+
+        public unsafe bool GetBit(MemoryMappedViewAccessor view, int bit)
+        {
+            return (lp[(bit >> WORD_BIT_SHIFT)] & (1 << (bit & WORD_MOD_SIZE))) != 0;
+
+        }
+        public unsafe void SetBit(MemoryMappedViewAccessor view, int bit)
+        {
+            lp[(bit >> WORD_BIT_SHIFT)] |= (1 << (bit & WORD_MOD_SIZE));
+        }
+
         /// <summary>
         /// </summary>
         /// <param name="view"></param>
@@ -135,6 +165,53 @@ namespace inVtero.net
                 return true;
             }
         }
+        private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
 
+        private const uint FILE_READ_EA = 0x0008;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x2000000;
+
+        [DllImport("Kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        static extern uint GetFinalPathNameByHandle(IntPtr hFile, [MarshalAs(UnmanagedType.LPTStr)] StringBuilder lpszFilePath, uint cchFilePath, uint dwFlags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr CreateFile(
+                [MarshalAs(UnmanagedType.LPTStr)] string filename,
+                [MarshalAs(UnmanagedType.U4)] uint access,
+                [MarshalAs(UnmanagedType.U4)] FileShare share,
+                IntPtr securityAttributes, // optional SECURITY_ATTRIBUTES struct or IntPtr.Zero
+                [MarshalAs(UnmanagedType.U4)] FileMode creationDisposition,
+                [MarshalAs(UnmanagedType.U4)] uint flagsAndAttributes,
+                IntPtr templateFile);
+
+        public static string GetFinalPathName(string path)
+        {
+            var h = CreateFile(path,
+                FILE_READ_EA,
+                FileShare.ReadWrite | FileShare.Delete,
+                IntPtr.Zero,
+                FileMode.Open,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                IntPtr.Zero);
+            if (h == INVALID_HANDLE_VALUE)
+                throw new Win32Exception();
+
+            try
+            {
+                var sb = new StringBuilder(1024);
+                var res = GetFinalPathNameByHandle(h, sb, 1024, 0);
+                if (res == 0)
+                    throw new Win32Exception();
+
+                return sb.ToString();
+            }
+            finally
+            {
+                CloseHandle(h);
+            }
+        }
     }
 }

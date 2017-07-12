@@ -20,7 +20,6 @@ using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Threading;
 
-using RaptorDB;
 using System.Collections.Concurrent;
 using inVtero.net.Support;
 using ProtoBuf;

@@ -27,9 +27,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{9214
 	ProjectSection(SolutionItems) = preProject
 		Scripts\Analyze.py = Scripts\Analyze.py
 		Scripts\Basic.py = Scripts\Basic.py
-		Capstone.py = Capstone.py
-		Scripts\Capstone.py = Scripts\Capstone.py
 		Scripts\CloudLeech.py = Scripts\CloudLeech.py
+		Scripts\DBLoad.py = Scripts\DBLoad.py
 		Scripts\Dump.py = Scripts\Dump.py
 		Scripts\Hash.py = Scripts\Hash.py
 		Scripts\List.py = Scripts\List.py
@@ -108,6 +107,9 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D00DFD7A-2081-479D-860A-221B7AE008DC} = {92143A5B-B728-4B44-BA13-317A8A2F6184}
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
 	EndGlobalSection
 	GlobalSection(Performance) = preSolution
 		HasPerformanceSessions = true
