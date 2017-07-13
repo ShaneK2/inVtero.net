@@ -178,7 +178,7 @@ namespace inVtero.net.ConsoleUtils
                 vtero.GroupAS();
             }
             // sync-save state so restarting is faster
-            if (!File.Exists(saveStateFile))
+            if (!File.Exists(saveStateFile) && !co.IgnoreSaveData)
             {
                 if(Vtero.VerboseLevel > 0)
                     Write($"Saving checkpoint... ");

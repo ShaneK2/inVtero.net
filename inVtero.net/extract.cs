@@ -30,19 +30,25 @@ namespace Reloc
     {
         public string Name;
         public uint VirtualSize; // size in memory
-        public uint VirtualOffset; // offset to section base in memory (from ImageBase)
+        public uint VirtualAddress; // offset to section base in memory (from ImageBase)
         public uint RawFileSize; // size on disk
         public uint RawFilePointer; // offset to section base on disk (from 0)
+        [ProtoIgnore]
         public bool IsExec { get { return (Characteristics & 0x20000000) != 0; } }
+        [ProtoIgnore]
         public bool IsCode { get { return (Characteristics & 0x20000000) != 0; } }
+        [ProtoIgnore]
         public bool IsRead { get { return (Characteristics & 0x40000000) != 0; } }
+        [ProtoIgnore]
         public bool IsWrite { get { return (Characteristics & 0x80000000) != 0; } }
+        [ProtoIgnore]
         public bool IsShared { get { return (Characteristics & 0x10000000) != 0; } }
+        [ProtoIgnore]
         public bool IsDiscard { get { return (Characteristics & 0x02000000) != 0; } }
         public uint Characteristics;
         public override string ToString()
         {
-            return $"{Name} - VBase {VirtualOffset:X}:{VirtualSize:X} - File {RawFilePointer:X}:{RawFileSize:X} - R:{IsRead},W:{IsWrite},X:{IsExec},S:{IsShared},D:{IsDiscard}";
+            return $"{Name} - VBase {VirtualAddress:X}:{VirtualSize:X} - File {RawFilePointer:X}:{RawFileSize:X} - R:{IsRead},W:{IsWrite},X:{IsExec},S:{IsShared},D:{IsDiscard}";
         }
     }
     // Extract compiles a local reloc set that can be used when dumping memory to recover identical files 
@@ -77,15 +83,19 @@ namespace Reloc
         public short NumberOfSections;
         public bool IsCLR;
         // maybe ordered list would emit better errors for people
-        public List<MiniSection> SectionPosOffsets;
+        public List<MiniSection> Sections;
+        [ProtoIgnore]
+        public List<Reloc> RelocData;
+        [ProtoIgnore]
+        public DeLocate ReReState;
 
         int secOff;
 
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder($"{Environment.NewLine}**PE FILE** \t-\t-\t Date   [{TimeStamp:X8}]{Environment.NewLine}*DebugPos* \t-\t-\t Offset [{DebugDirPos:X8}] \t-\t Size [{DebugDirSize:X8}] {Environment.NewLine}*Base*  \t-\t-\t Offset [{ImageBase:X16}] -\t Size [{SizeOfImage:X8}]{Environment.NewLine}");
-            foreach (var s in SectionPosOffsets)
-                sb.Append($"[{s.Name.PadRight(8)}] \t-\t-\t Offset [{s.VirtualOffset:X8}] \t-\t Size [{s.VirtualSize:X8}]{Environment.NewLine}");
+            foreach (var s in Sections)
+                sb.Append($"[{s.Name.PadRight(8)}] \t-\t-\t Offset [{s.VirtualAddress:X8}] \t-\t Size [{s.VirtualSize:X8}]{Environment.NewLine}");
 
             sb.AppendLine();
             return sb.ToString();
@@ -177,28 +187,26 @@ namespace Reloc
             return;
         }
 
-        public static Extract IsBlockaPE(byte[] block)
+        public static Extract IsBlockaPE(byte[] block, int blockOffset = 0)
         {
             Extract extracted_struct = new Extract();
 
-            if (BitConverter.ToInt16(block, 0) != 0x5A4D)
+            if (block[blockOffset] != 0x4d || block[blockOffset+1] != 0x5a)
                 return null;
 
-            var headerOffset = BitConverter.ToInt32(block, 0x3C);
+            var headerOffset = BitConverter.ToInt32(block, blockOffset+0x3C);
 
+            // bad probably
             if (headerOffset > 3000)
-            {
-                // bad probably
-                return null;
-            }
-
-            if (BitConverter.ToInt32(block, headerOffset) != 0x00004550)
                 return null;
 
-            var pos = headerOffset + 6;
+            if (BitConverter.ToInt32(block, blockOffset+headerOffset) != 0x00004550)
+                return null;
+
+            var pos = blockOffset + headerOffset + 6;
 
             extracted_struct.NumberOfSections = BitConverter.ToInt16(block, pos); pos += 2;
-            extracted_struct.SectionPosOffsets = new List<MiniSection>();
+            extracted_struct.Sections = new List<MiniSection>();
             //pos += 2;
 
             extracted_struct.TimeStamp = BitConverter.ToUInt32(block, pos); pos += 4;
@@ -262,10 +270,10 @@ namespace Reloc
 
             var CurrEnd = extracted_struct.SizeOfHeaders;
             /// implicit section for header
-            extracted_struct.SectionPosOffsets.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = 0x400, RawFilePointer = 0, VirtualOffset = 0, Name = "PEHeader" });
+            extracted_struct.Sections.Add(new MiniSection { VirtualSize = CurrEnd, RawFileSize = CurrEnd, RawFilePointer = 0, VirtualAddress = 0, Name = "PEHeader", Characteristics = 0x20000000 });
 
             // get to sections
-            pos = headerOffset + (extracted_struct.Is64 ? 0x108 : 0xF8);
+            pos = blockOffset + headerOffset + (extracted_struct.Is64 ? 0x108 : 0xF8);
             for (int i = 0; i < extracted_struct.NumberOfSections; i++)
             {
                 /*var rawStr = BitConverter.ToString(block, pos, 8); */
@@ -281,19 +289,18 @@ namespace Reloc
                 var rawPos = BitConverter.ToUInt32(block, pos); pos += 0x10;
                 var characteristic = BitConverter.ToUInt32(block, pos); pos += 4;
 
-                var currSecNfo = new MiniSection { VirtualSize = Size, VirtualOffset = Pos, RawFileSize = rawSize, RawFilePointer = rawPos, Name = secStr, Characteristics = characteristic };
-                extracted_struct.SectionPosOffsets.Add(currSecNfo);
+                var currSecNfo = new MiniSection { VirtualSize = Size, VirtualAddress = Pos, RawFileSize = rawSize, RawFilePointer = rawPos, Name = secStr, Characteristics = characteristic };
+                extracted_struct.Sections.Add(currSecNfo);
 
                 if (Verbose > 2)
                     Write($" section [{secStr}] ");
 
+                //optimize reloc for easy access
                 if (secStr.StartsWith(@".reloc", StringComparison.Ordinal))
                 {
                     extracted_struct.RelocSize = Size;
                     extracted_struct.RelocPos = Pos;
                 }
-
-                //pos += 0x10;
             }
 
             return extracted_struct;
@@ -321,7 +328,7 @@ namespace Reloc
                 fs.Position += 2;
                 NumberOfSections = binReader.ReadInt16();
 
-                SectionPosOffsets = new List<MiniSection>();
+                Sections = new List<MiniSection>();
 
                 TimeStamp = binReader.ReadUInt32();
                 fs.Position += 8;
@@ -348,8 +355,9 @@ namespace Reloc
                 SizeOfImage = binReader.ReadUInt32();
                 SizeOfHeaders = binReader.ReadUInt32();
                 var CurrEnd = SizeOfHeaders;
+                
                 /// implicit section for header
-                SectionPosOffsets.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = 0x400, RawFilePointer = 0, VirtualOffset = 0, Name = "PEHeader", Characteristics = 0x20000000 });
+                Sections.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = CurrEnd, RawFilePointer = 0, VirtualAddress = 0, Name = "PEHeader", Characteristics = 0x20000000 });
 
                 // get to sections
                 fs.Position = headerOffset + (Is64 ? 0x108 : 0xF8);
@@ -366,8 +374,8 @@ namespace Reloc
                     fs.Position += 0xC;
                     var characteristic = binReader.ReadUInt32();
 
-                    var currSecNfo = new MiniSection { VirtualSize = Size, VirtualOffset = Pos, RawFileSize = rawSize, RawFilePointer = rawPos, Name = secStr, Characteristics = characteristic };
-                    SectionPosOffsets.Add(currSecNfo);
+                    var currSecNfo = new MiniSection { VirtualSize = Size, VirtualAddress = Pos, RawFileSize = rawSize, RawFilePointer = rawPos, Name = secStr, Characteristics = characteristic };
+                    Sections.Add(currSecNfo);
 
                     if (Verbose > 2)
                         Write($" section [{secStr}] ");

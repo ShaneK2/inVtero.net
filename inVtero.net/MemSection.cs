@@ -34,6 +34,7 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class MemSection : IComparable
     {
+        public string NormalizedName;
         public string Name { get; set; }
         [ProtoIgnore]
         public ulong Address { get { return (ulong) VA.Address; } }
@@ -45,7 +46,7 @@ namespace inVtero.net
 
         public PFN Source;
 
-        // Extract can contain sub lists (.text, .data) from PE data Module.SectionPosOffsets
+        // Extract can contain sub lists (.text, .data) from PE data Module.Sections
         public Extract Module;
 
         // Per module debug support

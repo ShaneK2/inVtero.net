@@ -10,12 +10,11 @@ from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
 from System.IO import Directory, File, FileInfo, Path
 from System.Diagnostics import Stopwatch
-from softwareunion import *
 
 # Basic option handling
 copts = ConfigOptions()
-copts.IgnoreSaveData = False
-copts.FileName = "c:\\temp\\server2016.xendump"   
+copts.IgnoreSaveData = True
+copts.FileName = "C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem"   
 copts.VersionsToEnable = PTType.GENERIC
 # To get some additional output 
 copts.VerboseOutput = True
@@ -60,20 +59,32 @@ logicalList = vtero.WalkProcList(proc)
 # It should be safe to remove dupes
 vtero.MemAccess.MapViewSize = 128 * 1024
 entries = 0
-#vtero.KernelProc.InitSymbolsForVad()
+vtero.KernelProc.InitSymbolsForVad()
+db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*2)
 
-target = open(copts.FileName + ".hashSet", 'w')
+#target = open(copts.FileName + ".hashSet", 'w')
+
+FoundBit =0
+NoBit = 0
 
 for proc in proc_arr:  
     # only one time get Kernel view 
     # TODO: Implment PFN bitmap so we dump each PFN exactially once
+    proc.HDB = db
     proc.MemAccess = Mem(vtero.MemAccess)
     proc.KernelSection = vtero.KernelProc.KernelSection 
-    #proc.CopySymbolsForVad(vtero.KernelProc)
-    hashes = proc.HashGenBlocks(CollectKernel)
-    target.write("\nHash set for process: " + proc.OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "] " + hashes.Length.ToString() + " total hashes generated\n\n" )
+    proc.CopySymbolsForVad(vtero.KernelProc)
+    hashes = proc.HashGenBlocks(CollectKernel, True)
+    #target.write("\nHash set for process: " + proc.OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "] " + hashes.Length.ToString() + " total hashes generated\n\n" )
     for hash in hashes:
-        target.write("0x" + hash.Item1.ToString("X") + "\t" + hash.Item3.ToString() + "\t(" + hash.Item2 + ")\n")
+        if db.GetIdxBit(hash.Index):
+            FoundBit += 1
+        else:
+            NoBit += 1
 
-target.close()
+
+    #for hash in hashes:
+    #    target.write("0x" + hash.Item1.ToString("X") + "\t" + hash.Item3.ToString() + "\t(" + hash.Item2 + ")\n")
+
+#target.close()
 print "Done! Total runtime: " + TotalRunTime.Elapsed.ToString()

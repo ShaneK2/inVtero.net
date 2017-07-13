@@ -1,4 +1,18 @@
-﻿using System;
+﻿// Copyright(C) 2017 Shane Macaulay smacaulay@gmail.com
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or(at your option) any later version.
+//
+//This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.If not, see<http://www.gnu.org/licenses/>.
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -18,7 +32,7 @@ namespace inVtero.net
         public string RelocFolder;
         public long DBSize;
         public long DBEntries;
-        
+        public long DBEntriesMask;
 
         public string Reloc64Dir;
         public string Reloc32Dir;
@@ -39,6 +53,16 @@ namespace inVtero.net
             RelocFolder = relocFolder;
 
             Init();
+        }
+
+        public bool GetIdxBit(ulong bit)
+        {
+            return Bit.GetBit(BitMapView, ((long) bit >> 4) & DBEntriesMask);
+        }
+
+        public void SetIdxBit(ulong bit)
+        {
+            Bit.SetBit(BitMapView, ((long) bit >> 4) & DBEntriesMask);
         }
 
         void Init()
@@ -63,6 +87,7 @@ namespace inVtero.net
             
             // Divide by 16
             DBEntries = DBSize >> 4;
+            DBEntriesMask = DBEntries - 1;
 
             // is there a bitmap?
             BitMap = MemoryMappedFile.CreateFromFile(HashDBBitMap, FileMode.OpenOrCreate, "HDBBitMap", DBEntries >> 3);

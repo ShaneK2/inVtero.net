@@ -49,9 +49,10 @@ namespace inVtero.net
 
         public override int Read(byte[] buffer, int offset, int count)
         {
+            bool GoodRead = false;
             int CurrOff = 0;
             // figure out how many pages we need 
-            int PageCount = count / 4096;
+            int PageCount = count / MagicNumbers.PAGE_SIZE;
             if ((count & 0xfff) != 0)
                 PageCount++;
 
@@ -60,29 +61,20 @@ namespace inVtero.net
             if(offset != 0)
                 throw new NotImplementedException("Sub-Page reads not supported, use BufferedStream to even out your access pattern.");
 
+            var lblock = new long[0x200]; // 0x200 * 8 = 4k
             while (PageCount > 0)
             {
-                // block may be set to null by the GetPageForPhysAddr call, so we need to remake it every time through...
-                var lblock = new long[0x200]; // 0x200 * 8 = 4k
                 PageCount--;
 
-                //fixed (void* lp = lblock, bp = buffer)
-                //{
-                    try {
-                        if (MemBlockStorage.GetPageForPhysAddr(CurrPage.PTE, ref lblock) == MagicNumbers.BAD_VALUE_READ)
-                            continue;
+                MemBlockStorage.GetPageForPhysAddr(CurrPage.PTE, ref lblock, ref GoodRead);
+                if (!GoodRead)
+                    continue;
 
-                        Buffer.BlockCopy(lblock, CurrOff/4, buffer, CurrOff, 4096);
-                        //Buffer.MemoryCopy((byte*)lp + CurrOff, (byte*)bp + CurrOff, 4096, 4096);
-                    } finally
-                    {
-                        CurrOff += 0x1000;
-                    }
-                    
-                //}
+                Buffer.BlockCopy(lblock, CurrOff/4, buffer, CurrOff, MagicNumbers.PAGE_SIZE);
+                CurrOff += MagicNumbers.PAGE_SIZE;
             }
 
-            return (rv - PageCount) * 0x1000;
+            return (rv - PageCount) * MagicNumbers.PAGE_SIZE;
         }
 
         public override long Seek(long offset, SeekOrigin origin)

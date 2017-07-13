@@ -27,10 +27,10 @@ namespace inVtero.net
 {
     public unsafe class UnsafeHelp
     {
-        const int WORD_MOD_SIZE = 31;
-        const int WORD_BIT_SHIFT = 5; // right shift 5 = /32, 4 = /16
+        const int WORD_MOD_SIZE = 63;
+        const int WORD_BIT_SHIFT = 6; // right shift 5 = /32, 4 = /16
 
-        public static unsafe void ReadBytes(MemoryMappedViewAccessor view, long offset, ref long[] arr, int Count = 512)
+        public static unsafe void ReadBytes<T>(MemoryMappedViewAccessor view, long offset, ref T[] arr, int Count = 512)
         {
             //byte[] arr = new byte[num];
             var ptr = (byte*)0;
@@ -40,17 +40,22 @@ namespace inVtero.net
             var iplong = ip.ToInt64() + offset;
             var ptr_off = new IntPtr(iplong);
 
-            Marshal.Copy(ptr_off, arr, 0, Count);
+            if(arr is long[])
+                Marshal.Copy(ptr_off, arr as long[], 0, Count);
+
+            if (arr is byte[])
+                Marshal.Copy(ptr_off, arr as byte[], 0, Count);
+
             view.SafeMemoryMappedViewHandle.ReleasePointer();
         }
 
-        int* lp = (int *)0;
+        long* lp = (long *)0;
 
         public unsafe void GetBitmapHandle(MemoryMappedViewAccessor view)
         {
             var ptr = (byte*)0;
             view.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            lp = (int*)ptr;
+            lp = (long *)ptr;
         }
 
         public unsafe void ReleaseBitmapHandle(MemoryMappedViewAccessor view)
@@ -58,14 +63,17 @@ namespace inVtero.net
             view.SafeMemoryMappedViewHandle.ReleasePointer();
         }
 
-        public unsafe bool GetBit(MemoryMappedViewAccessor view, int bit)
+        public unsafe bool GetBit(MemoryMappedViewAccessor view, long bit)
         {
-            return (lp[(bit >> WORD_BIT_SHIFT)] & (1 << (bit & WORD_MOD_SIZE))) != 0;
+            long slot = lp[(bit >> WORD_BIT_SHIFT)];
+            long bitMasked = (1L << (int)(bit & WORD_MOD_SIZE));
+            long slotBit = slot & bitMasked;
+            return slotBit != 0;
 
         }
-        public unsafe void SetBit(MemoryMappedViewAccessor view, int bit)
+        public unsafe void SetBit(MemoryMappedViewAccessor view, long bit)
         {
-            lp[(bit >> WORD_BIT_SHIFT)] |= (1 << (bit & WORD_MOD_SIZE));
+            lp[(bit >> WORD_BIT_SHIFT)] |= (1L << (int)(bit & WORD_MOD_SIZE));
         }
 
         /// <summary>
@@ -95,6 +103,23 @@ namespace inVtero.net
         [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
         public static unsafe extern void* CopyMemory(void* dest, void* src, ulong count);
 
+        public static unsafe bool UnsafeCompare(byte[] a1, byte[] a2)
+        {
+            if (a1 == a2) return true;
+            if (a1 == null || a2 == null || a1.Length != a2.Length)
+                return false;
+            fixed (byte* p1 = a1, p2 = a2)
+            {
+                byte* x1 = p1, x2 = p2;
+                int l = a1.Length;
+                for (int i = 0; i < l / 8; i++, x1 += 8, x2 += 8)
+                    if (*((long*)x1) != *((long*)x2)) return false;
+                if ((l & 4) != 0) { if (*((int*)x1) != *((int*)x2)) return false; x1 += 4; x2 += 4; }
+                if ((l & 2) != 0) { if (*((short*)x1) != *((short*)x2)) return false; x1 += 2; x2 += 2; }
+                if ((l & 1) != 0) if (*((byte*)x1) != *((byte*)x2)) return false;
+                return true;
+            }
+        }
 
         public static unsafe bool EqualBytesLongUnrolled(long[] data1, long[] data2, int offset = 0, int maxlen = 0)
         {
@@ -135,6 +160,31 @@ namespace inVtero.net
 
                 for (int i = 0; i < rem; i++)
                     if (data1[len - 1 - i] != data2[len - 1 - i])
+                        return false;
+
+                return true;
+            }
+        }
+        public static unsafe bool IsZero(byte[] data, int offset = 0, int count = 4096)
+        {
+            fixed (byte* bytes = data)
+            {
+                int rem = count % (sizeof(byte) * 16);
+                long* b = (long*)bytes + offset;
+                long* e = (long*)(bytes + count - rem);
+
+                while (b < e)
+                {
+                    if ((*(b) | *(b + 1) | *(b + 2) | *(b + 3) | *(b + 4) |
+                        *(b + 5) | *(b + 6) | *(b + 7) | *(b + 8) |
+                        *(b + 9) | *(b + 10) | *(b + 11) | *(b + 12) |
+                        *(b + 13) | *(b + 14) | *(b + 15)) != 0)
+                        return false;
+                    b += 16;
+                }
+
+                for (int i = 0; i < rem; i++)
+                    if (data[count - 1 - i] != 0)
                         return false;
 
                 return true;

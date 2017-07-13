@@ -30,6 +30,8 @@ using System.Runtime.InteropServices;
 using libyaraNET;
 using inVtero.net.Support;
 using static HashLib.HashFactory.Crypto;
+using System.Globalization;
+using inVtero.net.Hashing;
 
 namespace inVtero.net
 {
@@ -97,6 +99,8 @@ namespace inVtero.net
         public String OSPath { get; set; }
         public String OSFileName { get; set; }
         public MemSection KernelSection;
+        [ProtoIgnore]
+        public HashDB HDB;
 
         public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntkrnlmp")
         {
@@ -121,7 +125,7 @@ namespace inVtero.net
             if (Address != 0)
                 memRead = GetVirtualLongLen(Address, minLen);
 
-            var rv = sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByte, GetVirtualLong);
+            var rv = sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByteLen, GetVirtualLongLen);
             rv.SelfAddr = Address;
 
             return rv;
@@ -147,7 +151,7 @@ namespace inVtero.net
             }
             if(sym == null)
                 sym = Vtero.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
-            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByte, GetVirtualLong);
+            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByteLen, GetVirtualLongLen);
         }
 
         /// <summary>
@@ -804,19 +808,22 @@ namespace inVtero.net
             {
                 if(sec.Module == null)
                 {
-                    var test = GetVirtualByte(sec.VadAddr);
+                    //var test = GetVirtualByte(sec.VadAddr);
+                    // should be block aligned
+                    var test = VGetBlock(sec.VadAddr);
                     var ext = Extract.IsBlockaPE(test);
                     sec.Module = ext;
                 }
             }
-
         }
 
-        public Tuple<long, string, string>[] HashGenBlocks(bool KernelSpace = false, HashLib.IHash iHasher = null)
+        public HashRecord[] HashGenBlocks(bool KernelSpace = false, bool DoReReLocate = true, HashLib.IHash iHasher = null)
         {
-            List<Tuple<long, string, string>> rv = new List<Tuple<long, string, string>>();
-            string Hash = string.Empty;
             long VA = 0;
+            byte[] block = null;
+            string Name = string.Empty;
+            List<HashRecord> hr = new List<HashRecord>();
+
             HashLib.IHash hasher = iHasher;
 
             if (hasher == null)
@@ -828,23 +835,38 @@ namespace inVtero.net
             if(Sections.Count < 2)
                 ListVad(VadRootPtr);
 
-            PT.FillPageQueue(false, KernelSpace);
+            //PT.FillPageQueue(false, KernelSpace);
 
             foreach (var range in PT.FillPageQueue(false, KernelSpace))
             {
                 if (range.PTE.Valid)
                 {
                     VA = range.VA.Address;
+                    block = VGetBlock(VA);
+                    if (block == null)
+                        continue;
 
-                    var Name = GetModuleName(VA);
-                    var block = VGetBlockLong(VA);
+                    if (DoReReLocate)
+                    {
+                        var sec = GetEnclosingSection(VA, true);
+                        if (sec != null)
+                            Name = sec.NormalizedName;
 
-                    var binHash = hasher.ComputeLongs(block).GetBytes();
+                        if (sec != null && sec.Module != null && sec.Module.ReReState != null)
+                        {
+                            var offset = VA - sec.VadAddr;
 
-                    rv.Add(Tuple.Create<long, string, string>(VA, Name, Convert.ToBase64String(binHash)));
+                            if (sec.Module.Is64)
+                                sec.Module.ReReState.DeLocateBuff64(block, sec.Module.ReReState.Delta, (ulong)offset, sec.Module.RelocData.ToArray());
+                            else
+                                sec.Module.ReReState.DeLocateBuff32(block, (uint)sec.Module.ReReState.Delta, (uint)offset, sec.Module.RelocData.ToArray());
+                        }
+                    }
+                    var fht = new FractHashTree(block, 128, null);
+                    hr.AddRange(fht.DumpTree());
                 }
             }
-            return rv.ToArray();
+            return hr.ToArray();
         }
 
 
@@ -882,8 +904,9 @@ namespace inVtero.net
                     var FileNamePtr = _LDR_DATA[(FullDllNameOffsetOf + 8) / 8];
                     if (FileNamePtr != 0)
                     {
-                        var strByteArr = GetVirtualByte(FileNamePtr);
                         var strLen = (short)lvalue & 0xffff;
+                        var strByteArr = GetVirtualByteLen(FileNamePtr, strLen+2);
+
                         if (strLen > strByteArr.Length / 2 || strLen <= 0)
                             strLen = strByteArr.Length / 2;
                         FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
@@ -946,7 +969,10 @@ namespace inVtero.net
                     if (!IncludeData && range.PTE.NoExecute)
                         continue;
 
-                    var modName = GetModuleName(range.VA.Address);
+                    string modName = string.Empty;
+                    var sec = GetEnclosingSection(range.VA.Address);
+                    if (sec != null)
+                        modName = sec.NormalizedName;
 
                     Vtero.WriteRange(range.VA, range, Folder + modName + "-", ref ContigSizeState, MemAccess);
                 }
@@ -954,32 +980,73 @@ namespace inVtero.net
             return curr;
         }
 
-        public string GetModuleName(long VA)
+        public MemSection GetEnclosingSection(long VA, bool WithHeader = false)
         {
             var modName = string.Empty;
             foreach (var sec in Sections)
                 if (VA >= sec.Key &&
                     VA < sec.Key + sec.Value.Length)
                 {
-                    string filename = string.Empty, ImagePath = string.Empty;
-                    var pathTrim = sec.Value.Name.Split('\x0');
+                    var ms = sec.Value;
+                    if (string.IsNullOrWhiteSpace(ms.NormalizedName))
+                    {
 
-                    ImagePath = pathTrim[0];
+                        string filename = string.Empty, ImagePath = string.Empty;
+                        var pathTrim = ms.Name.Split('\x0');
 
-                    if (ImagePath.Contains("."))
-                        ImagePath = ImagePath.Substring(0, pathTrim[0].LastIndexOf(".")+4);
+                        ImagePath = pathTrim[0];
 
-                    if (ImagePath.Contains(Path.DirectorySeparatorChar))
-                        filename = ImagePath.Split(Path.DirectorySeparatorChar).Last();
-                    else
-                        filename = ImagePath;
+                        if (ImagePath.Contains("."))
+                            ImagePath = ImagePath.Substring(0, pathTrim[0].LastIndexOf(".") + 4);
 
-                    foreach (char c in Path.GetInvalidFileNameChars())
-                        filename = filename.Replace(c, '_');
-                    modName = Path.GetFileName(filename); // Path.GetFileName(sec.Value.Name);
-                    break;
+                        if (ImagePath.Contains(Path.DirectorySeparatorChar))
+                            filename = ImagePath.Split(Path.DirectorySeparatorChar).Last();
+                        else
+                            filename = ImagePath;
+
+                        foreach (char c in Path.GetInvalidFileNameChars())
+                            filename = filename.Replace(c, '_');
+                        modName = Path.GetFileName(filename); // Path.GetFileName(sec.Value.Name);
+
+                        ms.NormalizedName = modName;
+                    }
+
+                    // check the VadAddr
+                    if (WithHeader)
+                    {
+                        if (ms.Module == null)
+                        {
+                            var headerData = VGetBlock(ms.VadAddr);
+                            if (headerData == null)
+                            {
+                                if(Vtero.VerboseLevel > 1)
+                                    WriteColor(ConsoleColor.Yellow, $"Unable to read likely PE header location. {ms.VadAddr:X}");
+
+                                return ms;
+                            }
+                            ms.Module = Extract.IsBlockaPE(headerData);
+                        }
+                        if (ms.Module != null && ms.Module.ReReState == null && HDB != null)
+                        {
+                            var RelocFolder = ms.Module.Is64 ? HDB.Reloc64Dir : HDB.Reloc32Dir;
+
+                            var RelocName = $"{ms.NormalizedName}-*-{ms.Module.TimeStamp:X}.reloc";
+                            var RelocFile = Directory.GetFiles(RelocFolder, RelocName).FirstOrDefault();
+                            if (File.Exists(RelocFile))
+                            {
+                                // take image base from the file since it can be changed in the header
+                                var split = RelocFile.Split('-');
+
+                                ms.Module.RelocData = DeLocate.ProcessRelocs(File.ReadAllBytes(RelocFile));
+                                ms.Module.ReReState = new DeLocate();
+                                ms.Module.ReReState.OrigImageBase = ulong.Parse(split[split.Length-2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+                                ms.Module.ReReState.Delta = (ulong)ms.VadAddr - ms.Module.ReReState.OrigImageBase;
+                            }
+                        }
+                    }
+                    return ms;
                 }
-            return modName;
+            return null;
         }
 
         /// <summary>
@@ -1069,7 +1136,7 @@ namespace inVtero.net
         public byte[] VGetBlock(long VA)
         {
             bool GotData = false;
-            long[] rv = new long[512];
+            byte[] rv = new byte[MagicNumbers.PAGE_SIZE];
 
             var _va = VA & ~0xfff;
 
@@ -1078,13 +1145,12 @@ namespace inVtero.net
                 hw = MemAccess.VirtualToPhysical(CR3Value, _va);
             else
                 hw = MemAccess.VirtualToPhysical(vmcs.EPTP, CR3Value, _va);
+
             MemAccess.GetPageForPhysAddr(hw, ref rv, ref GotData);
             if (!GotData)
                 return null;
 
-            byte[] buffer = new byte[4096];
-            Buffer.BlockCopy(rv, 0, buffer, 0, 4096);
-            return buffer;
+            return rv;
         }
 
         /// <summary>
@@ -1163,7 +1229,7 @@ namespace inVtero.net
 
         public long[] GetVirtualLong(long VA)
         {
-            return GetVirtualLongLen(VA, 4096);
+            return GetVirtualLongLen(VA, MagicNumbers.PAGE_SIZE);
         }
         public long[] GetVirtualLongLen(long VA, int len = 4096)
         {
@@ -1185,7 +1251,7 @@ namespace inVtero.net
 
             do
             {
-                VA += 4096;
+                VA += MagicNumbers.PAGE_SIZE;
                 var block2 = VGetBlockLong(VA);
                 int copy_cnt = len - done < 4096 ? (len - done) / 8 : 512;
                 Array.Copy(block2, 0, rv, count, copy_cnt);
@@ -1223,18 +1289,50 @@ namespace inVtero.net
         public byte[] GetVirtualByte(long VA)
         {
             long startIndex = VA & 0xfff;
-            long count = 4096 - startIndex;
-            var rv = new byte[count + 4096];
+            long count = MagicNumbers.PAGE_SIZE - startIndex;
+            var rv = new byte[count + MagicNumbers.PAGE_SIZE];
 
             var block = VGetBlock(VA);
             if (block == null)
                 return rv;
 
             Array.Copy(block, startIndex, rv, 0, count);
-            VA += 4096;
+            VA += MagicNumbers.PAGE_SIZE;
             var block2 = VGetBlock(VA);
             if (block2 != null)
-                Array.Copy(block2, 0, rv, count, 4096);
+                Array.Copy(block2, 0, rv, count, MagicNumbers.PAGE_SIZE);
+            return rv;
+        }
+
+        public byte[] GetVirtualByteLen(long VA, int len = MagicNumbers.PAGE_SIZE)
+        {
+            long startIndex = VA & 0xfff;
+            long count = MagicNumbers.PAGE_SIZE - startIndex;
+            var rv = new byte[count];
+
+            var block = VGetBlock(VA);
+            if (block == null)
+                return rv;
+
+            // align the returned buffer to start precisely at the VA requested
+            Array.Copy(block, startIndex, rv, 0, count);
+            var done = count;
+
+            // if we have done more than requested quick return
+            if (done >= len)
+                return rv;
+
+            // keep going until we satisfy the amount requested
+            do
+            {
+                VA += MagicNumbers.PAGE_SIZE;
+                var block2 = VGetBlock(VA);
+                var copy_cnt = len - done < MagicNumbers.PAGE_SIZE ? (len - done) : MagicNumbers.PAGE_SIZE;
+                Array.Copy(block2, 0, rv, count, copy_cnt);
+                done += MagicNumbers.PAGE_SIZE;
+                count += MagicNumbers.PAGE_SIZE;
+            } while (done < len);
+
             return rv;
         }
         #endregion

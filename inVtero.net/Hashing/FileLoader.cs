@@ -1,4 +1,19 @@
-﻿using System;
+﻿// Copyright(C) 2017 Shane Macaulay smacaulay@gmail.com
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or(at your option) any later version.
+//
+//This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.If not, see<http://www.gnu.org/licenses/>.
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -22,18 +37,22 @@ namespace inVtero.net.Hashing
         public string ScanExtensionsSpec = ":.EXE:.DLL:.SYS:.CPL:.OCX:.SCR:.DRV:.TSP:.MUI:";
         public string[] ScanExtensions;
 
-        public string MaskedEntriesSpec = ":.MSI:.MSP:.PDB:.TDLOG:.VHD:.WIM:.DMP:.MSU:.LOG:.FON:.TTF:.TTC:FONTS:.WMV:.WAV:.CUR:.ANI:HIBERFIL.SYS:PAGEFILE.SYS:";
+        public string MaskedEntriesSpec = ":.MSI:.MSP:.PDB:.TDLOG:.VHD:.WIM:.DMP:.MSU:.LOG:.FON:.TTF:.TTC:FONTS:.WMV:.WAV:.CUR:.ANI:HIBERFIL.SYS:PAGEFILE.SYS:SWAPFILE.SYS:";
         public string[] MaskedEntries;
+
+        public List<string> LoadExceptions = new List<string>();
 
         BlockingCollection<Extract> LoadList = new BlockingCollection<Extract>();
 
         bool DoneDirScan = false;
+        bool DoneHashLoad = false;
+
         int MinHashSize;
         string DBFile;
 
         // A BILLION :)
-        public int BufferCount = 1024 * 1024 * 1024;
-        const int PageSize = 4096;
+        public int BufferCount = 1000 * 1000 * 500;
+        const int PageSize = MagicNumbers.PAGE_SIZE;
 
         Func<HashLib.IHash> GetHP;
 
@@ -64,12 +83,14 @@ namespace inVtero.net.Hashing
                 GenerateSW = Stopwatch.StartNew();
                 RecursiveGenerate(Folder);
                 DoneDirScan = true;
-                WriteColor(ConsoleColor.Green, $"Finished FS load from {Folder}");
+                WriteColor(ConsoleColor.Green, $"Finished FS load from {Folder} task time: {GenerateSW.Elapsed}");
             }, () => {
                 HashToBuffers();
             });
+            WriteColor(ConsoleColor.White, $"Total task runtime: {GenerateSW.Elapsed}");
         }
 
+#region Compare Stuff
         public static IComparer<T> GetICompareer<T>(Comparison<T> comparer)
         {
             return new FunctorComparer<T>(comparer);
@@ -94,124 +115,141 @@ namespace inVtero.net.Hashing
             }
         }
         static ulong SortMask = 0;
-        static int SortByDBSizeMask(HashRecord x, HashRecord y)
+        static int SortByDBSizeMask(HashRec x, HashRec y)
         {
-            if (x == null)
+            if (x.HashData == null)
             {
-                if (y == null)
+                if (y.HashData == null)
                     return 0;
                 return 1;
             }
-            else if (y == null)
+            else if (y.HashData == null)
                 return -1;
 
             return (x.Index & SortMask) == (y.Index & SortMask) ? 0 : (x.Index & SortMask) > (y.Index & SortMask )? 1 : -1;
         }
+#endregion
 
         void DumpBufToDisk()
         {
+            var sw = Stopwatch.StartNew();
             long TotalDBWrites = 0;
+            long TotalRequested = 0;
             do
             {
+                sw.Stop();
                 var ReadyHashes = ReadyQueue.Take();
+                sw.Start();
                 var hashArr = ReadyHashes.ToArray();
                 SortMask = (ulong)HDB.DBSize - 1;
-                ParallelAlgorithms.Sort<HashRecord>(hashArr, GetICompareer<HashRecord>(SortByDBSizeMask));
+                
+                ParallelAlgorithms.Sort<HashRec>(hashArr, GetICompareer<HashRec>(SortByDBSizeMask));
 
                 var Count = hashArr.Count();
-                var DBSizeMask = (ulong)HDB.DBSize - 1;
+                TotalRequested += Count;
 
                 if (Vtero.VerboseLevel >= 1)
-                    WriteColor(ConsoleColor.Cyan, $"Hash entries to store: {Count}");
+                    WriteColor(ConsoleColor.Cyan, $"Hash entries to store: {Count:N0}");
 
-                using (var fw = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, 8192))
+                using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, PageSize*2))
                 {
                     // we need 2 pages now since were block reading and we might pick a hash that start's scan
                     // at the very end of a page
                     byte[] buff = new byte[PageSize * 2];
                     byte[] zero = new byte[16];
-                    int i = 0, firstIndex = 0;
+                    int i = 0, firstIndex = 0, zeroIndex = 0;
+                    bool WriteBack = false;
 
                     var DBEntriesMask = HDB.DBEntries - 1;
 
-                    var sw = Stopwatch.StartNew();
                     do
                     {
-                        bool WriteBack = false;
-
                         var Index = hashArr[i].Index;
                         // convert Index to PageIndex
-                        var DBPage = (long)((Index & DBSizeMask) & ~0xfffUL);
+                        var DBPage = (long)((Index & SortMask) & ~0xfffUL);
 
                         // find block offset for this hash
-                        fw.Seek(DBPage, SeekOrigin.Begin);
-                        fw.Read(buff, 0, PageSize * 2);
+                        fs.Seek(DBPage, SeekOrigin.Begin);
+                        fs.Read(buff, 0, PageSize * 2);
+                        WriteBack = false;
 
                         do
                         {
                             // skip duplicates
-                            if (i+1 < Count && (hashArr[i+1] != null) && hashArr[i].Index == hashArr[i + 1].Index)
+                            if (i + 1 < Count
+                                && hashArr[i].Index == hashArr[i + 1].Index)
+                               //&& UnsafeHelp.UnsafeCompare(hashArr[i].HashData, hashArr[i + 1].HashData))
                             {
                                 i++;
                                 continue;
                             }
-
-                            // re-read Inxex since we could be on the inner loop
-                            Index = hashArr[i].Index;
-                            // Index inside of a page
-                            var PageIndex = (int)Index & 0xfff;
-
-                            var toWrite = hashArr[i].HashData;
-
-                            // do we already have this hash from disk?
-                            firstIndex = buff.SearchBytes(toWrite, PageIndex, 16);
-                            if (firstIndex >= 0)
-                            {
+                            // were all done since the sort should of put these null entries at the end
+                            while(i < Count && hashArr[i].HashData == null)
                                 i++;
-                                break;
-                            }
+                            
+                            if (i < Count)
+                            {
+                                // re-read Inxex since we could be on the inner loop
+                                Index = hashArr[i].Index;
+                                // Index inside of a page
+                                var PageIndex = (int)Index & 0xfff;
 
-                            firstIndex = buff.SearchBytes(zero, PageIndex, 16);
-                            if (firstIndex >= 0)
-                            {
-                                WriteBack = true;
-                                // update buff with new hash entry for write back
-                                Array.Copy(toWrite, 0, buff, firstIndex, toWrite.Length);
-                                TotalDBWrites++;
-                                // set to the origional index, shift down since were bit aligned
-                                HDB.Bit.SetBit(HDB.BitMapView, ((int)Index >> 4) & (int)DBEntriesMask);
-                            }
-                            else if (firstIndex < 0)
-                            {
-                                var strerr = $"HASH TABLE SATURATED! YOU NEED TO MAKE THE DB LARGER!!";
-                                WriteColor(ConsoleColor.Red, strerr);
-                                throw new ApplicationException(strerr);
+                                // Hash to populate the DB with
+                                var toWrite = hashArr[i].HashData;
+
+                                // do we already have this hash from disk? 
+                                firstIndex = buff.SearchBytes(toWrite, PageIndex, 16);
+                                if (firstIndex < 0)
+                                {
+                                    zeroIndex = buff.SearchBytes(zero, PageIndex, 16);
+                                    if (zeroIndex >= 0)
+                                    {
+                                        // we want the modified buffer to get written back
+                                        WriteBack = true;
+                                        // update buff with new hash entry for write back
+                                        //Array.Copy(toWrite, 0, buff, zeroIndex, toWrite.Length);
+                                        for (int j = zeroIndex, k = 0; j < zeroIndex + toWrite.Length; j++, k++)
+                                            buff[j] = toWrite[k];
+
+                                        TotalDBWrites++;
+
+                                        // set to the origional index, shift down since were bit aligned
+                                        HDB.SetIdxBit(Index);
+                                    }
+                                    else if (zeroIndex < 0)
+                                    {
+                                        var strerr = $"HASH TABLE SATURATED! YOU NEED TO MAKE THE DB LARGER!!";
+                                        WriteColor(ConsoleColor.Red, strerr);
+                                        throw new ApplicationException(strerr);
+                                    }
+                                }
                             }
                             i++;
-
+                            
                             // continue to next entry if it's in the same block
-                        } while (i < Count && (((hashArr[i].Index & DBSizeMask) & ~0xfffUL) == (ulong)DBPage));
+                        } while (i < Count && (((hashArr[i].Index & SortMask) & ~0xfffUL) == (ulong)DBPage));
 
                         if (WriteBack)
                         {
                             // reset seek position
-                            fw.Seek(DBPage, SeekOrigin.Begin);
+                            fs.Seek(DBPage, SeekOrigin.Begin);
                             // only write back 1 page if we can help it
-                            fw.Write(buff, 0, firstIndex < (PageSize - 16) ? PageSize : PageSize * 2);
+                            fs.Write(buff, 0, PageSize * 2);
                         }
 
-                        if (i % 100000 == 0 && sw.Elapsed.Seconds > 0)
-                            WriteColor(ConsoleColor.White, $"entries: {i}, per second {i / sw.Elapsed.Seconds} ");
+                        if (i % 100000 == 0 && sw.Elapsed.TotalSeconds > 0)
+                            WriteColor(ConsoleColor.Cyan, $"DB commit entries: {i:N0} - per second {(i / sw.Elapsed.TotalSeconds):N0} ");
 
                     } while (i < Count);
+                    WriteColor(ConsoleColor.Cyan, $"Buffer commited entries: {i:N0} - per second {(i / sw.Elapsed.TotalSeconds):N0} ");
                 }
-            } while (!DoneDirScan || ReadyQueue.Count() > 0);
+            } while (!DoneHashLoad || ReadyQueue.Count() > 0);
 
-            WriteColor(ConsoleColor.Cyan, $"Finished DB write {TotalDBWrites} entries (reduced count reflects de-duplication).");
+            WriteColor(ConsoleColor.Cyan, $"Finished DB write {TotalDBWrites:N0} NEW entries. Requsted {TotalRequested:N0} (reduced count reflects de-duplication). Task time: {sw.Elapsed}");
         }
 
-        List<HashRecord> Hashes = new List<HashRecord>();
-        BlockingCollection<List<HashRecord>> ReadyQueue = new BlockingCollection<List<HashRecord>>();
+        List<HashRec> Hashes = new List<HashRec>();
+        BlockingCollection<List<HashRec>> ReadyQueue = new BlockingCollection<List<HashRec>>();
 
         void ExtractRelocData(Extract e)
         {
@@ -229,59 +267,77 @@ namespace inVtero.net.Hashing
 
             using (var fileStream = File.OpenRead(e.FileName))
             {
-                readBuffer = new byte[e.RelocSize];
-                fileStream.Position = e.RelocPos;
-                fileStream.Read(readBuffer, 0, (int)e.RelocSize);
-            }
+                int RelocPos = 0, RelocSize=0;
+                for(int i=0; i < e.Sections.Count(); i++)
+                {
+                    if(e.Sections[i].Name == ".reloc")
+                    {
+                        RelocPos = (int) e.Sections[i].RawFilePointer;
+                        RelocSize = (int) e.Sections[i].RawFileSize;
+                        break;
+                    }
+                }
+                if (RelocSize != 0)
+                {
+                    readBuffer = new byte[RelocSize];
+                    fileStream.Position = RelocPos;
 
-            using (FileStream stream = new FileStream(outFile,
-                    FileMode.CreateNew, FileAccess.Write, FileShare.None, (int)e.RelocSize, true))
-                    stream.Write(readBuffer, 0, (int)e.RelocSize);
+                    fileStream.Read(readBuffer, 0, RelocSize);
+
+                    using (FileStream stream = new FileStream(outFile,
+                            FileMode.CreateNew, FileAccess.Write, FileShare.None, (int)RelocSize, true))
+                        stream.Write(readBuffer, 0, (int)RelocSize);
+                }
+            }
         }
 
+        long HashGenCnt = 0;
         void FillHashBuff()
         {
+            int LoadedCnt = 0;
             Stopwatch sw = Stopwatch.StartNew();
             do
             {
-                int LoadedCnt = 0;
                 //Parallel.ForEach(LoadList, (hashFile) =>
                 var hashFile = LoadList.Take();
-                //{
-                    Interlocked.Increment(ref LoadedCnt);
-                    //var hashFile = LoadList.Take();
-                    Parallel.Invoke(() =>
+                LoadedCnt++;
+                //Interlocked.Increment(ref LoadedCnt);
+                Parallel.Invoke(() =>
+                {
+                    ExtractRelocData(hashFile);
+                }, () =>
+                {
+                    foreach (var ms in hashFile.Sections)
                     {
-                        ExtractRelocData(hashFile);
-                    }, () =>
+                        // ONLY hash CODE/EXEC file sections & not the headers
+                        // we already loaded the header during the scan before we got here
+                        if ((!ms.IsCode && !ms.IsExec) || ms.RawFilePointer == 0)
+                            continue;
+
+                        var fhtree = FractHashTree.CreateRecsFromFile(hashFile.FileName, ms, MinHashSize, GetHP);
+                        Interlocked.Add(ref HashGenCnt, fhtree.Length);
+                        Hashes.AddRange(fhtree);
+
+                        if((LoadedCnt % 100) == 0 && sw.Elapsed.TotalSeconds > 0)
+                            WriteColor(ConsoleColor.Green, $"HashGen: { (HashGenCnt / sw.Elapsed.TotalSeconds):N0} per second.");
+                    }
+
+                    if (Hashes.Count() > BufferCount)
                     {
-                        foreach (var ms in hashFile.SectionPosOffsets)
-                        {
-                            if (!ms.IsCode && !ms.IsExec)
-                                continue;
+                        WriteColor(ConsoleColor.Green, $"Filled queue past maximum (actual) {Hashes.Count():N0}, signaling readyqueue.");
+                        WriteColor(ConsoleColor.Green, $"Loaded-Files/Generated-Hash-Values {LoadedCnt:N0}/{HashGenCnt:N0}.  HashGen: {(HashGenCnt/sw.Elapsed.TotalSeconds):N0} per second.");
+                        ReadyQueue.Add(Hashes);
+                        Hashes = new List<HashRec>();
+                    }
 
-                            var fht = new FractHashTree(hashFile.FileName, ms, MinHashSize, GetHP, HDB.DBSize);
-                            var fhtree = fht.DumpTree();
-
-                            Hashes.AddRange(fhtree);
-                        }
-
-                        if (Hashes.Count() > BufferCount)
-                        {
-                            WriteColor(ConsoleColor.Green, $"Filled queue past maximum (actual) {Hashes.Count()}, signaling readyqueue.");
-                            ReadyQueue.Add(Hashes);
-                            Hashes = new List<HashRecord>();
-                        }
-
-                        if ((LoadedCnt % 100) == 0 && sw.Elapsed.Seconds > 0)
-                            WriteColor(ConsoleColor.Gray, $"Loded {LoadedCnt} of {LoadList.Count()} files.  {LoadedCnt / sw.Elapsed.Seconds} per second.");
-                    });
-                //});
-            } while (!DoneDirScan);
+                });
+            } while (!DoneDirScan || LoadList.Count() > 0);
 
             ReadyQueue.Add(Hashes);
-            WriteColor(ConsoleColor.Green, $"Final hash load finished {Hashes.Count()}, signaling readyqueue for DB commit.");
-            Hashes = new List<HashRecord>();
+            WriteColor(ConsoleColor.Green, $"Final hash load finished {Hashes.Count():N0}, signaling readyqueue for DB commit. Task time: {sw.Elapsed}");
+            WriteColor(ConsoleColor.Green, $"Loaded-Files/Generated-Hash-Values {LoadedCnt:N0}/{HashGenCnt:N0}.  HashGen: {(HashGenCnt / sw.Elapsed.TotalSeconds):N0} per second.");
+            DoneHashLoad = true;
+            Hashes = new List<HashRec>();
         }
 
         /// <summary>
@@ -292,25 +348,40 @@ namespace inVtero.net.Hashing
             Parallel.Invoke(() => FillHashBuff(), () => DumpBufToDisk());
         }
 
+        /// <summary>
+        /// Pre-Screen files to find out if it's a binary we care about
+        /// </summary>
+        /// <param name="Path"></param>
+        /// <returns></returns>
         Extract CheckFile(string Path)
         {
             Extract rv = null;
-            byte[] block = new byte[4096];
+            byte[] block = new byte[PageSize];
             try
             {
-                using (var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
+                using (var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.Read, PageSize))
                 {
-                    fs.Read(block, 0, 4096);
+                    fs.Read(block, 0, PageSize);
                     rv = Extract.IsBlockaPE(block);
                     if (rv != null)
+                    {
+                        // we mine as well hash it now since we already loaded the bytes
+                        var fhtree = FractHashTree.CreateRecsFromMemory(block, MinHashSize, GetHP);
+                        Interlocked.Add(ref HashGenCnt, fhtree.Length);
+
+                        Hashes.AddRange(fhtree);
+
                         rv.FileName = Path;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                if (Vtero.VerboseLevel > 0)
-                    WriteColor(ConsoleColor.Yellow, $"Skipping file [{Path}] due to error {ex.Message}.");
+                var FileCheckException = $"Skipping file [{Path}] due to error {ex.Message}.";
+                LoadExceptions.Add(FileCheckException);
 
+                if (Vtero.VerboseLevel > 0)
+                    WriteColor(ConsoleColor.Yellow, FileCheckException);
             }
             return rv;
         }
@@ -351,13 +422,12 @@ namespace inVtero.net.Hashing
             // get list of PE's we can hash
             foreach (var check in TmpList)
             {
-                //WriteColor(ConsoleColor.White, $"scanning file {check}");
                 var carved = CheckFile(check);
                 if (carved != null)
                 {
                     LoadList.Add(carved);
-                    if(LoadList.Count() % 1000 == 0 && GenerateSW.Elapsed.Seconds > 0)
-                        WriteColor(ConsoleColor.White, $"Loaded {LoadList.Count()} code files. {LoadList.Count() / GenerateSW.Elapsed.Seconds} per second.");
+                    if(LoadList.Count() % 1000 == 0 && GenerateSW.Elapsed.TotalSeconds > 0)
+                        WriteColor(ConsoleColor.Gray, $"Loaded {LoadList.Count()} code files. {(LoadList.Count() / GenerateSW.Elapsed.TotalSeconds):N0} per second.");
 
                 }
             }
@@ -373,7 +443,11 @@ namespace inVtero.net.Hashing
                     try { RecursiveGenerate(subdir); }
                     catch (Exception ex)
                     {
-                        WriteColor(ConsoleColor.Yellow, $"Problem with scanning folder: {subdir} Exeption: {ex.Message}");
+                        var fsLoadException = $"Problem with scanning folder: {subdir} Exeption: {ex.Message}";
+                        LoadExceptions.Add(fsLoadException);
+
+                        if (Vtero.VerboseLevel > 1) 
+                            WriteColor(ConsoleColor.Yellow, fsLoadException);
                     }
                 }
             }

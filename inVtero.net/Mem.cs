@@ -169,6 +169,7 @@ namespace inVtero.net
             }
 #if USE_BITMAP
             // maybe there's a bit map we can use from a DMP file
+            // WAHBITARRY is slow
             if (BitmapArray != null)
                 pfnTableIdx = new WAHBitArray(WAHBitArray.TYPE.Bitarray, BitmapArray);
             else
@@ -203,7 +204,7 @@ namespace inVtero.net
         /// <param name="block">to be filled on return optionally</param>
         /// <param name="DataRead">signals success</param>
         /// <returns>long value from fileoffset</returns>
-        public long GetPageFromFileOffset(long FileOffset, ref long[] block, ref bool DataRead)
+        public long GetPageFromFileOffset<T>(long FileOffset, ref T[] block, ref bool DataRead)
         {
             var rv = 0L;
             DataRead = false;
@@ -243,17 +244,33 @@ namespace inVtero.net
                 if (block != null)
                 {
                     var copy_len = block.Length;
-                    if (BlockOffset + (block.Length * 8) > NewMapViewSize)
-                        copy_len = (int) ((NewMapViewSize - BlockOffset) / 8);
+                    bool CopyLong = true;
+
+                    if(block is long[])
+                    {
+                        if (BlockOffset + (block.Length * 8) > NewMapViewSize)
+                            copy_len = (int)((NewMapViewSize - BlockOffset) / 8);
+
+                    } else if(block is byte[])
+                    {
+                        CopyLong = false;
+                        if (BlockOffset + (block.Length) > NewMapViewSize)
+                            copy_len = (int)((NewMapViewSize - BlockOffset));
+                    }
 
                     UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block, copy_len);
-                    rv = block[((AbsOffset >> 3) & 0x1ff)];
+
+                    if(CopyLong)
+                        rv = (block as long[])[((AbsOffset >> 3) & 0x1ff)] ;
+                    else 
+                        rv = (block as byte[])[((AbsOffset >> 3) & 0x1ff)];
                 }
                 // FIX: ReadInt64 uses byte address so when we use it must adjust, check for other callers
                 // assumptions since we changed this from array<long>[] maybe expecting old behavior, however
                 // caller from getpageforphysaddr passes valid block usually so that's the main one from V2P
                 else 
                     rv = mappedAccess.ReadInt64(BlockOffset | (AbsOffset & 0x1ff));
+
                 DataRead = true;
 
             }
@@ -340,7 +357,7 @@ namespace inVtero.net
 
         }
 
-        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block, ref bool GotData)
+        public long GetPageForPhysAddr<T>(HARDWARE_ADDRESS_ENTRY PAddr, ref T[] block, ref bool GotData)
         {
             long rv = 0;
             // convert PAddr to PFN
@@ -378,7 +395,7 @@ namespace inVtero.net
         /// <param name="PAddr">byte address an address contained in the block</param>
         /// <param name="block">array to be filled</param>
         /// <returns>specific return value for long value at </returns>
-        public long GetPageForPhysAddr(HARDWARE_ADDRESS_ENTRY PAddr, ref long[] block) 
+        public long GetPageForPhysAddr<T>(HARDWARE_ADDRESS_ENTRY PAddr, ref T[] block) 
         {
             bool GoodRead = false;
             return GetPageForPhysAddr(PAddr, ref block, ref GoodRead);
@@ -397,8 +414,6 @@ namespace inVtero.net
             long[] block = new long[512];
 
             return GetPageForPhysAddr(PAddr, ref block, ref Ignored);
-
-            //return pageData[PAddr.AddressOffset >> 3];
         }
 
         // Translates virtual address to physical address  (normal CR3 path)

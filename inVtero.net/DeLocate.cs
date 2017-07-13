@@ -84,8 +84,8 @@ namespace Reloc
                 var Chunks = fsLen / PAGE_SIZE;
                 var CurrSec = 0;
 
-                var CurrSize = hdrFix.SectionPosOffsets[CurrSec].RawFileSize;
-                var CurrEnd = hdrFix.SectionPosOffsets[CurrSec].RawFilePointer + CurrSize;
+                var CurrSize = hdrFix.Sections[CurrSec].RawFileSize;
+                var CurrEnd = hdrFix.Sections[CurrSec].RawFilePointer + CurrSize;
 
                 using (var fsWriteOut = new FileStream(SaveTo, FileMode.Create, FileAccess.Write, FileShare.Write, PAGE_SIZE, true))
                 {
@@ -110,14 +110,14 @@ namespace Reloc
                             if (fsWriteOut.Position + 4096 >= CurrEnd && CurrSec < hdrFix.NumberOfSections)
                             {
                                 WriteSize = (int)((long)CurrEnd - fsWriteOut.Position);
-                                WriteLine($"Finishing up {hdrFix.SectionPosOffsets[CurrSec].Name}, emit final {WriteSize:X} bytes to move our position to {(fsWriteOut.Position + WriteSize):X}");
+                                WriteLine($"Finishing up {hdrFix.Sections[CurrSec].Name}, emit final {WriteSize:X} bytes to move our position to {(fsWriteOut.Position + WriteSize):X}");
 
                                 CurrSec++;
 
                                 if (CurrSec < hdrFix.NumberOfSections)
                                 {
-                                    CurrSize = hdrFix.SectionPosOffsets[CurrSec].RawFileSize;
-                                    CurrEnd = hdrFix.SectionPosOffsets[CurrSec].RawFilePointer + CurrSize;
+                                    CurrSize = hdrFix.Sections[CurrSec].RawFileSize;
+                                    CurrEnd = hdrFix.Sections[CurrSec].RawFilePointer + CurrSize;
                                 }
                             }
                             else
@@ -129,9 +129,9 @@ namespace Reloc
 
                         if (WriteSize != 4096 && CurrSec < hdrFix.NumberOfSections)
                         {
-                            fsWriteOut.Position = hdrFix.SectionPosOffsets[CurrSec].RawFilePointer;
+                            fsWriteOut.Position = hdrFix.Sections[CurrSec].RawFilePointer;
                             /// ensure read position is aligned with us
-                            fsRelocted.Position = hdrFix.SectionPosOffsets[CurrSec].VirtualOffset;
+                            fsRelocted.Position = hdrFix.Sections[CurrSec].VirtualAddress;
                         }
 
                     }
@@ -140,6 +140,9 @@ namespace Reloc
             }
             return rv;
         }
+
+        public ulong Delta;
+        public ulong OrigImageBase;
 
         ulong OverHang;
         bool CarryOne;
@@ -175,6 +178,9 @@ namespace Reloc
                         rl.Area[i] = reReader.ReadUInt16();
 
                     rv.Add(rl);
+
+                    if (reReader.BaseStream.Position == FileBuff.Length)
+                        break;
 
                     pageRVA = reReader.ReadUInt32();
                     if (pageRVA == 0)

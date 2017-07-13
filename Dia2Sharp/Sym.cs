@@ -140,7 +140,7 @@ namespace Dia2Sharp
             } while (childrenFetched == 1);
         }
 
-        public dynamic xStructInfo(string PDBFile, string Struct, long[] memRead = null, Func<long, byte[]> GetMem = null, Func<long, long[]> GetMemLong = null)
+        public dynamic xStructInfo(string PDBFile, string Struct, long[] memRead = null, Func<long, int, byte[]> GetMem = null, Func<long, int, long[]> GetMemLong = null)
         {
             dynamic Info = null;
             IDiaSymbol Master = null;
@@ -185,7 +185,7 @@ namespace Dia2Sharp
         /// <param name="CurrOffset"></param>
         /// <param name="memRead"></param>
         /// <returns></returns>
-        dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null, Func<long, byte[]> GetMem = null, Func<long, long[]> GetMemLong = null)
+        dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null, Func<long, int, byte[]> GetMem = null, Func<long, int, long[]> GetMemLong = null)
         {
             var IInfo = (IDictionary<string, object>)Info;
             var InfoDict= new Dictionary<string, object>();
@@ -241,10 +241,13 @@ namespace Dia2Sharp
                         var StringAddr = memRead[DataOffset];
                         if (StringAddr != 0)
                         {
-                            var strByteArr = GetMem(StringAddr);
                             var strLen = (short)lvalue & 0xffff;
+                            
+                            var strByteArr = GetMem(StringAddr, strLen + 2);
+
                             if (strLen > strByteArr.Length / 2 || strLen <= 0)
                                 strLen = strByteArr.Length / 2;
+
                             strVal = Encoding.Unicode.GetString(strByteArr, 0, strLen);
                         }
                         Izym.Add(defName, strVal);
@@ -313,7 +316,7 @@ namespace Dia2Sharp
                             {
                                 // do second deref here
                                 // the location to read is our offset pos data
-                                var deRefArr = GetMemLong(lvalue);
+                                var deRefArr = GetMemLong(lvalue, 0x20);
 
 
                                 xDumpStructs(zym, TypeType, currName, 0, deRefArr, GetMem, GetMemLong);

@@ -32,8 +32,6 @@ namespace inVtero.net
     public class VirtualScanner
     {
         Mem BackingBlocks;
-        //ConcurrentDictionary<int, Mem> MemoryBank;
-        PhysicalMemoryStream BackingStream;
         bool HeaderScan;
         /// <summary>
         /// Detected processes are the fundamental unit were after since a process maintains the address
@@ -57,13 +55,10 @@ namespace inVtero.net
         {
             DPContext = Ctx;
             BackingBlocks = backingBlocks;
-            BackingStream = new PhysicalMemoryStream(backingBlocks, Ctx);
             HeaderScan = DoHeaderScan;
         }
         
-
-        // this guy store's his results in a global thread safe array
-        List<Extract> FastPE(long VA, long[] Block)
+        List<Extract> FastPE(long VA, byte[] Block)
         {
             int Pos = 0;
             int Lim = Block.Length;
@@ -71,21 +66,16 @@ namespace inVtero.net
 
             while (Pos < Lim)
             {
-                // magic check before copying into byte[]
-                uint PEMagic = (uint)Block[Pos] & 0xffff;
-                if (PEMagic == 0x5a4d)
+                if (Block[Pos] == 0x4d && Block[Pos+1] == 0x5a)
                 {
-                    var bpage = new byte[0x1000];
-                    Buffer.BlockCopy(Block, Pos*8, bpage, 0, 4096);
-                    // TODO: improve/fix check
-                    var extracted = Extract.IsBlockaPE(bpage);
+                    var extracted = Extract.IsBlockaPE(Block, Pos);
                     if (extracted != null)
                     {
-                        extracted.VA = VA + (Pos*8);
+                        extracted.VA = VA + Pos;
                         rv.Add(extracted);
                     }
                 }
-                Pos += 512;
+                Pos += MagicNumbers.PAGE_SIZE;
             }
             return rv;
         }
@@ -103,13 +93,13 @@ namespace inVtero.net
             bool GotData = false;
             var memAxss = Instance == null ? BackingBlocks : Instance;
             long i = Start, Curr = 0;
-            long[] block;
+            byte[] block;
             var rv = new List<Extract>();
 
             // large page read
             if (entry != null && entry.PTE.LargePage)
             {
-                block = new long[0x40000];
+                block = new byte[MagicNumbers.LARG_PAGE_SIZE];
                 memAxss.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
                 if (GotData)
                     rv = FastPE(Start, block);
@@ -120,7 +110,7 @@ namespace inVtero.net
             // use supplied page sized physical entry
             if(entry != null && Stop - Start == MagicNumbers.PAGE_SIZE)
             { 
-                block = new long[0x200];
+                block = new byte[MagicNumbers.PAGE_SIZE];
                 memAxss.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
                 if (GotData)
                     rv = FastPE(Start, block);
@@ -128,7 +118,7 @@ namespace inVtero.net
                 // we only header scan when asked and if the page read is 1 from an alignment 
                 if (!HeaderScan)
                     return rv;
-                if ((Start & 0xF000) != 0x1000)
+                if ((Start & 0xF000) != MagicNumbers.PAGE_SIZE)
                     return rv;
                 // if were doing a header scan back up i so we do the previous page 
                 i -= 0x1000;
@@ -139,7 +129,7 @@ namespace inVtero.net
             // this is a really slow way to enumerate memory
             // convert index to an address 
             // then add start to it
-            block = new long[0x200]; // 0x200 * 8 = 4k
+            block = new byte[MagicNumbers.PAGE_SIZE]; // 0x200 * 8 = 4k
             while (i < Stop)
             {
                 if (pState != null && pState.IsStopped)
@@ -152,7 +142,7 @@ namespace inVtero.net
                     locPhys = memAxss.VirtualToPhysical(DPContext.CR3Value, i);
 
                 Curr = i;
-                i += 0x1000;
+                i += MagicNumbers.PAGE_SIZE;
 
                 if (HARDWARE_ADDRESS_ENTRY.IsBadEntry(locPhys) || !locPhys.Valid )
                     continue;

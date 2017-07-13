@@ -331,8 +331,8 @@ namespace inVtero.net
 
                 using (proc.MemAccess = new Mem(MemAccess))
                 {
-                    var procHashSet = proc.HashGenBlocks(doKernel);
-                    rv.Add(procHashSet);
+                    //var procHashSet = proc.HashGenBlocks(doKernel);
+                    //rv.Add(procHashSet);
                 }
             });
 
@@ -1530,7 +1530,7 @@ DoubleBreak:
             }
                 */
 
-
+            bool GoodRead = false;
             bool canAppend = false;
             var saveLoc = BaseFileName + KEY.Address.ToString("X") + ".bin";
             var lastLoc = BaseFileName + (KEY.Address - ContigSize).ToString("X") + ".bin";
@@ -1544,71 +1544,54 @@ DoubleBreak:
             else
                 ContigSize = 0x1000;
 
-            //unsafe
-            //{
-                var block = new long[0x200]; // 0x200 * 8 = 4k
-                var bpage = new byte[0x1000];
+            var bpage = new byte[0x1000];
 
-                //fixed (void* lp = block, bp = bpage)
-                //{
+            if (DiagOutput)
+                WriteColor(VALUE.PTE.Valid ? ConsoleColor.Cyan : ConsoleColor.Red,  $"VA: {KEY:X12}  \t PFN: {VALUE.PTE}");
 
-                    if (DiagOutput)
-                        WriteColor(VALUE.PTE.Valid ? ConsoleColor.Cyan : ConsoleColor.Red,  $"VA: {KEY:X12}  \t PFN: {VALUE.PTE}");
+            // if we have invalid (software managed) page table entries
+            // the data may be present, or a prototype or actually in swap.
+            // for the moment were only going to dump hardware managed data
+            // or feel free to patch this up ;)
+            if (!VALUE.PTE.Valid)
+                return string.Empty;
 
-                    // if we have invalid (software managed) page table entries
-                    // the data may be present, or a prototype or actually in swap.
-                    // for the moment were only going to dump hardware managed data
-                    // or feel free to patch this up ;)
-                    if (!VALUE.PTE.Valid)
-                        return string.Empty;
-
-                    if (VALUE.PTE.LargePage)
+            if (VALUE.PTE.LargePage)
+            {
+                using (var lsavefile = File.OpenWrite(saveLoc))
+                {
+                    // 0x200 * 4kb = 2MB
+                    // TODO: Large pages properly?
+                    // TODO: PageCache is still broken in some cases... disable for now here
+                    for (int i = 0; i < 0x200; i++)
                     {
-                        bool GoodRead = false;
-                        using (var lsavefile = File.OpenWrite(saveLoc))
-                        {
-                            // 0x200 * 4kb = 2MB
-                            // TODO: Large pages properly?
-                            // TODO: PageCache is still broken in some cases... disable for now here
-                            for (int i = 0; i < 0x200; i++)
-                            {
-                                PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block, ref GoodRead); 
-                                VALUE.PTE.PTE += 0x1000;
-                                if(!GoodRead)
-                                    block = new long[0x200];
+                        PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref bpage, ref GoodRead); 
+                        VALUE.PTE.PTE += 0x1000;
 
-                                Buffer.BlockCopy(block, 0, bpage, 0, 4096);
-                                //Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                                lsavefile.Write(bpage, 0, 4096);
-                                //lsavefile.Write(bpage, 0, 4096);
+                        // write out a null page then
+                        if (!GoodRead && DumpNULL)
+                            bpage = new byte[0x1000];
 
-                            }
-                            return lastLoc;
-                        }
+                        if(GoodRead || (!GoodRead && DumpNULL))
+                            lsavefile.Write(bpage, 0, 4096);
                     }
-                    else
-                    {
-                        try { PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref block); } catch (Exception ex) { }
+                    return lastLoc;
+                }
+            }
+            else
+            {
+                PhysMemReader.GetPageForPhysAddr(VALUE.PTE, ref bpage, ref GoodRead); 
 
-                        if (block != null)
-                        {
-                            if (DumpNULL || !UnsafeHelp.IsZero(block))
-                            {
-                                Buffer.BlockCopy(block, 0, bpage, 0, 4096);
-                               //Buffer.MemoryCopy(lp, bp, 4096, 4096);
-                                
-                                using (var savefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
-                                    savefile.Write(bpage, 0, 4096);
+                if (bpage != null && GoodRead || (DumpNULL && UnsafeHelp.IsZero(bpage)))
+                {
+                    using (var savefile = (canAppend ? File.Open(lastLoc, FileMode.Append, FileAccess.Write, FileShare.ReadWrite) : File.OpenWrite(saveLoc)))
+                        savefile.Write(bpage, 0, 4096);
 
-                                    //savefile.Write(bpage, 0, 4096);
-                                return lastLoc;
-                            }
-                        }
-                    }
-                    ContigSize = 0;
-                    return string.Empty;
-                //}
-            //}
+                    return lastLoc;
+                }
+            }
+            ContigSize = 0;
+            return string.Empty;
         }
 #endregion
     }
