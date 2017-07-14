@@ -175,16 +175,22 @@ namespace Reloc
                 {
                     var rl = new Reloc { PageRVA = pageRVA, BlockSize = blockSize, Area = new ushort[Count] };
                     for (int i = 0; i < Count; i++)
+                    {
+                        if (reReader.BaseStream.Position >= FileBuff.Length)
+                            break;
+
                         rl.Area[i] = reReader.ReadUInt16();
+                    }
 
                     rv.Add(rl);
 
-                    if (reReader.BaseStream.Position == FileBuff.Length)
+                    if (reReader.BaseStream.Position >= FileBuff.Length)
                         break;
 
                     pageRVA = reReader.ReadUInt32();
                     if (pageRVA == 0)
                         break;
+
                     blockSize = reReader.ReadInt32();
                     if (blockSize == 0)
                         break;

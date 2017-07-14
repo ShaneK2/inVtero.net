@@ -85,7 +85,7 @@
       <HintPath>..\..\..\..\..\..\..\..\dev\IronPython\Platforms\Net45\Microsoft.Dynamic.dll</HintPath>
     </Reference>
     <Reference Include="protobuf-net, Version=2.3.0.0, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
-      <HintPath>..\packages\protobuf-net.2.3.0-alpha\lib\net40\protobuf-net.dll</HintPath>
+      <HintPath>..\packages\protobuf-net.2.3.0\lib\net40\protobuf-net.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
@@ -93,9 +93,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\Scripts\DBLoad.py">
+    <Content Include="..\Scripts\DBLoad.py">
       <Link>DBLoad.py</Link>
-    </None>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <None Include="Analyze.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -106,6 +107,7 @@
     </None>
     <None Include="packages.config" />
     <None Include="Properties\app.manifest" />
+    <None Include="quickdumps.config" />
     <None Include="quickdumps_TemporaryKey.pfx" />
   </ItemGroup>
   <ItemGroup>
@@ -153,6 +155,7 @@
     </Content>
     <Content Include="..\Scripts\Hash.py">
       <Link>Hash.py</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="..\Scripts\List.py">
       <Link>List.py</Link>

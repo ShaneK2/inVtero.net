@@ -10,6 +10,8 @@ from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
 from System.IO import Directory, File, FileInfo, Path
 from System.Diagnostics import Stopwatch
+from System import Environment, String, Console, ConsoleColor
+from inVtero.net.Hashing import *
 
 # Basic option handling
 copts = ConfigOptions()
@@ -44,10 +46,8 @@ proc.MemAccess = Mem(vtero.MemAccess)
 if vtero.KVS is None:
     kvs = proc.ScanAndLoadModules()
     vtero.KVS = kvs
-    vtero.CheckpointSaveState()
 else:
     proc.LoadSymbols()
-#apply some setup
 
 kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
 Console.ForegroundColor = ConsoleColor.Cyan
@@ -55,36 +55,46 @@ print "kernel build: " + kMinorVer.ToString()
 # Use dynamic typing to walk EPROCES 
 logicalList = vtero.WalkProcList(proc)
 
-# At least on Windows the kernel may be in here 2x with the "idle" process
-# It should be safe to remove dupes
 vtero.MemAccess.MapViewSize = 128 * 1024
-entries = 0
 vtero.KernelProc.InitSymbolsForVad()
 db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*2)
-
-#target = open(copts.FileName + ".hashSet", 'w')
-
-FoundBit =0
-NoBit = 0
+fl = FileLoader(db, 128)
 
 for proc in proc_arr:  
-    # only one time get Kernel view 
-    # TODO: Implment PFN bitmap so we dump each PFN exactially once
+    valid = 0
     proc.HDB = db
     proc.MemAccess = Mem(vtero.MemAccess)
-    proc.KernelSection = vtero.KernelProc.KernelSection 
+    proc.KernelSection = vtero.KernelProc.KernelSection  
     proc.CopySymbolsForVad(vtero.KernelProc)
-    hashes = proc.HashGenBlocks(CollectKernel, True)
-    #target.write("\nHash set for process: " + proc.OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "] " + hashes.Length.ToString() + " total hashes generated\n\n" )
-    for hash in hashes:
-        if db.GetIdxBit(hash.Index):
-            FoundBit += 1
-        else:
-            NoBit += 1
+    Vtero.VerboseLevel = 0
+    hashes = proc.VADHash(True, True)
+    print proc.ToString()
+    #print "*** PID [" + proc.ProcessID.ToString() + "] " + Path.GetFileName(proc.OSFileName) + " ***"
+    if hashes is not None and hashes.Length > 0:
+        fl.HashLookup(hashes)
+        for h in hashes:
+            print h.ToString(),
+    
 
 
-    #for hash in hashes:
-    #    target.write("0x" + hash.Item1.ToString("X") + "\t" + hash.Item3.ToString() + "\t(" + hash.Item2 + ")\n")
 
-#target.close()
 print "Done! Total runtime: " + TotalRunTime.Elapsed.ToString()
+
+
+        #valid = db.BitmapScan(hashes)
+
+
+#hashes = proc.HashGenBlocks(CollectKernel, True)
+    #target.write("\nHash set for process: " + proc.OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "] " + hashes.Length.ToString() + " total hashes generated\n\n" )  + "] Len [" + (h.Address[idx].Count*4096).ToString("X") + "] "
+#    for hash in hashes:
+#        if db.GetIdxBit(hash.Index):
+#            FoundBit += 1
+#        else:
+#            NoBit += 1
+
+#valid = h.Validated
+#            checkedCnt = h.Total
+#            if checkedCnt != 0:
+#                percent = valid * 100.0 / checkedCnt
+#                for idx in h.GetSegments():
+            

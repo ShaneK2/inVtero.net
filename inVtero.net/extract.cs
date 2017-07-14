@@ -46,6 +46,19 @@ namespace Reloc
         [ProtoIgnore]
         public bool IsDiscard { get { return (Characteristics & 0x02000000) != 0; } }
         public uint Characteristics;
+
+        public static MiniSection Empty;
+
+        static MiniSection()
+        {
+            Empty.Name = string.Empty;
+            Empty.Characteristics = 0;
+            Empty.VirtualAddress = 0;
+            Empty.RawFilePointer = 0;
+            Empty.VirtualSize = 0;
+            Empty.RawFileSize = 0;
+        }
+
         public override string ToString()
         {
             return $"{Name} - VBase {VirtualAddress:X}:{VirtualSize:X} - File {RawFilePointer:X}:{RawFileSize:X} - R:{IsRead},W:{IsWrite},X:{IsExec},S:{IsShared},D:{IsDiscard}";
@@ -62,6 +75,7 @@ namespace Reloc
         public static bool OverWrite;
 
         public string FileName;
+        public string ExpectedRelocFile;
         public uint RelocPos;
         public uint RelocSize;
         public uint ImportDirPos;
@@ -270,7 +284,7 @@ namespace Reloc
 
             var CurrEnd = extracted_struct.SizeOfHeaders;
             /// implicit section for header
-            extracted_struct.Sections.Add(new MiniSection { VirtualSize = CurrEnd, RawFileSize = CurrEnd, RawFilePointer = 0, VirtualAddress = 0, Name = "PEHeader", Characteristics = 0x20000000 });
+            extracted_struct.Sections.Add(new MiniSection { VirtualSize = CurrEnd, RawFileSize = CurrEnd, RawFilePointer = 0, VirtualAddress = 0, Name = ".PEHeader", Characteristics = 0x20000000 });
 
             // get to sections
             pos = blockOffset + headerOffset + (extracted_struct.Is64 ? 0x108 : 0xF8);
@@ -357,7 +371,7 @@ namespace Reloc
                 var CurrEnd = SizeOfHeaders;
                 
                 /// implicit section for header
-                Sections.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = CurrEnd, RawFilePointer = 0, VirtualAddress = 0, Name = "PEHeader", Characteristics = 0x20000000 });
+                Sections.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = CurrEnd, RawFilePointer = 0, VirtualAddress = 0, Name = ".PEHeader", Characteristics = 0x20000000 });
 
                 // get to sections
                 fs.Position = headerOffset + (Is64 ? 0x108 : 0xF8);

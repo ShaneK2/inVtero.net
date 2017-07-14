@@ -29,7 +29,7 @@ namespace inVtero.net.Hashing
             //Array.Copy(Hash, 0, HashData, 0, 16);
 
             for (int i = 0; i < 16; i++)
-                HashData[i] = Hash[i];
+               HashData[i] = Hash[i];
 
             // keep the upper nibble
             HashData[15] = (byte)(HashData[15] & 0xf0);
@@ -45,8 +45,68 @@ namespace inVtero.net.Hashing
         public ulong Index;
     }
 
+
+    public class SparseRegion
+    {
+        public String OriginationInfo;
+        public long Len;
+        public long Address;
+
+        public List<long> SparseAddrs = new List<long>();
+        public List<bool[]> InnerCheckList = new List<bool[]>();
+        public List<HashRec[]> InnerList = new List<HashRec[]>();
+        public List<byte[]> Data = new List<byte[]>();
+
+        public int Validated;
+        public int Failed;
+        public int Total;
+        public double PercentValid { get {  return Total > 0 ? Validated * 100.0 / Total : 0.0; } }
+    }
+
     public class HashRecord : IComparable
     {
+        public List<SparseRegion> Regions;
+        public DetectedProc DP;
+
+        public HashRecord() {
+            Regions = new List<SparseRegion>();
+        }
+
+        public void AddBlock(DetectedProc dp, string Info, long VA, HashRec[] hashes, byte[] data)
+        {
+            // first time
+            if (Regions.Count == 0)
+            {
+                DP = dp;
+                var r = new SparseRegion() { OriginationInfo = Info };
+                r.Data.Add(data);
+                r.InnerList.Add(hashes);
+                r.Address = VA;
+                r.Len = 4096;
+                Regions.Add(r);
+                return;
+            }
+
+            foreach (var r in Regions)
+            {
+                // merge
+                if (Info == r.OriginationInfo)
+                {
+                    r.Len += 4096;
+                    r.SparseAddrs.Add(VA);
+                    r.InnerList.Add(hashes);
+                    r.Data.Add(data);
+                    return;
+                }
+            }
+            var rx = new SparseRegion() { OriginationInfo = Info, Address = VA };
+            rx.Data.Add(data);
+            rx.InnerList.Add(hashes);
+            rx.SparseAddrs.Add(VA);
+            rx.Len += 4096;
+            Regions.Add(rx);
+        }
+
         // we store in the DB 128 bit total
         // 4 bits are the blocklen 
         // 124 upper bits from the hash are stored in the table
@@ -76,6 +136,15 @@ namespace inVtero.net.Hashing
             Index = BitConverter.ToUInt64(Hash, indexLoc) << 4;
         }
 
+        public static implicit operator HashRecord (HashRec rec)
+        {
+            return new HashRecord(rec.HashData, (byte) rec.Index);
+        }
+        public static implicit operator HashRec (HashRecord rec)
+        {
+            return new HashRec(rec.HashData, (byte)rec.Index);
+        }
+
         public int CompareTo(object obj)
         {
             HashRecord hr = obj as HashRecord;
@@ -88,7 +157,11 @@ namespace inVtero.net.Hashing
 
         public override string ToString()
         {
-            return $"Index: {Index:X}";
+            StringBuilder sb = new StringBuilder();
+            foreach (var r in Regions)
+                sb.AppendLine($"PID: {DP.ProcessID,6} Region: {r.OriginationInfo,70}\tAddr: {r.Address,20:X} Len: {r.Len,8:X} ({r.Validated,4}/{r.Total,4}) {r.PercentValid,12:N3}");
+
+            return sb.ToString();
         }
     }
 }

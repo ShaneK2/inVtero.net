@@ -35,6 +35,7 @@ namespace inVtero.net
     {
         public const int LARG_PAGE_SIZE = 1024*1024*2;
         public const int PAGE_SIZE = 0x1000;
+        public const int PE_TYPICAL_HEADER_SIZE = 0x400;
         public const int KERNEL_PT_INDEX_START_USUALLY = 256;
         public const int PAGE_SHIFT = 12;
         public const long BAD_VALUE_READ = -0xbad00;
@@ -128,6 +129,15 @@ namespace inVtero.net
         [ProtoMember(800)]
         public long Address;
         public VIRTUAL_ADDRESS(long VA) { Address = VA; }
+
+        public static bool IsKernelRange(long VA)
+        {
+            return (VA < 0 || VA > 0x7FFFFFFFFFFF);
+        }
+        public static ulong Extend(long Address)
+        {
+            return ((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address);
+        }
 
         public ulong FullAddr { get { return ((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address); } }
 

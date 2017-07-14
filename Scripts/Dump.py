@@ -7,16 +7,16 @@ from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
 from System.IO import Directory, File, FileInfo, Path
 from System.Diagnostics import Stopwatch
-from softwareunion import *
 
 # Basic option handling
 copts = ConfigOptions()
 copts.IgnoreSaveData = True
-copts.FileName = "c:\\temp\\server2016.xendump"   
+copts.FileName = "C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem"  
 copts.VersionsToEnable = PTType.GENERIC
 # To get some additional output 
 copts.VerboseOutput = True
 copts.VerboseLevel = 1
+
 
 TotalRunTime = Stopwatch.StartNew()
 
@@ -25,7 +25,7 @@ vtero = Scan.Scanit(copts)
 
 # Global
 CollectKernel = False
-newdir = copts.FileName + ".dumped"
+newdir = copts.FileName + ".dumped.2"
 topDir = Directory.CreateDirectory(newdir)
 Vtero.DiagOutput = False
 
@@ -43,17 +43,19 @@ proc.MemAccess = Mem(vtero.MemAccess)
 # by default this will scan for kernel symbols 
 kvs = proc.ScanAndLoadModules()
 vtero.KVS = kvs
+
 #apply some setup
 kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
-Console.ForegroundColor = ConsoleColor.Cyan
 print "kernel build: " + kMinorVer.ToString()
+
 # Use dynamic typing to walk EPROCES 
 logicalList = vtero.WalkProcList(proc)
 # At least on Windows the kernel may be in here 2x with the "idle" process
 # It should be safe to remove dupes
 vtero.MemAccess.MapViewSize = 128 * 1024
 vtero.KernelProc.InitSymbolsForVad()
-entries = 0
+#db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*2)
+
 for proc in proc_arr:  
     if proc.CR3Value == vtero.KernelProc.CR3Value:
         CollectKernel = True
@@ -63,14 +65,18 @@ for proc in proc_arr:
     if Directory.Exists(currProcBase):
         continue
     dir = Directory.CreateDirectory(currProcBase)
-    # only one time get Kernel view 
-    # TODO: Implment PFN bitmap so we dump each PFN exactially once
+    #proc.HDB = db
     proc.MemAccess = Mem(vtero.MemAccess)
     proc.KernelSection = vtero.KernelProc.KernelSection 
     proc.CopySymbolsForVad(vtero.KernelProc)
     PerProcDumpTime = Stopwatch.StartNew()
-    entries = proc.DumpProc(currProcBase + "\\", False, CollectKernel)
-    print "Dumped Process: %s, size: %d, time: %s " % (proc.ShortName, entries*4096, PerProcDumpTime.Elapsed.ToString())
+    #DumpProc uses PageTable to map memory for dump
+    if CollectKernel:
+        entries = proc.DumpProc(currProcBase + "\\", False, CollectKernel)
+    else:
+        # VADDUmp is based on VAD as source for dumping
+        proc.VADDump(currProcBase + "\\", CollectKernel, False)
+    print "Dumped Process: %s, time: %s " % (proc.ShortName, PerProcDumpTime.Elapsed.ToString())
     # use Reloc.Delocate.DeLocateFile to repair a dumped section into a block that matches disk representation 
     # this allows for secure hash validation of memory blocks
 

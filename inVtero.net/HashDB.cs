@@ -21,6 +21,7 @@ using ProtoBuf;
 using inVtero.net.Hashing;
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Threading;
 
 namespace inVtero.net
 {
@@ -53,6 +54,17 @@ namespace inVtero.net
             RelocFolder = relocFolder;
 
             Init();
+        }
+
+        public int BitmapScan(HashRec[] HR)
+        {
+            int SetBits = 0;
+            Parallel.ForEach(HR, (rec) =>
+            {
+                if (GetIdxBit(rec.Index))
+                    Interlocked.Increment(ref SetBits);
+            });
+            return SetBits;
         }
 
         public bool GetIdxBit(ulong bit)
@@ -90,11 +102,18 @@ namespace inVtero.net
             DBEntriesMask = DBEntries - 1;
 
             // is there a bitmap?
-            BitMap = MemoryMappedFile.CreateFromFile(HashDBBitMap, FileMode.OpenOrCreate, "HDBBitMap", DBEntries >> 3);
+            BitMap = MemoryMappedFile.CreateFromFile(HashDBBitMap, FileMode.OpenOrCreate, "HDBBitMap" + Thread.CurrentThread.ManagedThreadId.ToString(), DBEntries >> 3);
             BitMapView = BitMap.CreateViewAccessor();
 
             Bit = new UnsafeHelp();
             Bit.GetBitmapHandle(BitMapView);
+        }
+
+        public void AddNullInput()
+        {
+            FileLoader fl = new FileLoader(this, 32);
+            var wrote = fl.LoadFromMem(new byte[4096]);
+
         }
 
         #region IDisposable Support
