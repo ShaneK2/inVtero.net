@@ -20,6 +20,16 @@ using System.Threading.Tasks;
 
 namespace inVtero.net.Hashing
 {
+
+    // we store in the DB 128 bit total
+    // 4 bits are the blocklen 
+    // 124 upper bits from the hash are stored in the table
+    // the lower N bits (depending on available) are the index
+    // so if it's 192 bit tiger, the upper 124 is stored
+    // the lower 72 are the index (less than that so we loose a few bits)
+    // for example a 1GB table would yield 67108864 entries (26 bits of index)
+    // So for a 1GB table you have 150 bit of hash maintained 
+    // PLUS a length specifier that indicates how large the input was that genrated that hash value
     public struct HashRec
     {
         public HashRec(byte[] Hash, byte blockLen)
@@ -43,8 +53,12 @@ namespace inVtero.net.Hashing
         }
         public byte[] HashData;
         public ulong Index;
-    }
 
+        public override string ToString()
+        {
+            return Index.ToString("X");
+        }
+    }
 
     public class SparseRegion
     {
@@ -60,9 +74,18 @@ namespace inVtero.net.Hashing
         public int Validated;
         public int Failed;
         public int Total;
+
         public double PercentValid { get {  return Total > 0 ? Validated * 100.0 / Total : 0.0; } }
+
+        public override string ToString()
+        {
+            return $"Region: {OriginationInfo,70}\tAddr: {Address,20:X} Len: {Len,8:X} ({Validated,4}/{Total,4}) {PercentValid,12:N3}" ;
+        }
     }
 
+    /// <summary>
+    /// HashRecord is the accounting class primative for storing data about hashrec's 
+    /// </summary>
     public class HashRecord : IComparable
     {
         public List<SparseRegion> Regions;
@@ -72,21 +95,24 @@ namespace inVtero.net.Hashing
             Regions = new List<SparseRegion>();
         }
 
-        public void AddBlock(DetectedProc dp, string Info, long VA, HashRec[] hashes, byte[] data)
+        public void AddBlock(DetectedProc dp, string Info, long VA, HashRec[] hashes, byte[] data = null)
         {
             // first time
             if (Regions.Count == 0)
             {
                 DP = dp;
                 var r = new SparseRegion() { OriginationInfo = Info };
-                r.Data.Add(data);
+                if(data != null)
+                    r.Data.Add(data);
+
                 r.InnerList.Add(hashes);
+                r.SparseAddrs.Add(VA);
                 r.Address = VA;
                 r.Len = 4096;
                 Regions.Add(r);
                 return;
             }
-
+            
             foreach (var r in Regions)
             {
                 // merge
@@ -99,23 +125,17 @@ namespace inVtero.net.Hashing
                     return;
                 }
             }
+            
             var rx = new SparseRegion() { OriginationInfo = Info, Address = VA };
-            rx.Data.Add(data);
+            if(data != null)
+                rx.Data.Add(data);
+
             rx.InnerList.Add(hashes);
             rx.SparseAddrs.Add(VA);
             rx.Len += 4096;
             Regions.Add(rx);
         }
 
-        // we store in the DB 128 bit total
-        // 4 bits are the blocklen 
-        // 124 upper bits from the hash are stored in the table
-        // the lower N bits (depending on available) are the index
-        // so if it's 192 bit tiger, the upper 124 is stored
-        // the lower 72 are the index (less than that so we loose a few bits)
-        // for example a 1GB table would yield 67108864 entries (26 bits of index)
-        // So for a 1GB table you have 150 bit of hash maintained 
-        // PLUS a length specifier that indicates how large the input was that genrated that hash value
         public HashRecord(byte[] Hash, byte blockLen)
         {
             // upper 15 bytes
@@ -159,7 +179,7 @@ namespace inVtero.net.Hashing
         {
             StringBuilder sb = new StringBuilder();
             foreach (var r in Regions)
-                sb.AppendLine($"PID: {DP.ProcessID,6} Region: {r.OriginationInfo,70}\tAddr: {r.Address,20:X} Len: {r.Len,8:X} ({r.Validated,4}/{r.Total,4}) {r.PercentValid,12:N3}");
+                sb.AppendLine(r.ToString());
 
             return sb.ToString();
         }

@@ -25,7 +25,7 @@ vtero = Scan.Scanit(copts)
 
 # Global
 CollectKernel = False
-newdir = copts.FileName + ".dumped.2"
+newdir = copts.FileName + ".dumped.fresh"
 topDir = Directory.CreateDirectory(newdir)
 Vtero.DiagOutput = False
 

@@ -15,8 +15,9 @@ from inVtero.net.Hashing import *
 
 # Basic option handling
 copts = ConfigOptions()
-copts.IgnoreSaveData = True
-copts.FileName = "C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem"   
+copts.IgnoreSaveData = False
+#copts.FileName = "C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem"   
+copts.FileName = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows7.vmem"
 copts.VersionsToEnable = PTType.GENERIC
 # To get some additional output 
 copts.VerboseOutput = True
@@ -30,6 +31,7 @@ vtero = Scan.Scanit(copts)
 # Global
 CollectKernel = False
 Vtero.DiagOutput = False
+Vtero.VerboseLevel = 0
 
 proc_arr = vtero.Processes.ToArray()
 low_proc = proc_arr[0]
@@ -57,23 +59,37 @@ logicalList = vtero.WalkProcList(proc)
 
 vtero.MemAccess.MapViewSize = 128 * 1024
 vtero.KernelProc.InitSymbolsForVad()
-db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*2)
+db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
 fl = FileLoader(db, 128)
 
 for proc in proc_arr:  
+    if proc.CR3Value == vtero.KernelProc.CR3Value:
+        CollectKernel = True
+    else:
+        CollectKernel = False
     valid = 0
     proc.HDB = db
     proc.MemAccess = Mem(vtero.MemAccess)
     proc.KernelSection = vtero.KernelProc.KernelSection  
     proc.CopySymbolsForVad(vtero.KernelProc)
-    Vtero.VerboseLevel = 0
-    hashes = proc.VADHash(True, True)
-    print proc.ToString()
+    proc.ID = vtero.KernelProc.ID
+    hashes = proc.VADHash(CollectKernel, True)
+    fl.HashLookup(proc.HashRecords)
+    if proc.HashRecords is not None:
+        rate = proc.HashRecordRate()
+        if rate == 100.0:
+            Console.ForegroundColor = ConsoleColor.Green
+        else:
+            Console.ForegroundColor = ConsoleColor.Yellow
+        print proc.ToString() + " Validated to " + rate.ToString("N3")
+    else:
+        print "Error in performing hash lookup!!!"
     #print "*** PID [" + proc.ProcessID.ToString() + "] " + Path.GetFileName(proc.OSFileName) + " ***"
-    if hashes is not None and hashes.Length > 0:
-        fl.HashLookup(hashes)
-        for h in hashes:
-            print h.ToString(),
+    if proc.HashRecords is not None and proc.HashRecords.Length > 0:
+        for h in proc.HashRecords:
+            for r in h.Regions:
+                if r.PercentValid != 100.0:
+                    print r.ToString()
     
 
 

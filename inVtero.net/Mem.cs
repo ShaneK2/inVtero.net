@@ -129,6 +129,7 @@ namespace inVtero.net
         {
             // we want a process/thread private name for our mapped view
             mapStream = new FileStream(MemoryDump, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
             mappedFile = MemoryMappedFile.CreateFromFile(mapStream,
                 null,
                 0,
@@ -136,6 +137,7 @@ namespace inVtero.net
                 null,
                 HandleInheritability.None,
                 false);
+
             mappedAccess = mappedFile.CreateViewAccessor(
                 MapViewBase,
                 MapViewSize,

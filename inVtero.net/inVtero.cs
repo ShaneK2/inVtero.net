@@ -459,7 +459,7 @@ namespace inVtero.net
             var sym_dtb = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "Pcb.DirectoryTableBase");
             var sym_ImagePathPtr = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "SeAuditProcessCreationInfo.ImageFileName");
             var sym_procID = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "UniqueProcessId");
-            var sym_vadRoot = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "VadRoot");
+            var sym_vadRoot = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", ".VadRoot");
             var sym_ethr = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "_EPROCESS.ThreadListHead");
             // adjust the first link through 
             //var flink = dp.GetLongValue(PsHeadAddr);

@@ -504,10 +504,13 @@ namespace inVtero.net
                 rightPos = _MMVAD_Def.RightChild.OffsetPos;
                 leftPos = _MMVAD_Def.LeftChild.OffsetPos;
 
-                startingVPNPos = _MMVAD_Def.u.StartingVpn.OffsetPos;
-                endingVPNPPos = _MMVAD_Def.u.EndingVpn.OffsetPos;
-                startHighPos = _MMVAD_Def.u.StartingVpnHigh.OffsetPos;
-                endHighPos = _MMVAD_Def.u.EndingVpnHigh.OffsetPos;
+                startingVPNPos = _MMVAD_Def.StartingVpn.OffsetPos;
+                endingVPNPPos = _MMVAD_Def.EndingVpn.OffsetPos;
+
+                startHighPos = -1;
+                endHighPos = -1;
+                // startHighPos = _MMVAD_Def.StartingVpnHigh.OffsetPos;
+                //endHighPos = _MMVAD_Def.EndingVpnHigh.OffsetPos;
             }
 
             _SUBSECTION_Def = xStructInfo("_SUBSECTION");
@@ -558,10 +561,11 @@ namespace inVtero.net
                 var memRead = GetVirtualLongLen(AddressRoot, vadLength);
 
                 long StartingVPN = 0, EndingVPN = 0;
-                long LeftPtr = 0, RightPtr = 0, VADflags = 0;
+                long LeftPtr = 0, RightPtr = 0;
+                ulong VADflags = 0;
                 bool IsExec = false;
-                VADflags = memRead[flagsOffsetPos / 8];
-                var mask = 1U;
+                VADflags = (ulong) memRead[flagsOffsetPos / 8];
+                var mask = 1UL;
                 for (int x = (int)flagsLength - 1; x > 0; x--)
                 {
                     mask = mask << 1;
@@ -581,17 +585,25 @@ namespace inVtero.net
                 {
                     IsExec = true;
 
-                    int shift = ((int) startHighPos % 8 * 8);
-                    var StartingVPNHighTmp = memRead[ startHighPos / 8];
-                    StartingVPNHighTmp = (StartingVPNHighTmp >> shift) & 0xff;
+                    int shift;
+                    long StartingVPNHighTmp = 0, EndingVPNHighTmp = 0;
 
-                    shift = ((int) startingVPNPos % 8 * 8);
+                    if (startHighPos > 0)
+                    {
+                        shift = ((int)startHighPos % 8 * 8);
+                        StartingVPNHighTmp = memRead[startHighPos / 8];
+                        StartingVPNHighTmp = (StartingVPNHighTmp >> shift) & 0xff;
+                    }
+                    if (endHighPos > 0)
+                    {
+                        shift = ((int)endHighPos % 8 * 8);
+                        EndingVPNHighTmp = memRead[endHighPos / 8];
+                        EndingVPNHighTmp = (EndingVPNHighTmp >> shift) & 0xff;
+                    }
+
+                    shift = ((int)startingVPNPos % 8 * 8);
                     var StartingVPNTmp = memRead[startingVPNPos / 8];
                     StartingVPNTmp = (StartingVPNTmp >> shift) & 0xffffffff;
-
-                    shift = ((int)endHighPos % 8 * 8);
-                    var EndingVPNHighTmp = memRead[endHighPos / 8];
-                    EndingVPNHighTmp = (EndingVPNHighTmp >> shift) & 0xff;
 
                     shift = ((int)endingVPNPPos % 8 * 8);
                     var EndingVPNTmp = memRead[endingVPNPPos / 8];
@@ -624,9 +636,6 @@ namespace inVtero.net
                         if (strLen > strByteArr.Length / 2 || strLen <= 0)
                             strLen = strByteArr.Length / 2;
                         var FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
-
-                        //var pathTrim = FileName.Split('\x0');
-                        //FileName = pathTrim[0];
 
                         if (Vtero.VerboseLevel > 2 & Vtero.DiagOutput)
                             WriteColor($"VAD found executable file mapping {FileName} Mapped @ [{StartingAddress:X}] Length [{Length:X}]");
@@ -866,16 +875,42 @@ namespace inVtero.net
             return hr.ToArray();
         }
 
+        [ProtoIgnore]
+        public HashRecord[] HashRecords;
 
+        public double HashRecordRate()
+        {
+            int procTotal = 0;
+            int procValidate = 0;
+            foreach (var rec in HashRecords)
+            {
+                foreach (var slice in rec.Regions)
+                {
+                    procTotal += slice.Total;
+                    procValidate += slice.Validated;
+                }
+            }
+            if (procTotal < 1)
+                return 0.0d;
+
+            return procValidate * 100.0d / procTotal;
+
+        }
 
         public HashRecord[] VADHash(bool KernelSpace = false, bool DoReReLocate = true, bool ExecOnly = true)
         {
-            ConcurrentStack<HashRecord> hr = new ConcurrentStack<HashRecord>();
+            var hr = new ConcurrentStack<HashRecord>();
+
             if (Sections.Count < 2)
                 ListVad(VadRootPtr);
 
-            Parallel.ForEach(Sections, (s) =>
+            if (KernelSpace)
+                MergeKernelModules();
+
+            foreach (var s in Sections)
             {
+            //Parallel.ForEach(Sections, (s) =>
+            //{
                 string Name = string.Empty;
                 long VA = s.Value.VadAddr;
                 var memsec = s.Value;
@@ -883,13 +918,11 @@ namespace inVtero.net
 
                 var block = VGetBlock(VA, ref PagedIn);
 
-                var sec = GetEnclosingSection(VA, true);
-
                 if (PagedIn)
                     memsec.Module = Extract.IsBlockaPE(block);
 
                 if (ProcessID == 4 && memsec.DebugDetails != null)
-                    memsec.NormalizedName = GetNormalized(memsec.DebugDetails.PdbName, true); 
+                    memsec.NormalizedName = GetNormalized(memsec.DebugDetails.PdbName, true);
                 else
                     memsec.NormalizedName = GetNormalized(memsec.VadFile, true);
 
@@ -903,7 +936,7 @@ namespace inVtero.net
                         continue;
 
                     // skip since we cheated and got the header early
-                    if(SecOffset > 0)
+                    if (SecOffset > 0)
                         block = VGetBlock(VA + SecOffset, ref PagedIn);
 
                     if (!PagedIn)
@@ -911,6 +944,7 @@ namespace inVtero.net
 
                     // apply the section name ".text" watever ;)
                     Name = memsec.NormalizedName;
+                    
                     MiniSection ms = MiniSection.Empty;
 
                     if (memsec.Module != null)
@@ -926,57 +960,45 @@ namespace inVtero.net
                             }
                         }
                     }
-
                     if (PagedIn && (ExecOnly && (ms.IsExec || ms.IsCode)))
                     {
                         // were we able to get allt he details we need to DeLocate (ReReLocate)?
-                        if (DoReReLocate  && sec != null && sec.Module != null )
+                        if (DoReReLocate && memsec != null && memsec.Module != null && HDB != null)
                         {
-                            // just header fix right now
-                            if (SecOffset == 0)
+                            var RelocFolder = memsec.Module.Is64 ? HDB.Reloc64Dir : HDB.Reloc32Dir;
+
+                            var RelocName = $"{memsec.NormalizedName}-*-{memsec.Module.TimeStamp:X}.reloc";
+                            memsec.Module.ExpectedRelocFile = RelocName;
+
+                            var RelocFile = Directory.GetFiles(RelocFolder, RelocName).FirstOrDefault();
+                            if (File.Exists(RelocFile))
                             {
-                                if (sec.Module.ReReState == null && HDB != null)
+                                // take image base from the file since it can be changed in the header
+                                var split = RelocFile.Split('-');
+
+                                memsec.Module.RelocData = DeLocate.ProcessRelocs(File.ReadAllBytes(RelocFile));
+                                memsec.Module.ReReState = new DeLocate();
+                                memsec.Module.ReReState.OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+                                memsec.Module.ReReState.Delta = (ulong)memsec.VadAddr - memsec.Module.ReReState.OrigImageBase;
+
+                                if (memsec.Module.ReReState.OrigImageBase != (ulong)memsec.VA.Address)
                                 {
-                                    var RelocFolder = sec.Module.Is64 ? HDB.Reloc64Dir : HDB.Reloc32Dir;
+                                    if (SecOffset == 0 )
+                                        DeLocate.DelocateHeader(block, memsec.Module.ReReState.OrigImageBase, memsec.Module.ImageBaseOffset, memsec.Module.Is64);
 
-                                    var RelocName = $"{sec.NormalizedName}-*-{sec.Module.TimeStamp:X}.reloc";
-                                    sec.Module.ExpectedRelocFile = RelocName;
-
-                                    var RelocFile = Directory.GetFiles(RelocFolder, RelocName).FirstOrDefault();
-                                    if (File.Exists(RelocFile))
-                                    {
-                                        // take image base from the file since it can be changed in the header
-                                        var split = RelocFile.Split('-');
-
-                                        sec.Module.RelocData = DeLocate.ProcessRelocs(File.ReadAllBytes(RelocFile));
-                                        sec.Module.ReReState = new DeLocate();
-                                        sec.Module.ReReState.OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                                        sec.Module.ReReState.Delta = (ulong)sec.VadAddr - sec.Module.ReReState.OrigImageBase;
-
-                                        DeLocate.DelocateHeader(block, sec.Module.ReReState.OrigImageBase, sec.Module.ImageBaseOffset, sec.Module.Is64);
-
-                                        //WriteColor(ConsoleColor.Green, $"Fixing HEADER for {Name}");
-                                    }
+                                    if (!memsec.Module.Is64)
+                                        memsec.Module.ReReState.DeLocateBuff32(block, (uint)memsec.Module.ReReState.Delta, (uint)SecOffset, memsec.Module.RelocData.ToArray());
+                                    else
+                                        memsec.Module.ReReState.DeLocateBuff64(block, memsec.Module.ReReState.Delta, (ulong)SecOffset, memsec.Module.RelocData.ToArray());
                                 }
                             }
-
-                            /*
-
-                            if (sec.Module.Is64)
-                                sec.Module.ReReState.DeLocateBuff64(block, sec.Module.ReReState.Delta, (ulong)SecOffset, sec.Module.RelocData.ToArray());
-                            else
-                                sec.Module.ReReState.DeLocateBuff32(block, (uint)sec.Module.ReReState.Delta, (uint)SecOffset, sec.Module.RelocData.ToArray());
-                                */
                         }
-                        else if (DoReReLocate && sec != null && sec.Module != null && sec.Module.ReReState == null && Vtero.VerboseLevel > 0)
-                            WriteColor(ConsoleColor.Yellow, $"Unable to load expected relocation data from {sec.Module.ExpectedRelocFile} for {Name} loaded {(VA + SecOffset):X}");
-
+                        else if (DoReReLocate && memsec != null && memsec.Module != null && memsec.Module.ReReState == null && Vtero.VerboseLevel > 0)
+                            WriteColor(ConsoleColor.Yellow, $"Unable to load expected relocation data from {memsec.Module.ExpectedRelocFile} for {Name} loaded {(VA + SecOffset):X}");
 
                         var hrecs = FractHashTree.CreateRecsFromMemory(block, 128, null);
-
                         // same zone
-                        hRecord.AddBlock(this, Name, VA + SecOffset, hrecs, block);
-
+                        hRecord.AddBlock(this, Name, VA + SecOffset, hrecs);
                         /*
                         if(Vtero.VerboseLevel > 0)
                         {
@@ -990,8 +1012,11 @@ namespace inVtero.net
                     }
                 }
                 hr.Push(hRecord);
-            });
-            return hr.ToArray();
+            }
+            //});
+
+            HashRecords = hr.ToArray();
+            return HashRecords;
         }
 
 
@@ -1006,6 +1031,9 @@ namespace inVtero.net
 
             if (Sections.Count < 2)
                 ListVad(VadRootPtr);
+
+            if (KernelSpace)
+                MergeKernelModules();
 
             foreach (var s in Sections)
             {
@@ -1067,82 +1095,82 @@ namespace inVtero.net
             }
         }
 
-        public long DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true)
+        void MergeKernelModules()
         {
             String FileName = string.Empty;
+
+            // add all drivers to sections list
+            var pModuleHead = GetSymValueLong("PsLoadedModuleList");
+            var _LDR_DATA_Def = xStructInfo("_LDR_DATA_TABLE_ENTRY");
+            var _LDR_DATA_ADDR = pModuleHead;
+
+            int LDR_LEN = (int)_LDR_DATA_Def.Length;
+            long DllBaseOffsetOf = _LDR_DATA_Def.DllBase.OffsetPos;
+            long SizeOfImageOffsetOf = _LDR_DATA_Def.SizeOfImage.OffsetPos;
+            long FullDllNameOffsetOf = _LDR_DATA_Def.FullDllName.OffsetPos;
+            long InLoadOrderLinksOffsetOf = _LDR_DATA_Def.InLoadOrderLinks.OffsetPos;
+
+            do
+            {
+                var _LDR_DATA = GetVirtualLongLen(_LDR_DATA_ADDR, vadLength);
+                // get->next pointer
+                _LDR_DATA_ADDR = _LDR_DATA[InLoadOrderLinksOffsetOf / 8];
+
+                var StartingAddress = _LDR_DATA[DllBaseOffsetOf / 8];
+                var Length = _LDR_DATA[SizeOfImageOffsetOf / 8] & 0xffffffff;
+                var lvalue = _LDR_DATA[FullDllNameOffsetOf / 8];
+                var FileNamePtr = _LDR_DATA[(FullDllNameOffsetOf + 8) / 8];
+                if (FileNamePtr != 0)
+                {
+                    var strLen = (short)lvalue & 0xffff;
+                    var strByteArr = GetVirtualByteLen(FileNamePtr, strLen + 2);
+
+                    if (strLen > strByteArr.Length / 2 || strLen <= 0)
+                        strLen = strByteArr.Length / 2;
+                    FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
+                }
+                bool KnownSection = false;
+                // walk memsections and bind this information 
+                foreach (var sec in Sections)
+                {
+                    // kernel ranges < 0 since they sign extend
+                    if (StartingAddress < 0)
+                        StartingAddress = (long)((ulong)StartingAddress & ~0xffff000000000000);
+
+                    if (sec.Key >= StartingAddress && sec.Key < StartingAddress + Length)
+                    {
+                        KnownSection = true;
+                        sec.Value.VadFile = FileName;
+                        sec.Value.VadAddr = StartingAddress;
+                        sec.Value.VadLength = Length;
+                        break;
+                    }
+                }
+
+                // if it's unknown, that the VAD is the sole source of information
+                if (!KnownSection)
+                    Sections.TryAdd(StartingAddress, new MemSection()
+                    {
+                        Length = Length,
+                        VadLength = Length,
+                        VadAddr = StartingAddress,
+                        VadFile = FileName,
+                        Name = FileName,
+                        VA = new VIRTUAL_ADDRESS(StartingAddress)
+                    });
+
+            } while (_LDR_DATA_ADDR != pModuleHead);
+        }
+
+        public long DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true)
+        {
             PageTable.AddProcess(this, new Mem(MemAccess));
 
             if (Sections.Count < 2)
                 ListVad(VadRootPtr);
 
-#region optimized type extraction
-            if(KernelSpace)
-            {
-                // add all drivers to sections list
-                var pModuleHead = GetSymValueLong("PsLoadedModuleList");
-                var _LDR_DATA_Def = xStructInfo("_LDR_DATA_TABLE_ENTRY");
-                var _LDR_DATA_ADDR = pModuleHead;
-
-                int LDR_LEN = (int)_LDR_DATA_Def.Length;
-                long DllBaseOffsetOf = _LDR_DATA_Def.DllBase.OffsetPos;
-                long SizeOfImageOffsetOf = _LDR_DATA_Def.SizeOfImage.OffsetPos;
-                long FullDllNameOffsetOf = _LDR_DATA_Def.FullDllName.OffsetPos;
-                long InLoadOrderLinksOffsetOf = _LDR_DATA_Def.InLoadOrderLinks.OffsetPos;
-
-                do
-                {
-                    var _LDR_DATA = GetVirtualLongLen(_LDR_DATA_ADDR, vadLength);
-                    // get->next pointer
-                    _LDR_DATA_ADDR = _LDR_DATA[InLoadOrderLinksOffsetOf / 8];
-
-                    var StartingAddress = _LDR_DATA[DllBaseOffsetOf / 8];
-                    var Length = _LDR_DATA[SizeOfImageOffsetOf / 8];
-                    var lvalue = _LDR_DATA[FullDllNameOffsetOf / 8];
-                    var FileNamePtr = _LDR_DATA[(FullDllNameOffsetOf + 8) / 8];
-                    if (FileNamePtr != 0)
-                    {
-                        var strLen = (short)lvalue & 0xffff;
-                        var strByteArr = GetVirtualByteLen(FileNamePtr, strLen+2);
-
-                        if (strLen > strByteArr.Length / 2 || strLen <= 0)
-                            strLen = strByteArr.Length / 2;
-                        FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
-                    }
-#endregion
-                    bool KnownSection = false;
-                    // walk memsections and bind this information 
-                    foreach (var sec in Sections)
-                    {
-                        // kernel ranges < 0 since they sign extend
-                        if (StartingAddress < 0)
-                            StartingAddress = (long) ((ulong) StartingAddress & ~0xffff000000000000);
-
-                        if (sec.Key >= StartingAddress && sec.Key < StartingAddress + Length)
-                        {
-                            KnownSection = true;
-                            sec.Value.VadFile = FileName;
-                            sec.Value.VadAddr = StartingAddress;
-                            sec.Value.VadLength = Length;
-                            break;
-                        }
-                    }
-
-                    // if it's unknown, that the VAD is the sole source of information
-                    if (!KnownSection)
-                        Sections.TryAdd(StartingAddress, new MemSection()
-                        {
-                            Length = Length,
-                            VadLength = Length,
-                            VadAddr = StartingAddress,
-                            VadFile = FileName,
-                            Name = FileName,
-                            VA = new VIRTUAL_ADDRESS(StartingAddress)
-                        });
-
-                } while (_LDR_DATA_ADDR != pModuleHead);
-            }
-
-            //var cnt = PT.FillPageQueue(false, KernelSpace);
+            if (KernelSpace)
+                MergeKernelModules();
 
             Folder = Folder + Path.DirectorySeparatorChar.ToString();
             Directory.CreateDirectory(Folder);
@@ -1554,8 +1582,6 @@ namespace inVtero.net
         public Mem MemAccess { get; set; }
         [ProtoIgnore]
         public string ShortName { get { if (vmcs != null) return $"{vmcs.EPTP:X}-{CR3Value:X}"; return $"{CR3Value:X}"; } }
-
-        public object InnerList { get; private set; }
 
         public override string ToString() => $"Process PID [{ProcessID,10}] CR3 [{CR3Value,16:X12}] Path [{OSPath,50}]";    // Type [{PageTableType,12}] VMCS [{vmcs,16}]";
 
