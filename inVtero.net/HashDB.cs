@@ -39,11 +39,7 @@ namespace inVtero.net
         public string Reloc32Dir;
 
         [ProtoIgnore]
-        public MemoryMappedFile BitMap;
-        [ProtoIgnore]
-        public MemoryMappedViewAccessor BitMapView;
-        [ProtoIgnore]
-        public UnsafeHelp Bit;
+        UnsafeHelp HDBBitMap;
 
         public HashDB(string DB, string relocFolder, long Size = 0) 
         {
@@ -59,22 +55,23 @@ namespace inVtero.net
         public int BitmapScan(HashRec[] HR)
         {
             int SetBits = 0;
-            Parallel.ForEach(HR, (rec) =>
-            {
-                if (GetIdxBit(rec.Index))
-                    Interlocked.Increment(ref SetBits);
-            });
+            //Parallel.ForEach(HR, (rec) =>
+            //{
+            for(int i=0; i < HR.Length; i++)
+                if (GetIdxBit(HR[i].Index))
+                    SetBits++;
+            //});
             return SetBits;
         }
 
         public bool GetIdxBit(ulong bit)
         {
-            return Bit.GetBit(BitMapView, ((long) bit >> 4) & DBEntriesMask);
+            return HDBBitMap.GetBit(((long) bit >> 4) & DBEntriesMask);
         }
 
         public void SetIdxBit(ulong bit)
         {
-            Bit.SetBit(BitMapView, ((long) bit >> 4) & DBEntriesMask);
+            HDBBitMap.SetBit(((long) bit >> 4) & DBEntriesMask);
         }
 
         void Init()
@@ -101,19 +98,13 @@ namespace inVtero.net
             DBEntries = DBSize >> 4;
             DBEntriesMask = DBEntries - 1;
 
-            // is there a bitmap?
-            BitMap = MemoryMappedFile.CreateFromFile(HashDBBitMap, FileMode.OpenOrCreate, "HDBBitMap" + Thread.CurrentThread.ManagedThreadId.ToString(), DBEntries >> 3);
-            BitMapView = BitMap.CreateViewAccessor();
-
-            Bit = new UnsafeHelp();
-            Bit.GetBitmapHandle(BitMapView);
+            HDBBitMap = new UnsafeHelp(HashDBBitMap);
         }
 
         public void AddNullInput()
         {
             FileLoader fl = new FileLoader(this, 32);
             var wrote = fl.LoadFromMem(new byte[4096]);
-
         }
 
         #region IDisposable Support
@@ -124,28 +115,19 @@ namespace inVtero.net
             if (!disposedValue)
             {
                 if (disposing)
-                { }
-
-                if (BitMapView != null && Bit != null)
                 {
-                    Bit.ReleaseBitmapHandle(BitMapView);
-                    Bit = null;
-                }
-                if (BitMapView != null)
-                    BitMapView.Dispose();
-                if(BitMap != null)
-                    BitMap.Dispose();
+                    if (HDBBitMap != null)
+                        HDBBitMap.Dispose();
 
-                disposedValue = true;
+                    HDBBitMap = null;
+
+                    disposedValue = true;
+                }
             }
         }
-
-        ~HashDB() {
-           // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-           Dispose(false);
-         }
-
-        // This code added to correctly implement the disposable pattern.
+        //~HashDB() {
+        //   Dispose(false);
+        // }
         public void Dispose()
         {
             Dispose(true);

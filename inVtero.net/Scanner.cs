@@ -37,7 +37,7 @@ namespace inVtero.net
     /// Scanner is a file based scanning class
     /// </summary>
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
-    public class Scanner
+    public class Scanner 
     {
         // for diagnostic printf's
         int MAX_LINE_WIDTH = Console.WindowWidth;

@@ -31,7 +31,7 @@ using System.Buffers;
 
 namespace inVtero.net.Hashing
 {
-    public class FileLoader
+    public class FileLoader : IDisposable
     {
         HashDB HDB;
 
@@ -201,49 +201,45 @@ namespace inVtero.net.Hashing
             var rv = new List<bool>(Count);
             var DBEntriesMask = HDB.DBEntries - 1;
 
-            using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, PageSize * 2))
+            for (int i = 0; i < hashArr.Length; i++)
             {
-                for (int i = 0; i < hashArr.Length; i++)
+                var hashModule = hashArr[i];
+                for (int l = 0; l < hashModule.Regions.Count; l++)
                 {
-                    var hashModule = hashArr[i];
-                    for (int l = 0; l < hashModule.Regions.Count; l++)
+                    var hashRegion = hashArr[i].Regions[l];
+                    for (int m = 0; m < hashRegion.InnerList.Count; m++)
                     {
-                        var hashRegion = hashArr[i].Regions[l];
-                        for (int m = 0; m < hashRegion.InnerList.Count; m++)
+                        var CheckHashes = hashArr[i].Regions[l].InnerList[m];
+                        var checkedArr = HashRecLookup(CheckHashes).ToArray();
+
+                        /*
+                        if (hashRegion.OriginationInfo.Contains("rmclient.dll.text"))
                         {
-                            var CheckHashes = hashArr[i].Regions[l].InnerList[m];
-                            var checkedArr = HashRecLookup(CheckHashes).ToArray();
 
-                            /*
-                            if (hashRegion.OriginationInfo.Contains("rmclient.dll.text"))
+                            var addr = hashRegion.SparseAddrs[m];
+
+                            var name = $"c:\\temp\\dumptest\\{hashRegion.OriginationInfo}-{addr:X}.bin";
+                            using (var dt = new FileStream(name, FileMode.Create, FileAccess.Write, FileShare.None, 4096))
                             {
-
-                                var addr = hashRegion.SparseAddrs[m];
-
-                                var name = $"c:\\temp\\dumptest\\{hashRegion.OriginationInfo}-{addr:X}.bin";
-                                using (var dt = new FileStream(name, FileMode.Create, FileAccess.Write, FileShare.None, 4096))
-                                {
-                                    dt.Seek(addr - hashRegion.Address + 1024, SeekOrigin.Begin);
-                                    dt.Write(hashRegion.Data[m], 0, 4096);
-                                }
-                            }
-                            */
-                            
-
-                            hashRegion.InnerCheckList.Add(checkedArr);
-                            hashRegion.Total += checkedArr.Length;
-
-                            // update aggrogate counters
-                            for (int n = 0; n < checkedArr.Length; n++)
-                            {
-                                if (checkedArr[n])
-                                    hashArr[i].Regions[l].Validated++;
-                                else
-                                    hashArr[i].Regions[l].Failed++;
+                                dt.Seek(addr - hashRegion.Address + 1024, SeekOrigin.Begin);
+                                dt.Write(hashRegion.Data[m], 0, 4096);
                             }
                         }
+                        */
 
+                        hashRegion.InnerCheckList.Add(checkedArr);
+                        hashRegion.Total += checkedArr.Length;
+
+                        // update aggrogate counters
+                        for (int n = 0; n < checkedArr.Length; n++)
+                        {
+                            if (checkedArr[n])
+                                hashArr[i].Regions[l].Validated++;
+                            else
+                                hashArr[i].Regions[l].Failed++;
+                        }
                     }
+
                 }
             }
             return;
@@ -300,7 +296,6 @@ namespace inVtero.net.Hashing
 
                             // Hash to populate the DB with
                             var toWrite = hashArr[i].HashData;
-
                             // do we already have this hash from disk? 
                             firstIndex = buff.SearchBytes(toWrite, PageIndex, 16);
                             if (firstIndex < 0)
@@ -780,6 +775,45 @@ namespace inVtero.net.Hashing
 
             return (x.Index & SortMask) == (y.Index & SortMask) ? 0 : (x.Index & SortMask) > (y.Index & SortMask) ? 1 : -1;
         }
+
+        #region IDisposable Support
+        private bool disposedValue = false; // To detect redundant calls
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    if (HDB != null)
+                        HDB.Dispose();
+
+
+                    if (ReadyQueue != null)
+                        ReadyQueue.Dispose();
+
+                    HDB = null;
+                    ReadyQueue = null;
+                }
+                disposedValue = true;
+            }
+        }
+
+        // TODO: override a finalizer only if Dispose(bool disposing) above has code to free unmanaged resources.
+        // ~FileLoader() {
+        //   // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+        //   Dispose(false);
+        // }
+
+        // This code added to correctly implement the disposable pattern.
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+            Dispose(true);
+            // TODO: uncomment the following line if the finalizer is overridden above.
+            // GC.SuppressFinalize(this);
+        }
+        #endregion
         #endregion
 
     }

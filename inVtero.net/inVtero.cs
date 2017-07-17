@@ -36,6 +36,8 @@ using static inVtero.net.Misc;
 // TODO: Implement 5 level page table traversal (new intel spec)
 using System.Dynamic;
 using libyaraNET;
+using inVtero.net.Hashing;
+using System.IO.MemoryMappedFiles;
 
 namespace inVtero.net
 {
@@ -46,13 +48,13 @@ namespace inVtero.net
     /// Rooting everything off of a main class helps the structure a bit
     /// </summary>
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
-    public class Vtero
+    public class Vtero : IDisposable
     {
-        public static Action ProgressCallback;
-
         public string MemFile;
         public long FileSize;
         public double GroupThreshold;
+
+        ConfigOptions ConfOpts;
 
         // Preserve detected results to avoid aggressive kernel / symbol scanning loading
         public DetectedProc KernelProc;
@@ -80,7 +82,9 @@ namespace inVtero.net
         // Each VMCS found
         public ConcurrentDictionary<long, VMCS> VMCSs;
 
-        //WAHBitArray PFNdb;
+        [ProtoIgnore]
+        UnsafeHelp PFNBitmap;
+
         public ConcurrentDictionary<int, ConcurrentBag<DetectedProc>> ASGroups;
 
         public Mem MemAccess { get; set; }
@@ -132,13 +136,16 @@ namespace inVtero.net
         [ProtoMember(99)]
         Scanner scan;
 
+        Guid ID;
+
         public Vtero()
         {
-
             Processes = new ConcurrentBag<DetectedProc>();
             VMCSs = new ConcurrentDictionary<long, VMCS>();
             GroupThreshold = 0.5;
             Phase = 1;
+
+            ID = Guid.NewGuid();
 
 #if DEBUGX 
             VerboseOutput = true;
@@ -151,9 +158,7 @@ namespace inVtero.net
             }
 
             ProgressBarz.pBarColor = ConsoleColor.Yellow;
-
         }
-        
 
         public Vtero(string MemoryDump) :this()
         {
@@ -161,6 +166,9 @@ namespace inVtero.net
             FileSize = new FileInfo(MemFile).Length;
             DeriveMemoryDescriptors();
             scan = new Scanner(MemFile, this);
+
+            // MemAccess.MaxLimit is max pages after index by the memory runs
+            PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
 
         }
 
@@ -171,6 +179,14 @@ namespace inVtero.net
             MRD = MD;
             MemAccess = Mem.InitMem(MemFile, MRD);
             scan = new Scanner(MemFile, this);
+
+            // MemAccess.MaxLimit is max pages after index by the memory runs
+            PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
+        }
+
+        public Vtero(ConfigOptions co) : this(co.FileName)
+        {
+            ConfOpts = co;
         }
 
         /// <summary>
@@ -316,27 +332,62 @@ namespace inVtero.net
             return dp.ExtractCVDebug(sec);
         }
 
-        // These parallel function's almost always are I/O bound and slwoer 
-        public Tuple<long, string, string>[][] HashAllProcs()
+        // These parallel function's almost always are I/O bound and slower 
+        public void HashAllProcs(string DB, string Relocs, long Size, bool DoBitmapScan = true)
         {
             ConcurrentBag<Tuple<long, string, string>[]> rv = new ConcurrentBag<Tuple<long, string, string>[]>();
+            HashRecord[] hr;
+
+            WalkProcList(KernelProc);
 
             KernelProc.InitSymbolsForVad();
+            var db = new HashDB(DB, Relocs, Size);
+            var fl = new FileLoader(db, 128);
+            MemAccess.MapViewSize = 128 * 1024;
 
-            Parallel.ForEach<DetectedProc>(Processes, proc =>
+            foreach (var proc in Processes)
             {
-                var doKernel = (proc.CR3Value == KernelProc.CR3Value);
-                proc.KernelSection = KernelProc.KernelSection;
-                proc.CopySymbolsForVad(KernelProc);
+                bool CollectKernel = false;
+
+                if (proc.CR3Value == KernelProc.CR3Value)
+                    CollectKernel = true;
+                else
+                    CollectKernel = false;
 
                 using (proc.MemAccess = new Mem(MemAccess))
                 {
-                    //var procHashSet = proc.HashGenBlocks(doKernel);
-                    //rv.Add(procHashSet);
-                }
-            });
+                    proc.HDB = db;
+                    proc.KernelSection = KernelProc.KernelSection;
+                    proc.CopySymbolsForVad(KernelProc);
+                    proc.ID = KernelProc.ID;
 
-            return rv.ToArray();
+
+                    hr = proc.VADHash(CollectKernel, true, true, true, DoBitmapScan);
+                    if(!DoBitmapScan)
+                        fl.HashLookup(proc.HashRecords);
+
+                    var rate = proc.HashRecordRate();
+
+                    if (rate == 100.0)
+                        WriteColor(ConsoleColor.Green, $"{proc} Validated to {rate:N3}");
+                    else
+                    {
+                        WriteColor(ConsoleColor.Yellow, $"{proc} Validated to {rate:N3}");
+                        if (proc.HashRecords != null && proc.HashRecords.Length > 0)
+                        {
+                            foreach (var h in proc.HashRecords)
+                            {
+                                foreach (var r in h.Regions)
+                                {
+                                    if (r.PercentValid != 100.0d)
+                                        WriteColor(ConsoleColor.Yellow, $"{r}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return;
         }
 
         public ScanResult[] YaraAll(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
@@ -1592,6 +1643,50 @@ DoubleBreak:
             ContigSize = 0;
             return string.Empty;
         }
-#endregion
+
+        private bool disposedValue = false;
+        public void Dispose(bool disposing)
+        {
+            if (!disposedValue && (ConfOpts != null && !ConfOpts.IgnoreSaveData))
+                CheckpointSaveState();
+
+            if (!disposedValue && disposing)
+            {
+                if (Processes != null)
+                {
+                    // kernelproc is included in this
+                    var procs = Processes.ToArray();
+
+
+                    for (int i = 0; i < procs.Count(); i++)
+                    {
+                        procs[i].Dispose();
+                        procs[i] = null;
+                    }
+
+                    // these should all be somewhat shared to the same objects
+                    Processes = null;
+                    AddressSpace = null;
+                    KernelProc = null;
+                    ASGroups = null;
+                    VMCSs = null;
+                    procs = null;
+                }
+                if (MemAccess != null)
+                    ((IDisposable)MemAccess).Dispose();
+                if (PFNBitmap == null)
+                    ((IDisposable)PFNBitmap).Dispose();
+
+
+                MemAccess = null;
+                PFNBitmap = null;
+            }
+            disposedValue = true;
+        }
+        public void Dispose()
+        {
+            Dispose(true);
+        }
+        #endregion
     }
 }

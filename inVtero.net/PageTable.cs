@@ -32,7 +32,7 @@ namespace inVtero.net
     /// TODO: Convert all of the names into tee http://www.pagetable.com/?p=308 convention :)
     /// </summary>
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
-    public class PageTable
+    public class PageTable : IDisposable
     {
         // failed List is the list of entries which were not able to load
         // this is usually the result of a miscalculated memory run configuration
@@ -519,6 +519,25 @@ namespace inVtero.net
             }
 
             return MemRanges;
+        }
+
+        private bool disposedValue = false;
+        public void Dispose(bool disposing)
+        {
+            if (!disposedValue && disposing)
+            {
+                if (mem != null)
+                    ((IDisposable)mem).Dispose();
+                if (DP != null)
+                    ((IDisposable)DP).Dispose();
+            }
+            mem = null;
+            DP = null;
+            disposedValue = true;
+        }
+        public void Dispose()
+        {
+            Dispose(true);
         }
     }
 }

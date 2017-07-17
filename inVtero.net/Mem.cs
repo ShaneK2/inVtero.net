@@ -94,6 +94,9 @@ namespace inVtero.net
         const long LARGE_PAGE_SIZE = 1024 * 1024 * 2;
 
         [ProtoIgnore]
+        UnsafeHelp DumpedPFNBitmap;
+
+        [ProtoIgnore]
         public long MapViewBase;
         [ProtoIgnore]
         public long MapViewSize;
@@ -144,10 +147,15 @@ namespace inVtero.net
                 MemoryMappedFileAccess.Read);
         }
 
+        [ProtoIgnore]
+        Guid ID;
 
         public Mem(Mem parent) : this()
         {
             MD = parent.MD;
+            ID = parent.ID;
+
+            DumpedPFNBitmap = new UnsafeHelp(ID.ToString(), MaxLimit >> sizeof(long), true);
 
             StartOfMemory = parent.StartOfMemory;
             MemoryDump = parent.MemoryDump;
@@ -155,6 +163,27 @@ namespace inVtero.net
             MapViewSize = parent.MapViewSize;
 
             SetupStreams();
+        }
+
+        /// <summary>
+        /// This bitmap is shared between all processes in the same group 
+        /// </summary>
+        public void ResetDumpBitmap()
+        {
+            DumpedPFNBitmap.MemSetBitmap(0);
+        }
+
+        public bool IsDumpedPFN(HARDWARE_ADDRESS_ENTRY PTE)
+        {
+            if (PTE.PFN == 0xffffffffff)
+                return true;
+
+            return DumpedPFNBitmap.GetBit(PTE.PFN);
+        }
+
+        public void SetDumpedPFN(HARDWARE_ADDRESS_ENTRY PTE)
+        {
+            DumpedPFNBitmap.SetBit(PTE.PFN);
         }
 
         public static Mem InitMem(String mFile, AMemoryRunDetector Detector, uint[] BitmapArray = null) //: this()
@@ -189,6 +218,9 @@ namespace inVtero.net
                 if (Detector != null)
                     thiz.MD = Detector;
             }
+
+            thiz.ID = new Guid();
+            thiz.DumpedPFNBitmap = new UnsafeHelp(thiz.ID.ToString(), thiz.MaxLimit >> MagicNumbers.LONG_SHIFT, true);
 
             thiz.SetupStreams();
 

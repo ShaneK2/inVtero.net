@@ -99,7 +99,7 @@ namespace inVtero.net
             // large page read
             if (entry != null && entry.PTE.LargePage)
             {
-                block = new byte[MagicNumbers.LARG_PAGE_SIZE];
+                block = new byte[MagicNumbers.LARGE_PAGE_SIZE];
                 memAxss.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
                 if (GotData)
                     rv = FastPE(Start, block);

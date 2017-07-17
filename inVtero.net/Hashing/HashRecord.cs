@@ -32,7 +32,7 @@ namespace inVtero.net.Hashing
     // PLUS a length specifier that indicates how large the input was that genrated that hash value
     public struct HashRec
     {
-        public HashRec(byte[] Hash, byte blockLen)
+        public HashRec(byte[] Hash, byte blockLen, long VA = 0)
         {
             // upper 15 bytes
             HashData = new byte[16];
@@ -50,9 +50,12 @@ namespace inVtero.net.Hashing
 
             // shift up since were 16 byte aligned
             Index = BitConverter.ToUInt64(Hash, indexLoc) << 4;
+
         }
         public byte[] HashData;
         public ulong Index;
+
+        public int Size { get { return HashData[15] & 0xf; } }
 
         public override string ToString()
         {
@@ -89,20 +92,54 @@ namespace inVtero.net.Hashing
     public class HashRecord : IComparable
     {
         public List<SparseRegion> Regions;
-        public DetectedProc DP;
 
         public HashRecord() {
             Regions = new List<SparseRegion>();
         }
 
-        public void AddBlock(DetectedProc dp, string Info, long VA, HashRec[] hashes, byte[] data = null)
+        public void AddBlock(string Info, long VA, int totalChecked, int validated)
+        {
+            if (Regions.Count == 0)
+            {
+                var r = new SparseRegion() { OriginationInfo = Info };
+                r.SparseAddrs.Add(VA);
+                r.Address = VA;
+                r.Len = 4096;
+                r.Validated = validated;
+                r.Total = totalChecked;
+                Regions.Add(r);
+                return;
+            }
+
+            foreach (var r in Regions)
+            {
+                // merge
+                if (Info == r.OriginationInfo)
+                {
+                    r.Validated += validated;
+                    r.Total += totalChecked;
+                    r.Len += 4096;
+                    r.SparseAddrs.Add(VA);
+                    return;
+                }
+            }
+
+            var rx = new SparseRegion() { OriginationInfo = Info, Address = VA };
+            rx.SparseAddrs.Add(VA);
+            rx.Len += 4096;
+            rx.Validated += validated;
+            rx.Total += totalChecked;
+
+            Regions.Add(rx);
+        }
+
+        public void AddBlock(string Info, long VA, HashRec[] hashes, byte[] data = null)
         {
             // first time
             if (Regions.Count == 0)
             {
-                DP = dp;
                 var r = new SparseRegion() { OriginationInfo = Info };
-                if(data != null)
+                if (data != null)
                     r.Data.Add(data);
 
                 r.InnerList.Add(hashes);
@@ -112,7 +149,7 @@ namespace inVtero.net.Hashing
                 Regions.Add(r);
                 return;
             }
-            
+
             foreach (var r in Regions)
             {
                 // merge
@@ -125,9 +162,9 @@ namespace inVtero.net.Hashing
                     return;
                 }
             }
-            
+
             var rx = new SparseRegion() { OriginationInfo = Info, Address = VA };
-            if(data != null)
+            if (data != null)
                 rx.Data.Add(data);
 
             rx.InnerList.Add(hashes);
@@ -135,6 +172,7 @@ namespace inVtero.net.Hashing
             rx.Len += 4096;
             Regions.Add(rx);
         }
+
 
         public HashRecord(byte[] Hash, byte blockLen)
         {

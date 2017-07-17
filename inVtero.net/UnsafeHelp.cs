@@ -25,10 +25,59 @@ using System.Text;
 
 namespace inVtero.net
 {
-    public unsafe class UnsafeHelp
+    public unsafe class UnsafeHelp : IDisposable
     {
         const int WORD_MOD_SIZE = 63;
         const int WORD_BIT_SHIFT = 6; // right shift 5 = /32, 4 = /16
+
+        public MemoryMappedFile BitMap;
+        public MemoryMappedViewAccessor BitMapView;
+        public long BitmapLen;
+
+        public UnsafeHelp(string BitmapFileName, long ByteSize = 0, bool InMemory = false)
+        {
+            var bitmapName = "UnsafeBitmap" + Path.GetFileNameWithoutExtension(BitmapFileName);
+
+            if (InMemory)
+            {
+                try
+                {
+                    BitMap = MemoryMappedFile.CreateOrOpen(
+                        bitmapName, 
+                        ByteSize, 
+                        MemoryMappedFileAccess.ReadWrite);
+                } catch (Exception ex)
+                {
+                    throw new MemoryMapWindowFailedException($"Unable to setup mapping for {BitmapFileName}", ex);
+                }
+            }
+            else
+            {
+                // is there a bitmap 
+                try
+                {
+                    BitMap = MemoryMappedFile.OpenExisting(bitmapName, MemoryMappedFileRights.ReadWrite);
+                }
+                catch (Exception ex)
+                {
+                    long len = (int)new FileInfo(BitmapFileName).Length;
+
+                    if (BitMap == null && !InMemory)
+                        BitMap = MemoryMappedFile.CreateFromFile(
+                                BitmapFileName,
+                                FileMode.OpenOrCreate,
+                                bitmapName,
+                                len);
+                }
+            }
+
+            if (File.Exists(BitmapFileName) && BitMap == null && !InMemory)
+                throw new FileLoadException($"Can not load bitmap from {BitmapFileName}");
+
+            BitMapView = BitMap.CreateViewAccessor();
+            BitmapLen = BitMapView.Capacity;
+            GetBitmapHandle();
+        }
 
         public static unsafe void ReadBytes<T>(MemoryMappedViewAccessor view, long offset, ref T[] arr, int Count = 512)
         {
@@ -51,19 +100,24 @@ namespace inVtero.net
 
         long* lp = (long *)0;
 
-        public unsafe void GetBitmapHandle(MemoryMappedViewAccessor view)
+        public unsafe void MemSetBitmap(int c)
+        {
+            SetMemory(lp, 0, (ulong) BitmapLen);
+        }
+
+        public unsafe void GetBitmapHandle()
         {
             var ptr = (byte*)0;
-            view.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
+            BitMapView.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
             lp = (long *)ptr;
         }
 
-        public unsafe void ReleaseBitmapHandle(MemoryMappedViewAccessor view)
+        public unsafe void ReleaseBitmapHandle()
         {
-            view.SafeMemoryMappedViewHandle.ReleasePointer();
+            BitMapView.SafeMemoryMappedViewHandle.ReleasePointer();
         }
 
-        public unsafe bool GetBit(MemoryMappedViewAccessor view, long bit)
+        public unsafe bool GetBit(long bit)
         {
             long slot = lp[(bit >> WORD_BIT_SHIFT)];
             long bitMasked = (1L << (int)(bit & WORD_MOD_SIZE));
@@ -71,7 +125,7 @@ namespace inVtero.net
             return slotBit != 0;
 
         }
-        public unsafe void SetBit(MemoryMappedViewAccessor view, long bit)
+        public unsafe void SetBit(long bit)
         {
             lp[(bit >> WORD_BIT_SHIFT)] |= (1L << (int)(bit & WORD_MOD_SIZE));
         }
@@ -99,6 +153,9 @@ namespace inVtero.net
 
             return rv;
         }
+
+        [DllImport("msvcrt.dll", EntryPoint = "memset", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
+        public static unsafe extern void* SetMemory(void* dest, int c, ulong count);
 
         [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
         public static unsafe extern void* CopyMemory(void* dest, void* src, ulong count);
@@ -263,5 +320,35 @@ namespace inVtero.net
                 CloseHandle(h);
             }
         }
+
+        #region IDisposable Support
+        private bool disposedValue = false; // To detect redundant calls
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    ReleaseBitmapHandle();
+                    BitMapView.Dispose();
+                    BitMap.Dispose();
+                }
+                // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
+                // TODO: set large fields to null.
+
+                disposedValue = true;
+            }
+        }
+        // This code added to correctly implement the disposable pattern.
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+            Dispose(true);
+            // TODO: uncomment the following line if the finalizer is overridden above.
+            // GC.SuppressFinalize(this);
+        }
+        #endregion
+
     }
 }

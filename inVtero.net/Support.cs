@@ -33,11 +33,13 @@ namespace inVtero.net
  
     public static class MagicNumbers
     {
-        public const int LARG_PAGE_SIZE = 1024*1024*2;
+        public const int LARGE_PAGE_SIZE = 1024*1024*2;
         public const int PAGE_SIZE = 0x1000;
         public const int PE_TYPICAL_HEADER_SIZE = 0x400;
         public const int KERNEL_PT_INDEX_START_USUALLY = 256;
         public const int PAGE_SHIFT = 12;
+        public const int HASH_SHIFT = 4; // 16 bytes each
+        public const int LONG_SHIFT = 3; // to represent a set of longs as bits
         public const long BAD_VALUE_READ = -0xbad00;
         public const long BAD_RUN_CONFIG_READ = -0xbad01;
         public const long PAGE_REQUESTED_IS_IN_RUN_GAP = -0xbad02;

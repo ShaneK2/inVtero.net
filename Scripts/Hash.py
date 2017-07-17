@@ -16,8 +16,8 @@ from inVtero.net.Hashing import *
 # Basic option handling
 copts = ConfigOptions()
 copts.IgnoreSaveData = False
-#copts.FileName = "C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem"   
-copts.FileName = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows7.vmem"
+copts.FileName = "C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem"   
+#copts.FileName = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows7.vmem"
 copts.VersionsToEnable = PTType.GENERIC
 # To get some additional output 
 copts.VerboseOutput = True
@@ -54,42 +54,47 @@ else:
 kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
 Console.ForegroundColor = ConsoleColor.Cyan
 print "kernel build: " + kMinorVer.ToString()
+
+vtero.HashAllProcs("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4, True);
+
+
 # Use dynamic typing to walk EPROCES 
-logicalList = vtero.WalkProcList(proc)
 
-vtero.MemAccess.MapViewSize = 128 * 1024
-vtero.KernelProc.InitSymbolsForVad()
-db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
-fl = FileLoader(db, 128)
+#logicalList = vtero.WalkProcList(proc)
 
-for proc in proc_arr:  
-    if proc.CR3Value == vtero.KernelProc.CR3Value:
-        CollectKernel = True
-    else:
-        CollectKernel = False
-    valid = 0
-    proc.HDB = db
-    proc.MemAccess = Mem(vtero.MemAccess)
-    proc.KernelSection = vtero.KernelProc.KernelSection  
-    proc.CopySymbolsForVad(vtero.KernelProc)
-    proc.ID = vtero.KernelProc.ID
-    hashes = proc.VADHash(CollectKernel, True)
-    fl.HashLookup(proc.HashRecords)
-    if proc.HashRecords is not None:
-        rate = proc.HashRecordRate()
-        if rate == 100.0:
-            Console.ForegroundColor = ConsoleColor.Green
-        else:
-            Console.ForegroundColor = ConsoleColor.Yellow
-        print proc.ToString() + " Validated to " + rate.ToString("N3")
-    else:
-        print "Error in performing hash lookup!!!"
-    #print "*** PID [" + proc.ProcessID.ToString() + "] " + Path.GetFileName(proc.OSFileName) + " ***"
-    if proc.HashRecords is not None and proc.HashRecords.Length > 0:
-        for h in proc.HashRecords:
-            for r in h.Regions:
-                if r.PercentValid != 100.0:
-                    print r.ToString()
+#vtero.MemAccess.MapViewSize = 128 * 1024
+#vtero.KernelProc.InitSymbolsForVad()
+#db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
+#fl = FileLoader(db, 128)
+
+#for proc in proc_arr:  
+#    if proc.CR3Value == vtero.KernelProc.CR3Value:
+#        CollectKernel = True
+#    else:
+#        CollectKernel = False
+#    valid = 0
+#    proc.HDB = db
+#    proc.MemAccess = Mem(vtero.MemAccess)
+#    proc.KernelSection = vtero.KernelProc.KernelSection  
+#    proc.CopySymbolsForVad(vtero.KernelProc)
+#    proc.ID = vtero.KernelProc.ID
+#    hashes = proc.VADHash(CollectKernel, True, True, True)
+#    fl.HashLookup(proc.HashRecords)
+#    if proc.HashRecords is not None:
+#        rate = proc.HashRecordRate()
+#        if rate == 100.0:
+#            Console.ForegroundColor = ConsoleColor.Green
+#        else:
+#            Console.ForegroundColor = ConsoleColor.Yellow
+#        print proc.ToString() + " Validated to " + rate.ToString("N3")
+#    else:
+#        print "Error in performing hash lookup!!!"
+#    #print "*** PID [" + proc.ProcessID.ToString() + "] " + Path.GetFileName(proc.OSFileName) + " ***"
+#    if proc.HashRecords is not None and proc.HashRecords.Length > 0:
+#        for h in proc.HashRecords:
+#            for r in h.Regions:
+#                if r.PercentValid != 100.0:
+#                    print r.ToString()
     
 
 

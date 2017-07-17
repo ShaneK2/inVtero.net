@@ -38,7 +38,7 @@ namespace inVtero.net.Hashing
         public ConcurrentDictionary<int, List<HashRecord>> hashes;
 
 
-        public static HashRec[] CreateRecsFromMemory(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP, int OnlySize = 0)
+        public static HashRec[] CreateRecsFromMemory(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP, int OnlySize = 0, long VA = 0)
         {
             if (MemPage == null)
                 return null;

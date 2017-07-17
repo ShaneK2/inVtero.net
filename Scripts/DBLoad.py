@@ -13,15 +13,15 @@ from System.Diagnostics import Stopwatch
 from inVtero.net.Hashing import *
 
 Vtero.VerboseLevel = 1
-aBufferCount = 50000000
+aBufferCount = 10000000
 db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
 db.AddNullInput()
 fl = FileLoader(db, 128)
 fl.BufferCount = aBufferCount 
 
-fl.LoadFromPath("g:\\")
+#fl.LoadFromPath("g:\\")
 #fl.LoadFromPath("c:\\temp\\single\\")
-
+fl.LoadFromPath("g:\\Program Files\\VMware\\")
 
 
 #rv = fl.FileChecker("c:\\temp\\advapi32.dll.text", True)
