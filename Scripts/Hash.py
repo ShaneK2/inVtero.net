@@ -57,6 +57,8 @@ print "kernel build: " + kMinorVer.ToString()
 
 vtero.HashAllProcs("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4, True);
 
+print "Done! Total runtime: " + TotalRunTime.Elapsed.ToString()
+
 
 # Use dynamic typing to walk EPROCES 
 
@@ -65,7 +67,7 @@ vtero.HashAllProcs("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4, True)
 #vtero.MemAccess.MapViewSize = 128 * 1024
 #vtero.KernelProc.InitSymbolsForVad()
 #db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
-#fl = FileLoader(db, 128)
+#fl = FileLoader(db)
 
 #for proc in proc_arr:  
 #    if proc.CR3Value == vtero.KernelProc.CR3Value:
@@ -98,8 +100,6 @@ vtero.HashAllProcs("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4, True)
     
 
 
-
-print "Done! Total runtime: " + TotalRunTime.Elapsed.ToString()
 
 
         #valid = db.BitmapScan(hashes)

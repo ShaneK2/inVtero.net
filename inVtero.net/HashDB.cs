@@ -22,6 +22,7 @@ using inVtero.net.Hashing;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Threading;
+using Reloc;
 
 namespace inVtero.net
 {
@@ -30,37 +31,72 @@ namespace inVtero.net
     {
         public string HashDBFile;
         public string HashDBBitMap;
-        public string RelocFolder;
         public long DBSize;
         public long DBEntries;
         public long DBEntriesMask;
+        public int MinBlockSize;
 
-        public string Reloc64Dir;
-        public string Reloc32Dir;
+        public ReReDB ReRe;
 
         [ProtoIgnore]
         UnsafeHelp HDBBitMap;
 
-        public HashDB(string DB, string relocFolder, long Size = 0) 
+        public HashDB(int minBlockSize, string DB, string relocFolder, long Size = 0) 
         {
             HashDBFile = DB;
             HashDBBitMap = DB + ".bin";
             if(Size !=0)
                 DBSize = (long) FractHashTree.RoundUpPow2(Size);
-            RelocFolder = relocFolder;
 
-            Init();
+            if (!File.Exists(HashDBFile))
+            {
+                if (!FractHashTree.IsPow2(DBSize))
+                    throw new InternalBufferOverflowException($"DB SIZE not a power of 2!");
+
+                using (var fileStream = new FileStream(HashDBFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                    fileStream.SetLength(DBSize + 4096);
+            }
+            else
+                DBSize = (long)FractHashTree.RoundDownPow2(new FileInfo(HashDBFile).Length);
+
+            // Divide by 16
+            DBEntries = DBSize >> 4;
+            DBEntriesMask = DBEntries - 1;
+
+            MinBlockSize = minBlockSize;
+
+            ReRe = new ReReDB(relocFolder);
+
+            HDBBitMap = new UnsafeHelp(HashDBBitMap);
         }
 
+        /// <summary>
+        /// This will destroy the 'size' bit in the low nibble
+        /// However, we set 2 bits instead of just having 1 set, so you know for sure it's been processed
+        /// 
+        /// We also know the size implcitially by the position in the HashRec array
+        /// </summary>
+        /// <param name="HR"></param>
+        /// <returns></returns>
         public int BitmapScan(HashRec[] HR)
         {
             int SetBits = 0;
-            //Parallel.ForEach(HR, (rec) =>
-            //{
-            for(int i=0; i < HR.Length; i++)
+            for (int i = 0; i < HR.Length; i++)
+            {
                 if (GetIdxBit(HR[i].Index))
+                {
+                    // 0xA is A_OK!
+                    HR[i].HashData[15] = (byte)
+                        ((HR[i].HashData[15] & 0xF0) + 0xA);
+
                     SetBits++;
-            //});
+                } 
+                else
+                    // 0xF is FAIL!
+                    HR[i].HashData[15] = (byte)
+                        ((HR[i].HashData[15] & 0xF0) + 0xF);
+            }
+
             return SetBits;
         }
 
@@ -72,33 +108,6 @@ namespace inVtero.net
         public void SetIdxBit(ulong bit)
         {
             HDBBitMap.SetBit(((long) bit >> 4) & DBEntriesMask);
-        }
-
-        void Init()
-        {
-            Reloc64Dir = Path.Combine(RelocFolder, "64");
-            Reloc32Dir = Path.Combine(RelocFolder, "32");
-
-            if (!Directory.Exists(Reloc64Dir))
-                Directory.CreateDirectory(Reloc64Dir);
-            if (!Directory.Exists(Reloc32Dir))
-                Directory.CreateDirectory(Reloc32Dir);
-
-            if (!File.Exists(HashDBFile))
-            {
-                if(!FractHashTree.IsPow2(DBSize))
-                    throw new InternalBufferOverflowException($"DB SIZE not a power of 2!");
-
-                using (var fileStream = new FileStream(HashDBFile, FileMode.Create, FileAccess.Write, FileShare.None))
-                    fileStream.SetLength(DBSize + 4096);
-            } else
-                DBSize = (long)FractHashTree.RoundDownPow2(new FileInfo(HashDBFile).Length);
-            
-            // Divide by 16
-            DBEntries = DBSize >> 4;
-            DBEntriesMask = DBEntries - 1;
-
-            HDBBitMap = new UnsafeHelp(HashDBBitMap);
         }
 
         public void AddNullInput()
@@ -125,9 +134,6 @@ namespace inVtero.net
                 }
             }
         }
-        //~HashDB() {
-        //   Dispose(false);
-        // }
         public void Dispose()
         {
             Dispose(true);

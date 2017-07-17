@@ -20,9 +20,65 @@ using System.Threading.Tasks;
 using System.IO;
 using static System.Console;
 using System.Globalization;
+using System.Collections.Concurrent;
 
 namespace Reloc
 {
+    public class ReReDB
+    {
+        public ConcurrentDictionary<string, DeLocate> ReData;
+        public DeLocate ReReState;
+        public string Reloc64Dir;
+        public string Reloc32Dir;
+        public string RelocFolder;
+
+        public DeLocate GetLocated(bool Is64, string NormalizedName, uint TimeStamp, ulong CurrVA)
+        {
+            var RelocFolder = Is64 ? Reloc64Dir : Reloc32Dir;
+            var RelocNameGlob = $"{NormalizedName}-*-{TimeStamp:X}.reloc";
+
+            if (ReData.ContainsKey(RelocNameGlob))
+            {
+                var cachedReRe = new DeLocate(ReData[RelocNameGlob]);
+                cachedReRe.Delta = CurrVA - cachedReRe.OrigImageBase;
+                return cachedReRe;
+            }
+
+            var RelocFile = Directory.GetFiles(RelocFolder, RelocNameGlob).FirstOrDefault();
+            if (File.Exists(RelocFile))
+            {
+                // take image base from the file since it can be changed in the header
+                var split = RelocFile.Split('-');
+                var OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+
+                var deLoc = new DeLocate(OrigImageBase, DeLocate.ProcessRelocs(File.ReadAllBytes(RelocFile)));
+                ReData.TryAdd(RelocNameGlob, deLoc);
+
+                var newReRe = new DeLocate(deLoc);
+                newReRe.Delta = CurrVA - newReRe.OrigImageBase;
+                return newReRe;
+            }
+            return null;
+        }
+
+        public ReReDB(string BaseFolder)
+        {
+            RelocFolder = BaseFolder;
+
+            Reloc64Dir = Path.Combine(RelocFolder, "64");
+            Reloc32Dir = Path.Combine(RelocFolder, "32");
+
+            if (!Directory.Exists(Reloc64Dir))
+                Directory.CreateDirectory(Reloc64Dir);
+            if (!Directory.Exists(Reloc32Dir))
+                Directory.CreateDirectory(Reloc32Dir);
+
+            ReData = new ConcurrentDictionary<string, DeLocate>();
+        }
+    }
+
+
+
     public class Reloc
     {
         public UInt32 PageRVA;
@@ -41,6 +97,18 @@ namespace Reloc
     /// </summary>
     public class DeLocate
     {
+
+        public DeLocate(ulong imageBase, List<Reloc> relocData)
+        {
+            OrigImageBase = imageBase;
+            RelocData = relocData;
+        }
+        public DeLocate(DeLocate other)
+        {
+            OrigImageBase = other.OrigImageBase;
+            RelocData = other.RelocData;
+        }
+
         public async Task<string> DeLocateFile(string fPath, string RelocFile, ulong CurrBase, string SaveTo, bool is64 = false, bool FixHeader  = false, bool ScaleFileAlignment = false)
         {
             var hdrFix = new Extract();
@@ -142,7 +210,8 @@ namespace Reloc
         }
 
         public ulong Delta;
-        public ulong OrigImageBase;
+        public ulong OrigImageBase { get; }
+        public List<Reloc> RelocData { get; }
 
         ulong OverHang;
         bool CarryOne;

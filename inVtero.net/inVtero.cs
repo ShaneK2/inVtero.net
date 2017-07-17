@@ -341,8 +341,8 @@ namespace inVtero.net
             WalkProcList(KernelProc);
 
             KernelProc.InitSymbolsForVad();
-            var db = new HashDB(DB, Relocs, Size);
-            var fl = new FileLoader(db, 128);
+            var db = new HashDB(128, DB, Relocs, Size);
+            var fl = new FileLoader(db);
             MemAccess.MapViewSize = 128 * 1024;
 
             foreach (var proc in Processes)
@@ -361,7 +361,6 @@ namespace inVtero.net
                     proc.CopySymbolsForVad(KernelProc);
                     proc.ID = KernelProc.ID;
 
-
                     hr = proc.VADHash(CollectKernel, true, true, true, DoBitmapScan);
                     if(!DoBitmapScan)
                         fl.HashLookup(proc.HashRecords);
@@ -369,10 +368,11 @@ namespace inVtero.net
                     var rate = proc.HashRecordRate();
 
                     if (rate == 100.0)
-                        WriteColor(ConsoleColor.Green, $"{proc} Validated to {rate:N3}");
+                        WriteColor(ConsoleColor.Green,  ConsoleColor.Black, $"{proc} Validated to {rate:N3}");
                     else
                     {
-                        WriteColor(ConsoleColor.Yellow, $"{proc} Validated to {rate:N3}");
+                        WriteColor(ConsoleColor.Yellow, ConsoleColor.Black, $"{Environment.NewLine}{proc} Validated to {rate:N3}");
+                        if(Vtero.VerboseLevel > 1)
                         if (proc.HashRecords != null && proc.HashRecords.Length > 0)
                         {
                             foreach (var h in proc.HashRecords)
@@ -380,7 +380,17 @@ namespace inVtero.net
                                 foreach (var r in h.Regions)
                                 {
                                     if (r.PercentValid != 100.0d)
-                                        WriteColor(ConsoleColor.Yellow, $"{r}");
+                                    {
+                                        WriteColor(ConsoleColor.Yellow, ConsoleColor.Black, $"{r}");
+                                        WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"Failure address list; ");
+                                        foreach (var UnVerifiedAddr in r.GetFailedOffsets(db.MinBlockSize))
+                                        {
+                                            WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"{UnVerifiedAddr:X} ");
+                                            if (CursorLeft >= WindowWidth - 16)
+                                                Write(Environment.NewLine);
+                                        }
+                                        Write(Environment.NewLine);
+                                    }
                                 }
                             }
                         }
@@ -1568,18 +1578,6 @@ DoubleBreak:
 
         public static string WriteRange(VIRTUAL_ADDRESS KEY, PFN VALUE, string BaseFileName, ref long ContigSize, Mem PhysMemReader = null, bool SinglePFNStore = false, bool DumpNULL = false)
         {
-            /* WAHBitArray is actually really slow! Use my own
-            if (SinglePFNStore && SISmap == null)
-                SISmap = new WAHBitArray();
-            if(SinglePFNStore)
-            {
-                if (SISmap.Get((int)VALUE.PTE.PFN))
-                    return string.Empty;
-
-                SISmap.Set((int)VALUE.PTE.PFN, true);
-            }
-                */
-
             bool GoodRead = false;
             bool canAppend = false;
             var saveLoc = BaseFileName + KEY.Address.ToString("X") + ".bin";

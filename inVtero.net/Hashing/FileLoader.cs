@@ -61,7 +61,7 @@ namespace inVtero.net.Hashing
         BlockingCollection<Tuple<int, HashRec[]>> ReadyQueue = new BlockingCollection<Tuple<int, HashRec[]>>();
 
         
-        public FileLoader(HashDB hDB, int minHashSize, int bufferCount = 0, Func<HashLib.IHash> getHP = null)
+        public FileLoader(HashDB hDB, int bufferCount = 0, Func<HashLib.IHash> getHP = null)
         {
             var sep = new char[] { ':' };
 
@@ -76,7 +76,7 @@ namespace inVtero.net.Hashing
             DBFile = HDB.HashDBFile;
             SortMask = (ulong)HDB.DBSize - 1;
 
-            MinHashSize = minHashSize;
+            MinHashSize = HDB.MinBlockSize;
 
             ScanExtensions = ScanExtensionsSpec.ToUpper().Split(sep, StringSplitOptions.RemoveEmptyEntries);
             MaskedEntries = MaskedEntriesSpec.ToUpper().Split(sep, StringSplitOptions.RemoveEmptyEntries);
@@ -604,7 +604,7 @@ namespace inVtero.net.Hashing
             if (e.RelocSize == 0)
                 return;
 
-            var relocDir = e.Is64 ? HDB.Reloc64Dir : HDB.Reloc32Dir;
+            var relocDir = e.Is64 ? HDB.ReRe.Reloc64Dir : HDB.ReRe.Reloc32Dir;
             var sb = $"{Path.GetFileName(e.FileName)}-{e.ImageBase.ToString("X")}-{e.TimeStamp.ToString("X")}.reloc";
             var outFile = Path.Combine(relocDir, sb);
 

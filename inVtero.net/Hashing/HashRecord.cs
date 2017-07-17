@@ -50,7 +50,6 @@ namespace inVtero.net.Hashing
 
             // shift up since were 16 byte aligned
             Index = BitConverter.ToUInt64(Hash, indexLoc) << 4;
-
         }
         public byte[] HashData;
         public ulong Index;
@@ -84,6 +83,23 @@ namespace inVtero.net.Hashing
         {
             return $"Region: {OriginationInfo,70}\tAddr: {Address,20:X} Len: {Len,8:X} ({Validated,4}/{Total,4}) {PercentValid,12:N3}" ;
         }
+
+
+        public IEnumerable<long> GetFailedOffsets(int MinSizeBlock)
+        {
+            for(int i=0; i < SparseAddrs.Count; i++)
+            {
+                var saddr = SparseAddrs[i];
+                var countOfSmallestHashBlocks = (InnerList[i].Count() / 2 + 1);
+
+                for (int h=0; h < countOfSmallestHashBlocks; h++)
+                {
+                    var hashInfo = InnerList[i][h].HashData[15] & 0xf;
+                    if(hashInfo == 0xF)
+                        yield return saddr + (h * MinSizeBlock);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -97,16 +113,17 @@ namespace inVtero.net.Hashing
             Regions = new List<SparseRegion>();
         }
 
-        public void AddBlock(string Info, long VA, int totalChecked, int validated)
+        public void AddBlock(string Info, long VA, HashRec[] hashes, int validated)
         {
             if (Regions.Count == 0)
             {
                 var r = new SparseRegion() { OriginationInfo = Info };
                 r.SparseAddrs.Add(VA);
+                r.InnerList.Add(hashes);
                 r.Address = VA;
                 r.Len = 4096;
                 r.Validated = validated;
-                r.Total = totalChecked;
+                r.Total = hashes.Length;
                 Regions.Add(r);
                 return;
             }
@@ -117,18 +134,20 @@ namespace inVtero.net.Hashing
                 if (Info == r.OriginationInfo)
                 {
                     r.Validated += validated;
-                    r.Total += totalChecked;
+                    r.Total += hashes.Length;
                     r.Len += 4096;
                     r.SparseAddrs.Add(VA);
+                    r.InnerList.Add(hashes);
                     return;
                 }
             }
 
             var rx = new SparseRegion() { OriginationInfo = Info, Address = VA };
             rx.SparseAddrs.Add(VA);
+            rx.InnerList.Add(hashes);
             rx.Len += 4096;
             rx.Validated += validated;
-            rx.Total += totalChecked;
+            rx.Total += hashes.Length;
 
             Regions.Add(rx);
         }

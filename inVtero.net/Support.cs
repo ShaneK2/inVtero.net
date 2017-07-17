@@ -108,6 +108,16 @@ namespace inVtero.net
             ProgressBarz.RenderConsoleProgress(ProgressBarz.Progress);
         }
 
+        public static void WxColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
+        {
+            if (BackgroundColor != BackGround)
+                BackgroundColor = BackGround;
+            if (ForegroundColor != ForeGround)
+                ForegroundColor = ForeGround;
+
+            Write(var);
+        }
+
         public static void WColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
         {
             if (BackgroundColor != BackGround)

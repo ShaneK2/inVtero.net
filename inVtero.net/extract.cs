@@ -75,7 +75,6 @@ namespace Reloc
         public static bool OverWrite;
 
         public string FileName;
-        public string ExpectedRelocFile;
         public uint RelocPos;
         public uint RelocSize;
         public uint ImportDirPos;
@@ -98,9 +97,7 @@ namespace Reloc
         public bool IsCLR;
         // maybe ordered list would emit better errors for people
         public List<MiniSection> Sections;
-        [ProtoIgnore]
-        public List<Reloc> RelocData;
-        [ProtoIgnore]
+        
         public DeLocate ReReState;
 
         int secOff;

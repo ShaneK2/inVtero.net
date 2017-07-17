@@ -861,14 +861,10 @@ namespace inVtero.net
                         if (sec != null && sec.Module != null && sec.Module.ReReState != null)
                         {
                             var offset = VA - sec.VadAddr;
-
-                            if (sec.Module.Is64)
-                                sec.Module.ReReState.DeLocateBuff64(block, sec.Module.ReReState.Delta, (ulong)offset, sec.Module.RelocData.ToArray());
-                            else
-                                sec.Module.ReReState.DeLocateBuff32(block, (uint)sec.Module.ReReState.Delta, (uint)offset, sec.Module.RelocData.ToArray());
+                            AttemptDelocate(block, sec, offset);
                         }
                     }
-                    var hrecs = FractHashTree.CreateRecsFromMemory(block, 128, null);
+                    var hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null);
                     hr.AddRange(hrecs);
                 }
             }
@@ -970,59 +966,21 @@ namespace inVtero.net
                                 break;
                             }
                         }
-
-                        if (ExecOnly && (ms.IsExec || ms.IsCode))
-                        {
-                            // were we able to get all the details we need to DeLocate (ReReLocate)?
-                            // This should be moved into some global cache so each Process can share the info for shared modules etc..
-                            if (DoReReLocate && HDB != null)
-                            {
-                                if (memsec.Module.RelocData == null)
-                                {
-                                    var RelocFolder = memsec.Module.Is64 ? HDB.Reloc64Dir : HDB.Reloc32Dir;
-
-                                    var RelocName = $"{memsec.NormalizedName}-*-{memsec.Module.TimeStamp:X}.reloc";
-                                    memsec.Module.ExpectedRelocFile = RelocName;
-
-                                    var RelocFile = Directory.GetFiles(RelocFolder, RelocName).FirstOrDefault();
-                                    if (File.Exists(RelocFile))
-                                    {
-                                        // take image base from the file since it can be changed in the header
-                                        var split = RelocFile.Split('-');
-
-                                        memsec.Module.RelocData = DeLocate.ProcessRelocs(File.ReadAllBytes(RelocFile));
-                                        memsec.Module.ReReState = new DeLocate();
-                                        memsec.Module.ReReState.OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                                        memsec.Module.ReReState.Delta = (ulong)memsec.VadAddr - memsec.Module.ReReState.OrigImageBase;
-                                    }
-                                }
-
-                                if (memsec.Module.ReReState != null && memsec.Module.ReReState.OrigImageBase != (ulong)memsec.VA.Address)
-                                {
-                                    if (SecOffset == 0)
-                                        DeLocate.DelocateHeader(block, memsec.Module.ReReState.OrigImageBase, memsec.Module.ImageBaseOffset, memsec.Module.Is64);
-                                    else if (!memsec.Module.Is64)
-                                        memsec.Module.ReReState.DeLocateBuff32(block, (uint)memsec.Module.ReReState.Delta, (uint)SecOffset, memsec.Module.RelocData.ToArray());
-                                    else
-                                        memsec.Module.ReReState.DeLocateBuff64(block, memsec.Module.ReReState.Delta, (ulong)SecOffset, memsec.Module.RelocData.ToArray());
-                                }
-                                else if (DoReReLocate && memsec.Module.ReReState == null && Vtero.VerboseLevel > 0)
-                                    WriteColor(ConsoleColor.Yellow, $"Unable to load expected relocation data from {memsec.Module.ExpectedRelocFile} for {Name} loaded {(VA + SecOffset):X}");
-                            }
-                        }
-
-                        var hrecs = FractHashTree.CreateRecsFromMemory(block, 128, null, 0, VA + SecOffset);
-
-                        if (BitmapScan)
-                        {
-                            var passed = HDB.BitmapScan(hrecs);
-                            procTotal += hrecs.Length;
-                            procValidate += passed;
-                            hRecord.AddBlock(Name, VA + SecOffset, hrecs.Length, passed);
-                        } else
-                            // setup records for expensive check by caller
-                            hRecord.AddBlock(Name, VA + SecOffset, hrecs);
+                        if (ExecOnly && (ms.IsExec || ms.IsCode) && DoReReLocate)
+                            AttemptDelocate(block, memsec, SecOffset);
                     }
+
+                    var hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null, 0, VA + SecOffset);
+
+                    if (BitmapScan)
+                    {
+                        var passed = HDB.BitmapScan(hrecs);
+                        procTotal += hrecs.Length;
+                        procValidate += passed;
+                        hRecord.AddBlock(Name, VA + SecOffset, hrecs, passed);
+                    } else
+                        // setup records for expensive check by caller
+                        hRecord.AddBlock(Name, VA + SecOffset, hrecs);
                 }
                 hr.Push(hRecord);
             }
@@ -1031,11 +989,35 @@ namespace inVtero.net
             return HashRecords;
         }
 
+        void AttemptDelocate(byte[] block, MemSection s, long SecOffset)
+        {
+            // were we able to get all the details we need to DeLocate (ReReLocate)?
+            // This should be moved into some global cache so each Process can share the info for shared modules etc..
+            if (HDB != null && HDB.ReRe != null)
+            {
+                DeLocate rere = null;
+
+                if (s.Module.ReReState != null)
+                    rere = s.Module.ReReState;
+                else
+                    s.Module.ReReState = rere = HDB.ReRe.GetLocated(s.Module.Is64, s.NormalizedName, s.Module.TimeStamp, (ulong)s.VadAddr);
+
+                if (rere != null && (rere.OrigImageBase != (ulong)s.VA.Address))
+                {
+                    if (SecOffset == 0)
+                        DeLocate.DelocateHeader(block, rere.OrigImageBase, s.Module.ImageBaseOffset, s.Module.Is64);
+                    else if (!s.Module.Is64)
+                        rere.DeLocateBuff32(block, (uint)s.Module.ReReState.Delta, (uint)SecOffset, rere.RelocData.ToArray());
+                    else
+                        rere.DeLocateBuff64(block, rere.Delta, (ulong)SecOffset, rere.RelocData.ToArray());
+                }
+            }
+        }
+
 
         public void VADDump(string Folder, bool KernelSpace = false, bool DoReReLocate = true)
         {
             byte[] block = null;
-            bool MayRelocate = false;
             string Name = string.Empty;
             List<HashRecord> hr = new List<HashRecord>();
 
@@ -1068,34 +1050,22 @@ namespace inVtero.net
                         Name = sec.NormalizedName;
 
                         if (sec.Module != null)
+                        {
+                            MiniSection ms = MiniSection.Empty;
                             for (int i = 0; i < sec.Module.Sections.Count(); i++)
                             {
                                 if (SecOffset >= sec.Module.Sections[i].VirtualAddress &&
                                     SecOffset < sec.Module.Sections[i].VirtualAddress + sec.Module.Sections[i].RawFileSize)
                                 {
+                                    ms = sec.Module.Sections[i];
                                     Name += GetNormalized(sec.Module.Sections[i].Name, false);
-
-                                    if (sec.Module.Sections[i].IsExec || sec.Module.Sections[i].IsCode)
-                                        MayRelocate = true;
-                                    else
-                                        MayRelocate = false;
-
                                     break;
                                 }
                             }
-                    }
-                    if (PagedIn)
-                    {
-                        // were we able to get allt he details we need to DeLocate (ReReLocate)?
-                        if (DoReReLocate && MayRelocate && sec != null && sec.Module != null && sec.Module.ReReState != null)
-                        {
-                            if (sec.Module.Is64)
-                                sec.Module.ReReState.DeLocateBuff64(block, sec.Module.ReReState.Delta, (ulong)SecOffset, sec.Module.RelocData.ToArray());
-                            else
-                                sec.Module.ReReState.DeLocateBuff32(block, (uint)sec.Module.ReReState.Delta, (uint)SecOffset, sec.Module.RelocData.ToArray());
+                            // were we able to get allt he details we need to DeLocate (ReReLocate)?
+                            if ((ms.IsExec || ms.IsCode) && DoReReLocate)
+                                AttemptDelocate(block, sec, SecOffset);
                         }
-                        else if (DoReReLocate && MayRelocate && sec != null && sec.Module != null && sec.Module.ReReState == null && Vtero.VerboseLevel > 0)
-                            WriteColor(ConsoleColor.Yellow, $"Unable to load expected relocation data from {sec.Module.ExpectedRelocFile} for {Name} loaded {(VA + SecOffset):X}");
                     }
 
                     if (string.IsNullOrWhiteSpace(Name))
@@ -1267,25 +1237,6 @@ namespace inVtero.net
                                 return ms;
                             }
                             ms.Module = Extract.IsBlockaPE(headerData);
-                        }
-                        if (ms.Module != null && ms.Module.ReReState == null && HDB != null)
-                        {
-                            var RelocFolder = ms.Module.Is64 ? HDB.Reloc64Dir : HDB.Reloc32Dir;
-
-                            var RelocName = $"{ms.NormalizedName}-*-{ms.Module.TimeStamp:X}.reloc";
-                            ms.Module.ExpectedRelocFile = RelocName;
-
-                            var RelocFile = Directory.GetFiles(RelocFolder, RelocName).FirstOrDefault();
-                            if (File.Exists(RelocFile))
-                            {
-                                // take image base from the file since it can be changed in the header
-                                var split = RelocFile.Split('-');
-
-                                ms.Module.RelocData = DeLocate.ProcessRelocs(File.ReadAllBytes(RelocFile));
-                                ms.Module.ReReState = new DeLocate();
-                                ms.Module.ReReState.OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                                ms.Module.ReReState.Delta = (ulong)ms.VadAddr - ms.Module.ReReState.OrigImageBase;
-                            }
                         }
                     }
                     return ms;

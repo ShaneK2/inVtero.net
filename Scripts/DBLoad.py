@@ -14,9 +14,9 @@ from inVtero.net.Hashing import *
 
 Vtero.VerboseLevel = 1
 aBufferCount = 10000000
-db = HashDB("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
+db = HashDB(128, "C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
 db.AddNullInput()
-fl = FileLoader(db, 128)
+fl = FileLoader(db)
 fl.BufferCount = aBufferCount 
 
 #fl.LoadFromPath("g:\\")
