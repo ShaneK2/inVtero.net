@@ -873,9 +873,10 @@ namespace inVtero.net
 
         [ProtoIgnore]
         public HashRecord[] HashRecords;
-
-        int procTotal = 0;
-        int procValidate = 0;
+        [ProtoIgnore]
+        public int ProcTotal = 0;
+        [ProtoIgnore]
+        public int ProcValidate = 0;
 
         public double HashRecordRate()
         {
@@ -884,14 +885,14 @@ namespace inVtero.net
                 {
                     foreach (var slice in rec.Regions)
                     {
-                        procTotal += slice.Total;
-                        procValidate += slice.Validated;
+                        ProcTotal += slice.Total;
+                        ProcValidate += slice.Validated;
                     }
                 }
-            else if (procTotal < 1)
+            else if (ProcTotal < 1)
                     return 0.0d;
 
-            return procValidate * 100.0d / procTotal;
+            return ProcValidate * 100.0d / ProcTotal;
 
         }
 
@@ -975,8 +976,8 @@ namespace inVtero.net
                     if (BitmapScan)
                     {
                         var passed = HDB.BitmapScan(hrecs);
-                        procTotal += hrecs.Length;
-                        procValidate += passed;
+                        ProcTotal += hrecs.Length;
+                        ProcValidate += passed;
                         hRecord.AddBlock(Name, VA + SecOffset, hrecs, passed);
                     } else
                         // setup records for expensive check by caller

@@ -345,6 +345,9 @@ namespace inVtero.net
             var fl = new FileLoader(db);
             MemAccess.MapViewSize = 128 * 1024;
 
+            long TotalTotal = 0;
+            long TotalValid = 0;
+
             foreach (var proc in Processes)
             {
                 bool CollectKernel = false;
@@ -366,6 +369,9 @@ namespace inVtero.net
                         fl.HashLookup(proc.HashRecords);
 
                     var rate = proc.HashRecordRate();
+
+                    TotalTotal += proc.ProcTotal;
+                    TotalValid += proc.ProcValidate;
 
                     if (rate == 100.0)
                         WriteColor(ConsoleColor.Green,  ConsoleColor.Black, $"{proc} Validated to {rate:N3}");
@@ -397,6 +403,7 @@ namespace inVtero.net
                     }
                 }
             }
+            WriteColor(ConsoleColor.White, ConsoleColor.Black, $"{TotalTotal} total hash checks, {TotalValid} were verified as secure {TotalValid * 100.0d / TotalTotal:N3}%");
             return;
         }
 
