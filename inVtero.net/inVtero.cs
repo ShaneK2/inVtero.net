@@ -67,6 +67,11 @@ namespace inVtero.net
         public static int VerboseLevel { get; set; }
 
         /// <summary>
+        /// Global flag to enable file write suport
+        /// </summary>
+        public static bool AllowWrite { get; set; }
+
+        /// <summary>
         /// I should really get an errorlevel going
         /// </summary>
         public static bool DiagOutput { get; set; }
@@ -162,26 +167,31 @@ namespace inVtero.net
 
         public Vtero(string MemoryDump) :this()
         {
-            MemFile = MemoryDump.ToLower();
-            FileSize = new FileInfo(MemFile).Length;
-            DeriveMemoryDescriptors();
-            scan = new Scanner(MemFile, this);
+            if (!string.IsNullOrWhiteSpace(MemoryDump))
+            {
+                MemFile = MemoryDump.ToLower();
+                FileSize = new FileInfo(MemFile).Length;
+                DeriveMemoryDescriptors();
+                scan = new Scanner(MemFile, this);
 
-            // MemAccess.MaxLimit is max pages after index by the memory runs
-            PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
-
+                // MemAccess.MaxLimit is max pages after index by the memory runs
+                PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
+            }
         }
 
         public Vtero(string MemoryDump, AMemoryRunDetector MD) : this()
         {
-            MemFile = MemoryDump.ToLower();
-            FileSize = new FileInfo(MemFile).Length;
-            MRD = MD;
-            MemAccess = Mem.InitMem(MemFile, MRD);
-            scan = new Scanner(MemFile, this);
+            if (!string.IsNullOrWhiteSpace(MemoryDump))
+            {
+                MemFile = MemoryDump.ToLower();
+                FileSize = new FileInfo(MemFile).Length;
+                MRD = MD;
+                MemAccess = Mem.InitMem(MemFile, MRD);
+                scan = new Scanner(MemFile, this);
 
-            // MemAccess.MaxLimit is max pages after index by the memory runs
-            PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
+                // MemAccess.MaxLimit is max pages after index by the memory runs
+                PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
+            }
         }
 
         public Vtero(ConfigOptions co) : this(co.FileName)
@@ -252,9 +262,18 @@ namespace inVtero.net
             var siz = new FileInfo(SaveFile).Length;
             if (siz == 0)
                 return null;
+            try
+            {
+                using (var SerData = File.OpenRead(SaveFile))
+                    ThisInstance = Serializer.Deserialize<inVtero.net.Vtero>(SerData);
+            } catch (Exception ex)
+            {
+                var backup = $"{SaveFile}.{new Random().Next().ToString()}.bak";
 
-            using (var SerData = File.OpenRead(SaveFile))
-                ThisInstance = Serializer.Deserialize<inVtero.net.Vtero>(SerData);
+                WriteColor(ConsoleColor.Yellow, $"Error in deserialize (likely created by older version of inVtero.net) moving {SaveFile} to {backup}");
+                File.Move(SaveFile, backup);
+                ThisInstance = null;
+            }
 
             return ThisInstance;
         }
@@ -1162,26 +1181,18 @@ namespace inVtero.net
                             catch (ExtendedPageNotFoundException eptpX)
                             {
                                 WriteLine($"Bad EPTP selection;{Environment.NewLine}\tEPTP:{eptpX.RequestedEPTP}{Environment.NewLine}\t CR3:{eptpX.RequestedCR3}{Environment.NewLine} Attempting to skip to next proc.");
-
-                                memAxs.DumpPFNIndex();
                             }
                             catch (MemoryRunMismatchException mrun)
                             {
                                 WriteLine($"Error in accessing memory for PFN {mrun.PageRunNumber:X12}");
-
-                                memAxs.DumpPFNIndex();
                             }
                             catch (PageNotFoundException pnf)
                             {
                                 WriteLine($"Error in selecting page, see {pnf}");
-
-                                memAxs.DumpPFNIndex();
                             }
                             catch (Exception ex)
                             {
                                 WriteLine($"Error in memspace extraction: {ex.ToString()}");
-
-                                memAxs.DumpPFNIndex();
                             }
                             WriteLine($"{sx} VMCS dominated process address spaces and were decoded successfully.");
                             //});

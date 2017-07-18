@@ -23,6 +23,7 @@ clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
 from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
+from inVtero.net.Hashing import *
 from System.IO import Directory, File, FileInfo, Path
 from System import Environment, String, Console, ConsoleColor
 from System import Text
@@ -219,6 +220,48 @@ def YaraAll(YaraRules, vtero):
     print "elapsed " + dumptime.Elapsed.ToString()
     return yall
 
+def QuickSetup(MemoryDump):
+    # Basic option handling
+    copts = ConfigOptions()
+    copts.IgnoreSaveData = False
+    copts.FileName = MemoryDump
+    copts.VersionsToEnable = PTType.GENERIC
+    copts.VerboseOutput = False
+    copts.VerboseLevel = 0
+    # Vtero options are global
+    Vtero.DiagOutput = False
+    Vtero.VerboseLevel = 0
+    # perform full page scan
+    # this scans the input in it's entirety and set's up 
+    # the basis for traversing memory appropiatly as the CPU would
+    # through the page table (including nested) 
+    vtero = Scan.Scanit(copts)
+    proc_arr = vtero.Processes.ToArray()
+    low_proc = proc_arr[0]
+    for proc in proc_arr:
+        if proc.CR3Value < low_proc.CR3Value:
+            low_proc = proc
+
+    proc = low_proc
+    print "Assumed Kernel Proc: " + proc.ToString()
+    vtero.KernelProc = proc
+    proc.MemAccess = Mem(vtero.MemAccess)
+    
+    # Here we bring up symbol support to the Windows Kernel
+    # if we have a save state we skip the scan and directly load it
+    if vtero.KVS is None:
+        kvs = proc.ScanAndLoadModules()
+        vtero.KVS = kvs
+    else:
+        proc.LoadSymbols()
+
+    # having the kernel build info displayed mean's were good to go
+    kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
+    Console.ForegroundColor = ConsoleColor.Cyan
+    print "Kernel build: " + kMinorVer.ToString()
+    return vtero
+
+
 # pretty print symbols matching string
 def SymList(proc, MatchString):
     for match in proc.MatchSymbols(MatchString):
@@ -243,7 +286,7 @@ def WalkProcListExample(proc):
     _EPROC = proc.xStructInfo("_EPROCESS", psHead - ProcListOffsetOf)
     while True:
         # Deeply hidden value in _EPROCESS to find full path!! ;)
-        ImagePath = _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value;
+        ImagePath = _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
         print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] EXE [" + ImagePath + "]",
         # Nice to see members
         print " CR3/DTB [" + _EPROC.Pcb.DirectoryTableBase.Value.ToString("X") + "] VADROOT [" + _EPROC.VadRoot.Value.ToString("X") + "]"

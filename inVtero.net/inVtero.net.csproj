@@ -206,6 +206,7 @@
     <Compile Include="Support.cs" />
     <Compile Include="Support\Capstone.cs" />
     <Compile Include="Support\Keystone.cs" />
+    <Compile Include="Support\Strings.cs" />
     <Compile Include="UnsafeHelp.cs" />
     <Compile Include="VirtualScanner.cs" />
   </ItemGroup>

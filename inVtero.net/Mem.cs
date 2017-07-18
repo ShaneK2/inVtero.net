@@ -90,8 +90,19 @@ namespace inVtero.net
         [ProtoIgnore]
         public long Length { get { return FileSize; } }
 
+        /// <summary>
+        /// Expose the file name for write back support if it's enabled globally
+        /// </summary>
+        [ProtoIgnore]
+        public string IOFile { get { if (Vtero.AllowWrite) return MemoryDump; return string.Empty; } }
+
         const long PAGE_SIZE = 0x1000;
         const long LARGE_PAGE_SIZE = 1024 * 1024 * 2;
+
+        [ProtoIgnore]
+        Guid ID;
+        [ProtoIgnore]
+        public bool UseBitmap;
 
         [ProtoIgnore]
         UnsafeHelp DumpedPFNBitmap;
@@ -100,27 +111,8 @@ namespace inVtero.net
         public long MapViewBase;
         [ProtoIgnore]
         public long MapViewSize;
-#if USE_BITMAP
-        WAHBitArray pfnTableIdx;
-#endif
-        public void DumpPFNIndex()
-        {
-#if USE_BITMAP
-            if (!Vtero.VerboseOutput || pfnTableIdx == null)
-                return;
-            var idx = pfnTableIdx.GetBitIndexes();
-            int i = 0;
+        
 
-            Console.WriteLine("Dumping PFN index");
-            foreach (var pfn in idx)
-            {
-                Console.Write($"{pfn:X8} ");
-                i += 8;
-                if (i >= Console.WindowWidth - 7)
-                    Console.Write(Environment.NewLine);
-            }
-#endif
-        }
         Mem()
         {  
             // common init
@@ -147,9 +139,6 @@ namespace inVtero.net
                 MemoryMappedFileAccess.Read);
         }
 
-        [ProtoIgnore]
-        Guid ID;
-
         public Mem(Mem parent) : this()
         {
             MD = parent.MD;
@@ -168,8 +157,10 @@ namespace inVtero.net
         /// <summary>
         /// This bitmap is shared between all processes in the same group 
         /// </summary>
-        public void ResetDumpBitmap()
+        public void ResetDumpBitmap(bool optimize = true)
         {
+            UseBitmap = optimize;
+
             DumpedPFNBitmap.MemSetBitmap(0);
         }
 
@@ -177,6 +168,9 @@ namespace inVtero.net
         {
             if (PTE.PFN == 0xffffffffff)
                 return true;
+
+            if (PTE.LargePage)
+                return false;
 
             return DumpedPFNBitmap.GetBit(PTE.PFN);
         }
@@ -198,17 +192,6 @@ namespace inVtero.net
                 thiz.StartOfMemory = Detector.StartOfMem;
                 thiz.MD = Detector;
             }
-#if USE_BITMAP
-            // maybe there's a bit map we can use from a DMP file
-            // WAHBITARRY is slow
-            if (BitmapArray != null)
-                pfnTableIdx = new WAHBitArray(WAHBitArray.TYPE.Bitarray, BitmapArray);
-            else
-                pfnTableIdx = new WAHBitArray();
-
-            // 32bit's of pages should be plenty?
-            pfnTableIdx.Length = (int) (MapViewSize / 0x1000);
-#endif
 
             if (File.Exists(mFile))
             {
@@ -278,7 +261,6 @@ namespace inVtero.net
                 if (block != null)
                 {
                     var copy_len = block.Length;
-                    bool CopyLong = true;
 
                     if(block is long[])
                     {
@@ -287,17 +269,23 @@ namespace inVtero.net
 
                     } else if(block is byte[])
                     {
-                        CopyLong = false;
                         if (BlockOffset + (block.Length) > NewMapViewSize)
                             copy_len = (int)((NewMapViewSize - BlockOffset));
+                    }
+                    else if (block is char[])
+                    {
+                        if (BlockOffset + (block.Length * 2) > NewMapViewSize)
+                            copy_len = (int)((NewMapViewSize - BlockOffset) / 2);
                     }
 
                     UnsafeHelp.ReadBytes(mappedAccess, BlockOffset, ref block, copy_len);
 
-                    if(CopyLong)
+                    if(block is long[])
                         rv = (block as long[])[((AbsOffset >> 3) & 0x1ff)] ;
-                    else 
+                    else if (block is byte[])
                         rv = (block as byte[])[((AbsOffset >> 3) & 0x1ff)];
+                    else if (block is char[])
+                        rv = (block as char[])[((AbsOffset >> 3) & 0x1ff)];
                 }
                 // FIX: ReadInt64 uses byte address so when we use it must adjust, check for other callers
                 // assumptions since we changed this from array<long>[] maybe expecting old behavior, however
@@ -405,10 +393,7 @@ namespace inVtero.net
             // TODO: explore 5 level page tables and larger than 8TB inputs :)
             if (aPFN > int.MaxValue || aPFN < 0)
                 return 0;
-#if USE_BITMAP
-            if(pfnTableIdx != null)
-                pfnTableIdx.Set((int)PFN, true);
-#endif
+      
             // paranoid android setting
 
             var FileOffset = OffsetToMemIndex(aPFN);

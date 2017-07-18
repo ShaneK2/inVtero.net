@@ -13,6 +13,10 @@ clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
 from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
 from System.IO import Directory, File, FileInfo, Path
+from inVtero.net.Support import Strings
+from System.Text.RegularExpressions import RegEx
+
+
 
 # turn off progress bar if it's too noisy
 #Support.ProgressBarz.DisableProgressBar = True

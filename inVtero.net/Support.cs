@@ -33,6 +33,7 @@ namespace inVtero.net
  
     public static class MagicNumbers
     {
+        public const long HIGHEST_USER_ADDRESS = 0x7ffffffeffff;
         public const int LARGE_PAGE_SIZE = 1024*1024*2;
         public const int PAGE_SIZE = 0x1000;
         public const int PE_TYPICAL_HEADER_SIZE = 0x400;
@@ -144,16 +145,16 @@ namespace inVtero.net
 
         public static bool IsKernelRange(long VA)
         {
-            return (VA < 0 || VA > 0x7FFFFFFFFFFF);
+            return (VA < 0 || VA > MagicNumbers.HIGHEST_USER_ADDRESS);
         }
         public static ulong Extend(long Address)
         {
-            return ((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address);
+            return ((Address < 0 || Address > MagicNumbers.HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address);
         }
 
-        public ulong FullAddr { get { return ((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address); } }
+        public ulong FullAddr { get { return ((Address < 0 || Address > MagicNumbers.HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address); } }
 
-        public override string ToString() => $"VA: {((Address < 0 || Address > 0x7FFFFFFFFFFF) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X12}, PML4E {PML4:X3}, DPO:{DirectoryPointerOffset:X3}, DO:{DirectoryOffset:X3}, TO: {TableOffset:X3}, O: {Offset:X4}";
+        public override string ToString() => $"VA: {((Address < 0 || Address > MagicNumbers.HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X12}, PML4E {PML4:X3}, DPO:{DirectoryPointerOffset:X3}, DO:{DirectoryOffset:X3}, TO: {TableOffset:X3}, O: {Offset:X4}";
 
         public long Offset { get { return Address & 0xfff; } set { Address &= ~0xfffu; Address |= value; } }
         public long TableOffset { get { return (Address & 0x1ff000) >> 12; } set { Address &= ~0x1ff000; Address |= (value << 12); } }

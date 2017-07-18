@@ -26,14 +26,16 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{92143A5B-B728-4B44-BA13-317A8A2F6184}"
 	ProjectSection(SolutionItems) = preProject
 		Scripts\Analyze.py = Scripts\Analyze.py
+		Scripts\AntiAntiDebug.py = Scripts\AntiAntiDebug.py
 		Scripts\Basic.py = Scripts\Basic.py
 		Scripts\CloudLeech.py = Scripts\CloudLeech.py
 		Scripts\DBLoad.py = Scripts\DBLoad.py
 		Scripts\Dump.py = Scripts\Dump.py
-		Scripts\Hash.py = Scripts\Hash.py
 		Scripts\List.py = Scripts\List.py
 		Scripts\Main.py = Scripts\Main.py
+		Scripts\PoolScan.py = Scripts\PoolScan.py
 		Scripts\Scan.py = Scripts\Scan.py
+		Scripts\VADVerifyDump.py = Scripts\VADVerifyDump.py
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dia2Sharp", "Dia2Sharp\Dia2Sharp.csproj", "{F2CD767A-D27B-44D6-A56E-363AB2DE0C51}"
@@ -41,9 +43,6 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVteroUI", "inVteroUI\inVteroUI.csproj", "{93055C93-5A53-429B-AF8F-3DE7DB676395}"
 EndProject
 Global
-	GlobalSection(Performance) = preSolution
-		HasPerformanceSessions = true
-	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Debug|x64 = Debug|x64
@@ -107,6 +106,9 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D00DFD7A-2081-479D-860A-221B7AE008DC} = {92143A5B-B728-4B44-BA13-317A8A2F6184}
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
 	EndGlobalSection
 	GlobalSection(Performance) = preSolution
 		HasPerformanceSessions = true

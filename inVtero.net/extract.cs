@@ -97,7 +97,7 @@ namespace Reloc
         public bool IsCLR;
         // maybe ordered list would emit better errors for people
         public List<MiniSection> Sections;
-        
+        [ProtoIgnore]
         public DeLocate ReReState;
 
         int secOff;

@@ -59,9 +59,11 @@ vtero.HashAllProcs("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4, True)
 
 print "Done! Total runtime: " + TotalRunTime.Elapsed.ToString()
 
+##
+## This is the Python version of vtero.HashAllProcs
+##
 
 # Use dynamic typing to walk EPROCES 
-
 #logicalList = vtero.WalkProcList(proc)
 
 #vtero.MemAccess.MapViewSize = 128 * 1024

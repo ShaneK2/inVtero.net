@@ -97,6 +97,15 @@
       <Link>DBLoad.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Include="..\Scripts\AntiAntiDebug.py">
+      <Link>AntiAntiDebug.py</Link>
+    </None>
+    <None Include="..\Scripts\PoolScan.py">
+      <Link>PoolScan.py</Link>
+    </None>
+    <None Include="..\Scripts\VADVerifyDump.py">
+      <Link>VADVerifyDump.py</Link>
+    </None>
     <None Include="Analyze.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -151,10 +160,6 @@
     </Content>
     <Content Include="..\Scripts\Dump.py">
       <Link>Dump.py</Link>
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Scripts\Hash.py">
-      <Link>Hash.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="..\Scripts\List.py">

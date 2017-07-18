@@ -67,7 +67,6 @@ namespace inVtero.net.ConsoleUtils
 
         protected override void ExecuteInternal()
         {
-
             base.ExecuteInternal();
         }
 

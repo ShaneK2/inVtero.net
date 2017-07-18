@@ -56,6 +56,7 @@ namespace inVtero.net
         bool KernelSpace;
         public int DepthParsed;
         public long EntriesParsed;
+        public bool MemorizeTables;
 
         public static PageTable AddProcess(DetectedProc dp, Mem mem, bool RedundantKernelEntries = true)
         {
@@ -293,7 +294,8 @@ namespace inVtero.net
             if (PageContext.PTE.LargePage && Level <= 1)
             {
                 // cyclic 
-                PageContext.SubTables.Add(PageContext.VA, PageContext);
+                if(MemorizeTables)
+                    PageContext.SubTables.Add(PageContext.VA, PageContext);
                 yield break;
             }
 
@@ -302,8 +304,12 @@ namespace inVtero.net
             // copy VA since were going to be making changes
 
             var valueRead = mem.GetPageForPhysAddr(HW_Addr, ref page, ref ReadData);
-
             if (!ReadData || page == null)
+                yield break;
+
+            // if every entry is exactially the same bail out
+            var check1 = page[0];
+            if (Array.TrueForAll<long>(page, (entry) => entry == check1))
                 yield break;
 
             var dupVA = new VIRTUAL_ADDRESS(SubVA.Address);
@@ -340,10 +346,11 @@ namespace inVtero.net
                     VA = new VIRTUAL_ADDRESS(dupVA.Address),
                     PTE = new HARDWARE_ADDRESS_ENTRY(page[i])
                 };
-                    
-                PageContext.SubTables.Add(
-                        pfn.VA,
-                        pfn);
+                
+                if(MemorizeTables)
+                    PageContext.SubTables.Add(
+                            pfn.VA,
+                            pfn);
 
                 EntriesParsed++;
                 yield return pfn;
@@ -395,7 +402,6 @@ namespace inVtero.net
                                 continue;
 
                             yield return DirectoryOffset;
-                            //PageQueue.Add(DirectoryOffset);
                             continue;
                         }
                         // otherwise were scanning lower level entries
@@ -409,8 +415,8 @@ namespace inVtero.net
 
                                 if (TableOffset == null || (OnlyValid && !TableOffset.PTE.Valid))
                                     continue;
+
                                 yield return TableOffset;
-                                //PageQueue.Add(TableOffset);
                             }
                         }
                     }
@@ -445,7 +451,8 @@ namespace inVtero.net
                 var pfn = new PFN { PTE = kvp.Value, VA = new VIRTUAL_ADDRESS(VA.PML4 << 39) };
 
                 // Top level for page table
-                PageTables.Add(VA, pfn);
+                if(MemorizeTables)
+                    PageTables.Add(VA, pfn);
 
                 // We will only do one level if were not buffering
                 if(depth > 1)
@@ -470,10 +477,11 @@ namespace inVtero.net
                 entries++;
             }
 
-            Root.Entries = new PFN()
-            {
-                SubTables = PageTables
-            };
+            if(MemorizeTables)
+                Root.Entries = new PFN()
+                {
+                    SubTables = PageTables
+                };
 
             // InlineExtract may be faster but it's memory requirement is higher which was a problem
             // when analyzing 64GB+ dumps (yes InVtero.net handles very big memory)++

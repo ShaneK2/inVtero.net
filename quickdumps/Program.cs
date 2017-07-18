@@ -106,9 +106,9 @@ namespace inVtero.net
                 }
 
                 FullArgs.Add("-X:FullFrames");
-                FullArgs.Add("-X:TabCompletion");
+                //FullArgs.Add("-X:TabCompletion");
                 FullArgs.Add("-X:ColorfulConsole");
-                FullArgs.Add("-X:AutoIndent");
+                //FullArgs.Add("-X:AutoIndent");
 
                 ForegroundColor = ConsoleColor.White;
                 pch.Run(FullArgs.ToArray());

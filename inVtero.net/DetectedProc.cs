@@ -32,6 +32,7 @@ using inVtero.net.Support;
 using static HashLib.HashFactory.Crypto;
 using System.Globalization;
 using inVtero.net.Hashing;
+using System.Dynamic;
 
 namespace inVtero.net
 {
@@ -125,7 +126,7 @@ namespace inVtero.net
             if (Address != 0)
                 memRead = GetVirtualLongLen(Address, minLen);
 
-            var rv = sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByteLen, GetVirtualLongLen);
+            var rv = sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, Address, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
             rv.SelfAddr = Address;
 
             return rv;
@@ -151,7 +152,8 @@ namespace inVtero.net
             }
             if (sym == null)
                 sym = Vtero.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
-            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, memRead, GetVirtualByteLen, GetVirtualLongLen);
+
+            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, 0, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
         }
 
         /// <summary>
@@ -559,7 +561,7 @@ namespace inVtero.net
                 // for the VAD
                 // limit all these reads with tLongLen read so we do not over read if we do not need
                 var memRead = GetVirtualLongLen(AddressRoot, vadLength);
-
+                
                 long StartingVPN = 0, EndingVPN = 0;
                 long LeftPtr = 0, RightPtr = 0;
                 ulong VADflags = 0;
@@ -1292,8 +1294,37 @@ namespace inVtero.net
             return cv2;
         }
 
-
         #region Memory Accessors 
+
+        public bool WriteMemory<T>(long VA, T[] Data)
+        {
+            byte[] byteArr = null;
+            if (Data is byte[])
+                byteArr = Data as byte[];
+            else if (Data is long[])
+            {
+                byteArr = new byte[Data.Length * 8];
+                Buffer.BlockCopy(Data, 0, byteArr, 0, byteArr.Length);
+            }
+            else
+                return false;
+
+            var hw = MemAccess.VirtualToPhysical(CR3Value, VA);
+
+            if (!hw.Valid)
+                return false;
+
+            var file_block_offset = MemAccess.OffsetToMemIndex(hw.NextTable_PFN);
+            var FileAddr = file_block_offset + (VA & 0xfff);
+
+            using (var writer = new FileStream(MemAccess.IOFile, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+            {
+                writer.Seek(FileAddr, SeekOrigin.Begin);
+                writer.Write(byteArr, 0, byteArr.Length);
+            }
+            return true;
+        }
+
         public byte GetByteValue(long VA)
         {
             var data = VGetBlock(VA);
@@ -1356,6 +1387,132 @@ namespace inVtero.net
                 return null;
 
             return rv;
+        }
+
+        void ExpandoChanged(object sender, PropertyChangedEventArgs e)
+        {
+            var myDict = ((IDictionary<string, object>)sender);
+
+            if (e.PropertyName.Equals("Value"))
+            {
+                // VA in this process, we set this strictly so we know it's a long
+                var Address = (long)myDict["vAddress"];
+
+                // the value to write (opaque)
+                var NewValue = myDict["Value"];
+
+                // SymType will tell us how to serialize NewValue
+                var SymType = myDict["TypeName"] as String;
+
+                // ObjectType is the full struct.member.field information
+                var ObjectType = myDict["MemberName"] as String;
+
+                var TypeLength = (ulong) myDict["Length"];
+
+                if (Vtero.VerboseLevel > 1)
+                    WriteColor(ConsoleColor.Black, ConsoleColor.Green,
+                    $"Writing {NewValue} to Object {ObjectType} MemberType {SymType} address: [{Address:X}]");
+
+                using (var fsAccess = new FileStream(MemAccess.IOFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                {
+                    byte[] byteArr = null;
+                    byte[] testArr = new byte[MagicNumbers.PAGE_SIZE];
+
+                    // why not read the data in and make sure we see what we think we should see?
+                    var hw = MemAccess.VirtualToPhysical(CR3Value, Address);
+                    if (!hw.Valid)
+                        return;
+
+                    var i = (int) Address & 0xfff;
+
+                    var file_block_offset = MemAccess.OffsetToMemIndex(hw.NextTable_PFN);
+                    var FileAddr = file_block_offset + i;
+                    fsAccess.Seek(file_block_offset, SeekOrigin.Begin);
+                    fsAccess.Read(testArr, 0, testArr.Length);
+
+                    // seraialize byteArr
+                    if (!string.IsNullOrWhiteSpace(SymType) && SymType.Equals("_UNICODE_STRING"))
+                    {
+                        int len = testArr[((Address - 0x10) & 0xfff)];
+                        var newStr = NewValue as String;
+
+                        if (newStr.Length > len)
+                            WriteColor(ConsoleColor.Black, ConsoleColor.Yellow, $"new string{newStr.Length} is longer than the original{len}, consider something smaller next time, writing anyway!");
+
+                        byteArr = Encoding.Unicode.GetBytes(newStr);
+                    }
+                    // a Null symtype mean's were a basic type where length is the size of the raw bytes (long,int,short,byte)
+                    // this should include bit's also since the caller should be expected to just clobber the bits :)
+                    else if (string.IsNullOrWhiteSpace(SymType))
+                    {
+                        if (myDict.ContainsKey("BitPosition"))
+                        {
+                            var bitPos = (uint)(myDict["BitPosition"]);
+                            int BitsToSet = (int)NewValue << (int)bitPos;
+
+                            var mask = 1U;
+                            for (int x = (int)TypeLength - 1; x > 0; x--)
+                            {
+                                mask = mask << 1;
+                                mask |= 1;
+                            }
+                            var new_mask = mask << (int)bitPos;
+                            uint inv_mask = ~mask;
+
+                            testArr[i] = (byte)((new_mask & (BitsToSet & 0xff)) | (testArr[i] & inv_mask));
+                            byteArr = new byte[1] { testArr[i] };
+                        }
+                        else
+                        {
+                            switch (TypeLength)
+                            {
+                                case 8:
+                                    byteArr = BitConverter.GetBytes(((long)NewValue));
+                                    break;
+                                case 4:
+                                    byteArr = BitConverter.GetBytes(((int)NewValue));
+                                    break;
+                                case 2:
+                                    byteArr = BitConverter.GetBytes(((short)NewValue));
+                                    break;
+                                case 1:
+                                    byteArr = new byte[] { (byte)NewValue };
+                                    break;
+                                default:
+                                    break;
+                            }
+                        }
+                    }
+                    // if were still null that mean's were likely an array type of bytes
+                    // let's just hope for the best
+                    if (byteArr == null)
+                    {
+                        if ((NewValue as byte[]) != null)
+                            byteArr = NewValue as byte[];
+                        else if ((NewValue as string) != null)
+                            byteArr = Encoding.ASCII.GetBytes(NewValue as string);
+                        else if ((NewValue as int[]) != null)
+                        {
+                            var intArr = NewValue as int[];
+                            byteArr = new byte[intArr.Length * 4];
+                            Buffer.BlockCopy(intArr, 0, byteArr, 0, byteArr.Length);
+                        }
+                        else if ((NewValue as long[]) != null)
+                        {
+                            var longArr = NewValue as long[];
+                            byteArr = new byte[longArr.Length * 4];
+                            Buffer.BlockCopy(longArr, 0, byteArr, 0, byteArr.Length);
+                        }
+                    }
+
+                    // if not then oh well, add more native type support (LARGE_INT etc..).
+                    if (byteArr == null)
+                        return;
+
+                    fsAccess.Seek(FileAddr, SeekOrigin.Begin);
+                    fsAccess.Write(byteArr, 0, byteArr.Length);
+                }
+            }
         }
 
         /// <summary>

@@ -28,6 +28,10 @@ namespace Dia2Sharp
 {
     public class Sym
     {
+        // These are added to the type's as meta data to allow things like memory editing
+        const string defName = "Value";
+        const string defAddr = "vAddress";
+
         public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
 
         public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_UNDNAME)
@@ -140,7 +144,15 @@ namespace Dia2Sharp
             } while (childrenFetched == 1);
         }
 
-        public dynamic xStructInfo(string PDBFile, string Struct, long[] memRead = null, Func<long, int, byte[]> GetMem = null, Func<long, int, long[]> GetMemLong = null)
+        public dynamic xStructInfo(
+            string PDBFile, 
+            string Struct, 
+            long vAddress = 0,
+            long[] memRead = null, 
+            Func<long, int, byte[]> GetMem = null, 
+            Func<long, int, long[]> GetMemLong = null,
+            PropertyChangedEventHandler ExpandoChanged = null
+            )
         {
             dynamic Info = null;
             IDiaSymbol Master = null;
@@ -167,10 +179,17 @@ namespace Dia2Sharp
                 Info = new ExpandoObject();
                 Info.TypeName = Master.name;
                 Info.Length = Master.length;
+                Info.vAddress = vAddress;
+
                 //StructInfo.Add(Master.name, Info); // Tuple.Create<int, int>(0, (int)Master.length));
-                xDumpStructs(Info, Master, Master.name, 0, memRead, GetMem, GetMemLong);
+                xDumpStructs(Info, Master, Master.name, 0, vAddress, memRead, GetMem, GetMemLong, ExpandoChanged);
+
+                if(ExpandoChanged != null)
+                    ((INotifyPropertyChanged)Info).PropertyChanged +=
+                        new PropertyChangedEventHandler(ExpandoChanged);
 
             } while (compileFetched == 1);
+
 
             return Info;
         }
@@ -185,13 +204,22 @@ namespace Dia2Sharp
         /// <param name="CurrOffset"></param>
         /// <param name="memRead"></param>
         /// <returns></returns>
-        dynamic xDumpStructs(dynamic Info, IDiaSymbol Master, string preName, int CurrOffset, long[] memRead = null, Func<long, int, byte[]> GetMem = null, Func<long, int, long[]> GetMemLong = null)
+        dynamic xDumpStructs(
+            dynamic Info, 
+            IDiaSymbol Master, 
+            string preName, 
+            int CurrOffset, 
+            long vAddress = 0,
+            long[] memRead = null, 
+            Func<long, int, byte[]> GetMem = null, 
+            Func<long, int, long[]> GetMemLong = null,
+            PropertyChangedEventHandler ExpandoChanged = null
+            )
         {
             var IInfo = (IDictionary<string, object>)Info;
             var InfoDict= new Dictionary<string, object>();
             Info.Dictionary = InfoDict;
             long lvalue = 0;
-
 
             IDiaSymbol Sub = null;
             IDiaEnumSymbols Enum2 = null;
@@ -219,6 +247,8 @@ namespace Dia2Sharp
                 zym.Tag = (SymTagEnum)Sub.symTag;
                 zym.Length = sType.length;
                 zym.OffsetPos = Pos;
+                zym.vAddress = vAddress;
+
                 if (Sub.locationType == 6)
                     zym.BitPosition = Sub.bitPosition;
 
@@ -226,7 +256,7 @@ namespace Dia2Sharp
 
                 if (memRead != null)
                 {
-                    var defName = "Value";
+                    bool captured = false;
                     lvalue = memRead == null ? 0 : memRead[Pos / 8];
 
                     // TODO: Handles/OBJECT_FOO/_ETC...
@@ -250,8 +280,11 @@ namespace Dia2Sharp
 
                             strVal = Encoding.Unicode.GetString(strByteArr, 0, strLen);
                         }
+                        // update new address for double deref
+                        zym.vAddress = StringAddr;
                         Izym.Add(defName, strVal);
                         staticDict.Add(currName, lvalue);
+
                     }
                     else
                     {
@@ -260,8 +293,6 @@ namespace Dia2Sharp
                         // 6 is a bitfield
                         if (Sub.locationType == 6)
                         {
-                            //zym.BitPosition = Sub.bitPosition;
-
                             var mask = 1U;
                             for (int x = (int)sType.length - 1; x > 0; x--)
                             {
@@ -275,27 +306,52 @@ namespace Dia2Sharp
                             // move lvalue to bitposition 0 
                             // saves having todo this every time we evaluate Value
                             lvalue = lvalue >> (int)Sub.bitPosition;
+                            captured = true;
                         }
                         else
                         {
                             var shift = (Pos % 8 * 8);
                             switch (sType.length)
                             {
+                                case 8:
+                                    captured = true;
+                                    break;
                                 case 4:
                                     lvalue = (lvalue >> shift) & 0xffffffff;
+                                    captured = true;
                                     break;
                                 case 2:
                                     lvalue = (lvalue >> shift) & 0xffff;
+                                    captured = true;
                                     break;
                                 case 1:
                                     lvalue = (lvalue >> shift) & 0xff;
+                                    captured = true;
                                     break;
                                 default:
                                     break;
                             }
+                            // were dealing with some sort of array or weird sized type not nativly supported (yet, e.g. GUID)
+                            // if we start with a _ we are going to be descending recursivly into this type so don't extract it here
+                            // this is really for basic type array's or things' were not otherwise able to recursivly extract
+                            if(!captured && !sType.name.StartsWith("_"))
+                            {
+                                byte[] arr = new byte[sType.length];
+                                int BytesReadRoom = (memRead.Length*8) - Pos;
+                                int len = BytesReadRoom > arr.Length ? arr.Length : BytesReadRoom;
+
+
+                                Buffer.BlockCopy(memRead, Pos, arr, 0, len);
+
+                                Izym.Add(defName, arr);
+                                staticDict.Add(currName, arr);
+                            }
                         }
-                        Izym.Add(defName, lvalue);
-                        staticDict.Add(currName, lvalue);
+                        if (captured)
+                        {
+                            Izym.Add(defName, lvalue);
+                            staticDict.Add(currName, lvalue);
+                        }
                     }
                 }
 
@@ -318,18 +374,19 @@ namespace Dia2Sharp
                                 // the location to read is our offset pos data
                                 var deRefArr = GetMemLong(lvalue, 0x20);
 
-
-                                xDumpStructs(zym, TypeType, currName, 0, deRefArr, GetMem, GetMemLong);
+                                xDumpStructs(zym, TypeType, currName, 0, vAddress, deRefArr, GetMem, GetMemLong, ExpandoChanged);
                             }
                         }
                     }
                     else
-                        xDumpStructs(zym, sType, currName, Pos, memRead, GetMem, GetMemLong);
+                        xDumpStructs(zym, sType, currName, Pos, vAddress, memRead, GetMem, GetMemLong, ExpandoChanged);
                 }
 #if DEBUGX
                 ForegroundColor = ConsoleColor.Cyan;
                 WriteLine($"Pos = [{Pos:X}] Name = [{currName}] Len [{sType.length}], Type [{typeName}], ThisStruct [{master}]");
 #endif
+
+
                 // Length comes up a lot in struct's and conflicts with the ExpandoObject 
                 // so remap it specially
                 var AddedName = Sub.name;
@@ -339,9 +396,17 @@ namespace Dia2Sharp
                     AddedName = "LengthMember";
                 if (IInfo.ContainsKey(AddedName))
                     continue;
+
+
                 IInfo.Add(AddedName, zym);
                 InfoDict.Add(AddedName, lvalue);
+
+                if (ExpandoChanged != null)
+                    ((INotifyPropertyChanged)zym).PropertyChanged += ExpandoChanged;
+
             } while (compileFetched == 1);
+
+
             return null;
         }
 
@@ -366,7 +431,7 @@ namespace Dia2Sharp
                     continue;
 
                 var defName = def.Key.Substring(Name.Length + 1); //.Replace('.', '_');
-
+                
                 switch (def.Value.Item2)
                 {
                     case 4:

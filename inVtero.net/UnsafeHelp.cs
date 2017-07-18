@@ -34,6 +34,17 @@ namespace inVtero.net
         public MemoryMappedViewAccessor BitMapView;
         public long BitmapLen;
 
+        static byte[] ZeroBuff;
+        static byte[] FFFBuff;
+
+        static UnsafeHelp()
+        {
+            ZeroBuff = new byte[MagicNumbers.PAGE_SIZE];
+            FFFBuff = new byte[MagicNumbers.PAGE_SIZE];
+            fixed (byte* allSetBits = FFFBuff)
+                SetMemory(allSetBits, 0xff, MagicNumbers.PAGE_SIZE);
+        }
+
         public UnsafeHelp(string BitmapFileName, long ByteSize = 0, bool InMemory = false)
         {
             var bitmapName = "UnsafeBitmap" + Path.GetFileNameWithoutExtension(BitmapFileName);
@@ -91,9 +102,10 @@ namespace inVtero.net
 
             if(arr is long[])
                 Marshal.Copy(ptr_off, arr as long[], 0, Count);
-
-            if (arr is byte[])
+            else if (arr is byte[])
                 Marshal.Copy(ptr_off, arr as byte[], 0, Count);
+            else if (arr is char[])
+                Marshal.Copy(ptr_off, arr as char[], 0, Count);
 
             view.SafeMemoryMappedViewHandle.ReleasePointer();
         }
@@ -154,11 +166,42 @@ namespace inVtero.net
             return rv;
         }
 
+        public static unsafe int IsFFFPage<T>(T[] input)
+        {
+            fixed (byte* allSetBits = FFFBuff)
+            {
+                if (input is byte[]) fixed (byte* bp = (input as byte[]))
+                        return CompareMemory(allSetBits, bp, MagicNumbers.PAGE_SIZE);
+                if (input is char[]) fixed (char* cp = (input as char[]))
+                        return CompareMemory(allSetBits, cp, MagicNumbers.PAGE_SIZE);
+                if (input is long[]) fixed (long* lp = (input as long[]))
+                        return CompareMemory(allSetBits, lp, MagicNumbers.PAGE_SIZE);
+            }
+            return -1;
+        }
+        public static unsafe int IsZeroPage<T>(T[] input)
+        {
+            fixed (byte* ZeroBytes = ZeroBuff)
+            {
+                if (input is byte[]) fixed (byte* bp = (input as byte[]))
+                        return CompareMemory(ZeroBytes, bp, MagicNumbers.PAGE_SIZE);
+                if (input is char[]) fixed (char* cp = (input as char[]))
+                        return CompareMemory(ZeroBytes, cp, MagicNumbers.PAGE_SIZE);
+                if (input is long[]) fixed (long* lp = (input as long[]))
+                        return CompareMemory(ZeroBytes, lp, MagicNumbers.PAGE_SIZE);
+            }
+            return -1;
+        }
+
         [DllImport("msvcrt.dll", EntryPoint = "memset", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
         public static unsafe extern void* SetMemory(void* dest, int c, ulong count);
 
         [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
         public static unsafe extern void* CopyMemory(void* dest, void* src, ulong count);
+
+        [DllImport("msvcrt.dll", EntryPoint = "memcmp", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
+        public static unsafe extern int CompareMemory(void* s1, void* s2, ulong count);
+
 
         public static unsafe bool UnsafeCompare(byte[] a1, byte[] a2)
         {
