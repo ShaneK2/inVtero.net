@@ -187,6 +187,8 @@
     <Compile Include="Hashing\FractHashTree.cs" />
     <Compile Include="Hashing\Hasher.cs" />
     <Compile Include="Hashing\HashRecord.cs" />
+    <Compile Include="Hashing\MetaDB.cs" />
+    <Compile Include="Hashing\MetaItem.cs" />
     <Compile Include="inVtero.cs" />
     <Compile Include="Mem.cs" />
     <Compile Include="MemSection.cs" />
@@ -205,6 +207,7 @@
     <Compile Include="Specialties\XEN.cs" />
     <Compile Include="Support.cs" />
     <Compile Include="Support\Capstone.cs" />
+    <Compile Include="Support\JunctionPoint.cs" />
     <Compile Include="Support\Keystone.cs" />
     <Compile Include="Support\Strings.cs" />
     <Compile Include="UnsafeHelp.cs" />

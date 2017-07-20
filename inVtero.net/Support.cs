@@ -21,6 +21,7 @@ using ProtoBuf;
 using static System.Console;
 using inVtero.net.Support;
 using inVtero.net.Specialties;
+using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net
 {
@@ -36,9 +37,13 @@ namespace inVtero.net
         public const long HIGHEST_USER_ADDRESS = 0x7ffffffeffff;
         public const int LARGE_PAGE_SIZE = 1024*1024*2;
         public const int PAGE_SIZE = 0x1000;
+        public const int DB_READ_SIZE = PAGE_SIZE*2; 
+        public const ulong DB_PAGE_MASK = 0xfffUL; 
         public const int PE_TYPICAL_HEADER_SIZE = 0x400;
         public const int KERNEL_PT_INDEX_START_USUALLY = 256;
         public const int PAGE_SHIFT = 12;
+        public const int HASH_REC_BYTES = 16;
+        public const int HASH_REC_BYTES_INDEX = 8;
         public const int HASH_SHIFT = 4; // 16 bytes each
         public const int LONG_SHIFT = 3; // to represent a set of longs as bits
         public const long BAD_VALUE_READ = -0xbad00;
@@ -145,16 +150,16 @@ namespace inVtero.net
 
         public static bool IsKernelRange(long VA)
         {
-            return (VA < 0 || VA > MagicNumbers.HIGHEST_USER_ADDRESS);
+            return (VA < 0 || VA > HIGHEST_USER_ADDRESS);
         }
         public static ulong Extend(long Address)
         {
-            return ((Address < 0 || Address > MagicNumbers.HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address);
+            return ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address);
         }
 
-        public ulong FullAddr { get { return ((Address < 0 || Address > MagicNumbers.HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address); } }
+        public ulong FullAddr { get { return ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address); } }
 
-        public override string ToString() => $"VA: {((Address < 0 || Address > MagicNumbers.HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X12}, PML4E {PML4:X3}, DPO:{DirectoryPointerOffset:X3}, DO:{DirectoryOffset:X3}, TO: {TableOffset:X3}, O: {Offset:X4}";
+        public override string ToString() => $"VA: {((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X12}, PML4E {PML4:X3}, DPO:{DirectoryPointerOffset:X3}, DO:{DirectoryOffset:X3}, TO: {TableOffset:X3}, O: {Offset:X4}";
 
         public long Offset { get { return Address & 0xfff; } set { Address &= ~0xfffu; Address |= value; } }
         public long TableOffset { get { return (Address & 0x1ff000) >> 12; } set { Address &= ~0x1ff000; Address |= (value << 12); } }
@@ -323,7 +328,7 @@ namespace inVtero.net
             if (ReservedFlagsSet)
                 return false;
 
-            if (PML4_PFN < MagicNumbers.MinEPTPAddr)
+            if (PML4_PFN < MinEPTPAddr)
                 return false;
 
             return true;
@@ -396,10 +401,10 @@ namespace inVtero.net
         public long MaxAddressablePageNumber { get {
 
                 if (maxAddressablePageNumber != 0)
-                    return maxAddressablePageNumber + (StartOfMemmory >> MagicNumbers.PAGE_SHIFT);
+                    return maxAddressablePageNumber + (StartOfMemmory >> PAGE_SHIFT);
 
                 maxAddressablePageNumber = Run.Count > 0 ? Run[Run.Count - 1].BasePage + Run[Run.Count - 1].PageCount : NumberOfPages;
-                return maxAddressablePageNumber + (StartOfMemmory >> MagicNumbers.PAGE_SHIFT);
+                return maxAddressablePageNumber + (StartOfMemmory >> PAGE_SHIFT);
             } }
         public List<MemoryRun> Run;
 

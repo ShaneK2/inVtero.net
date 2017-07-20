@@ -294,18 +294,23 @@ namespace Dia2Sharp
                         if (Sub.locationType == 6)
                         {
                             var mask = 1U;
-                            for (int x = (int)sType.length - 1; x > 0; x--)
+                            var BitsLen = Sub.length;
+                            zym.BitCount = BitsLen;
+
+                            var subOff = Sub.offset;
+
+                            for (int x = (int)BitsLen - 1; x > 0; x--)
                             {
                                 mask = mask << 1;
                                 mask |= 1;
                             }
-                            var new_mask = mask << (int)Sub.bitPosition;
+                            var new_mask = mask << (int)Sub.bitPosition << (subOff * 8);
 
                             lvalue &= new_mask;
 
                             // move lvalue to bitposition 0 
                             // saves having todo this every time we evaluate Value
-                            lvalue = lvalue >> (int)Sub.bitPosition;
+                            lvalue = lvalue >> (int)Sub.bitPosition >> (subOff * 8);
                             captured = true;
                         }
                         else

@@ -13,15 +13,23 @@ from System.Diagnostics import Stopwatch
 from inVtero.net.Hashing import *
 
 Vtero.VerboseLevel = 1
-aBufferCount = 10000000
-db = HashDB(128, "C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4)
-db.AddNullInput()
-fl = FileLoader(db)
-fl.BufferCount = aBufferCount 
+
+aBufferCount = 60000000
+
+mdb = MetaDB("c:\\temp\\inVtero.net", 1024*1024*1024*16, 128, aBufferCount)
+
+fl = mdb.Loader
+fl.LoadFromPath("f:\\")
+
+mdb.Save()
+
+#db = HashDB(128, "C:\\temp\\iv.DB", "c:\\temp\\reloc", 
+#db.AddNullInput()
+#fl = FileLoader(db)
+#fl.BufferCount = aBufferCount 
 
 #fl.LoadFromPath("g:\\")
 #fl.LoadFromPath("c:\\temp\\single\\")
-fl.LoadFromPath("g:\\Program Files\\VMware\\")
 
 
 #rv = fl.FileChecker("c:\\temp\\advapi32.dll.text", True)
@@ -48,6 +56,6 @@ fl.LoadFromPath("g:\\Program Files\\VMware\\")
 ## 10M is enough for most deployments
 
 
-print fl.LoadExceptions.Count.ToString() + " File load exceptions encountered."
+#print fl.LoadExceptions.Count.ToString() + " File load exceptions encountered."
 
 

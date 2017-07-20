@@ -22,6 +22,7 @@ using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
+using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net
 {
@@ -39,10 +40,10 @@ namespace inVtero.net
 
         static UnsafeHelp()
         {
-            ZeroBuff = new byte[MagicNumbers.PAGE_SIZE];
-            FFFBuff = new byte[MagicNumbers.PAGE_SIZE];
+            ZeroBuff = new byte[PAGE_SIZE];
+            FFFBuff = new byte[PAGE_SIZE];
             fixed (byte* allSetBits = FFFBuff)
-                SetMemory(allSetBits, 0xff, MagicNumbers.PAGE_SIZE);
+                SetMemory(allSetBits, 0xff, PAGE_SIZE);
         }
 
         public UnsafeHelp(string BitmapFileName, long ByteSize = 0, bool InMemory = false)
@@ -71,14 +72,12 @@ namespace inVtero.net
                 }
                 catch (Exception ex)
                 {
-                    long len = (int)new FileInfo(BitmapFileName).Length;
-
                     if (BitMap == null && !InMemory)
                         BitMap = MemoryMappedFile.CreateFromFile(
                                 BitmapFileName,
                                 FileMode.OpenOrCreate,
                                 bitmapName,
-                                len);
+                                ByteSize);
                 }
             }
 
@@ -171,11 +170,11 @@ namespace inVtero.net
             fixed (byte* allSetBits = FFFBuff)
             {
                 if (input is byte[]) fixed (byte* bp = (input as byte[]))
-                        return CompareMemory(allSetBits, bp, MagicNumbers.PAGE_SIZE);
+                        return CompareMemory(allSetBits, bp, PAGE_SIZE);
                 if (input is char[]) fixed (char* cp = (input as char[]))
-                        return CompareMemory(allSetBits, cp, MagicNumbers.PAGE_SIZE);
+                        return CompareMemory(allSetBits, cp, PAGE_SIZE);
                 if (input is long[]) fixed (long* lp = (input as long[]))
-                        return CompareMemory(allSetBits, lp, MagicNumbers.PAGE_SIZE);
+                        return CompareMemory(allSetBits, lp, PAGE_SIZE);
             }
             return -1;
         }
@@ -184,11 +183,11 @@ namespace inVtero.net
             fixed (byte* ZeroBytes = ZeroBuff)
             {
                 if (input is byte[]) fixed (byte* bp = (input as byte[]))
-                        return CompareMemory(ZeroBytes, bp, MagicNumbers.PAGE_SIZE);
+                        return CompareMemory(ZeroBytes, bp, PAGE_SIZE);
                 if (input is char[]) fixed (char* cp = (input as char[]))
-                        return CompareMemory(ZeroBytes, cp, MagicNumbers.PAGE_SIZE);
+                        return CompareMemory(ZeroBytes, cp, PAGE_SIZE);
                 if (input is long[]) fixed (long* lp = (input as long[]))
-                        return CompareMemory(ZeroBytes, lp, MagicNumbers.PAGE_SIZE);
+                        return CompareMemory(ZeroBytes, lp, PAGE_SIZE);
             }
             return -1;
         }

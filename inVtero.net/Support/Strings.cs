@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using inVtero.net;
-using System.Linq;
+using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net.Support
 {
@@ -15,8 +15,8 @@ namespace inVtero.net.Support
 
         public static IEnumerable<Tuple<ulong, string>> SimpleRegex(Regex re, DetectedProc dp, bool MatchAscii = true, bool MatchUTF16 = false, bool MatchUTF8 = false)
         {
-            byte[] block4k = new byte[MagicNumbers.PAGE_SIZE];
-            byte[] block2MB = new byte[MagicNumbers.LARGE_PAGE_SIZE];
+            byte[] block4k = new byte[PAGE_SIZE];
+            byte[] block2MB = new byte[LARGE_PAGE_SIZE];
             string s = string.Empty;
             MatchCollection mc = null;
 
@@ -65,8 +65,8 @@ namespace inVtero.net.Support
 
         public static IEnumerable<ulong> ByteScan(Byte[] ToFind, DetectedProc dp, int align = 1, int MaxCount = 0)
         {
-            byte[] block4k = new byte[MagicNumbers.PAGE_SIZE];
-            byte[] block2MB = new byte[MagicNumbers.LARGE_PAGE_SIZE];
+            byte[] block4k = new byte[PAGE_SIZE];
+            byte[] block2MB = new byte[LARGE_PAGE_SIZE];
             string s = string.Empty;
 
             foreach (var entry in dp.PT.FillPageQueue(false, true, true, false))

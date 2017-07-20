@@ -360,8 +360,9 @@ namespace inVtero.net
             WalkProcList(KernelProc);
 
             KernelProc.InitSymbolsForVad();
-            var db = new HashDB(128, DB, Relocs, Size);
-            var fl = new FileLoader(db);
+
+            var mdb = new MetaDB("c:\\temp\\inVtero.net", Size, 128);
+            var fl = new FileLoader(mdb);
             MemAccess.MapViewSize = 128 * 1024;
 
             long TotalTotal = 0;
@@ -378,7 +379,7 @@ namespace inVtero.net
 
                 using (proc.MemAccess = new Mem(MemAccess))
                 {
-                    proc.HDB = db;
+                    proc.HDB = mdb.HDB;
                     proc.KernelSection = KernelProc.KernelSection;
                     proc.CopySymbolsForVad(KernelProc);
                     proc.ID = KernelProc.ID;
@@ -408,7 +409,7 @@ namespace inVtero.net
                                     {
                                         WriteColor(ConsoleColor.Yellow, ConsoleColor.Black, $"{r}");
                                         WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"Failure address list; ");
-                                        foreach (var UnVerifiedAddr in r.GetFailedOffsets(db.MinBlockSize))
+                                        foreach (var UnVerifiedAddr in r.GetFailedOffsets(mdb.MinHashSize))
                                         {
                                             WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"{UnVerifiedAddr:X} ");
                                             if (CursorLeft >= WindowWidth - 16)

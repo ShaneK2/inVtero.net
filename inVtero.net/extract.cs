@@ -68,6 +68,8 @@ namespace Reloc
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Extract
     {
+        public int rID;
+
         public long VA;
 
         public static int NewCnt;

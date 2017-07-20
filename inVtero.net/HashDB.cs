@@ -23,6 +23,7 @@ using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Threading;
 using Reloc;
+using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net
 {
@@ -32,8 +33,8 @@ namespace inVtero.net
         public string HashDBFile;
         public string HashDBBitMap;
         public long DBSize;
-        public long DBEntries;
-        public long DBEntriesMask;
+        public ulong DBEntries;
+        public ulong DBEntriesMask;
         public int MinBlockSize;
 
         public ReReDB ReRe;
@@ -41,6 +42,14 @@ namespace inVtero.net
         [ProtoIgnore]
         UnsafeHelp HDBBitMap;
 
+        /// <summary>
+        /// HashDB manager
+        /// MUST BE A POWER OF 2
+        /// </summary>
+        /// <param name="minBlockSize">POWER of 2</param>
+        /// <param name="DB">Primary DB</param>
+        /// <param name="relocFolder">Relocation data</param>
+        /// <param name="Size">POWER OF 2!</param>
         public HashDB(int minBlockSize, string DB, string relocFolder, long Size = 0) 
         {
             HashDBFile = DB;
@@ -54,20 +63,20 @@ namespace inVtero.net
                     throw new InternalBufferOverflowException($"DB SIZE not a power of 2!");
 
                 using (var fileStream = new FileStream(HashDBFile, FileMode.Create, FileAccess.Write, FileShare.None))
-                    fileStream.SetLength(DBSize + 4096);
+                    fileStream.SetLength(DBSize + (DB_READ_SIZE));
             }
             else
                 DBSize = (long)FractHashTree.RoundDownPow2(new FileInfo(HashDBFile).Length);
 
-            // Divide by 16
-            DBEntries = DBSize >> 4;
-            DBEntriesMask = DBEntries - 1;
+            // Divide by HASH size
+            DBEntries = (ulong) DBSize >> HASH_SHIFT;
+            DBEntriesMask = (ulong) DBEntries - 1;
 
             MinBlockSize = minBlockSize;
 
             ReRe = new ReReDB(relocFolder);
 
-            HDBBitMap = new UnsafeHelp(HashDBBitMap);
+            HDBBitMap = new UnsafeHelp(HashDBBitMap, (long) DBEntries >> LONG_SHIFT);
         }
 
         /// <summary>
@@ -85,16 +94,11 @@ namespace inVtero.net
             {
                 if (GetIdxBit(HR[i].Index))
                 {
-                    // 0xA is A_OK!
-                    HR[i].HashData[15] = (byte)
-                        ((HR[i].HashData[15] & 0xF0) + 0xA);
-
+                    HR[i].Verified = true;
                     SetBits++;
-                } 
+                }
                 else
-                    // 0xF is FAIL!
-                    HR[i].HashData[15] = (byte)
-                        ((HR[i].HashData[15] & 0xF0) + 0xF);
+                    HR[i].Verified = false;
             }
 
             return SetBits;
@@ -102,19 +106,20 @@ namespace inVtero.net
 
         public bool GetIdxBit(ulong bit)
         {
-            return HDBBitMap.GetBit(((long) bit >> 4) & DBEntriesMask);
+            return HDBBitMap.GetBit(((long) bit >> HASH_SHIFT) & (long)DBEntriesMask);
         }
 
         public void SetIdxBit(ulong bit)
         {
-            HDBBitMap.SetBit(((long) bit >> 4) & DBEntriesMask);
+            HDBBitMap.SetBit(((long) bit >> HASH_SHIFT) & (long)DBEntriesMask);
         }
-
+        /*
         public void AddNullInput()
         {
             FileLoader fl = new FileLoader(this, 32);
-            var wrote = fl.LoadFromMem(new byte[4096]);
+            var wrote = fl.LoadFromMem(new byte[MagicNumbers.PAGE_SIZE]);
         }
+        */
 
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls

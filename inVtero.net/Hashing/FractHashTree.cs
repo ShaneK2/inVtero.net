@@ -20,6 +20,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net.Hashing
 {
@@ -29,22 +30,18 @@ namespace inVtero.net.Hashing
         public int MinBlockSize = 0;
         public long LevelCount = 0;
 
-        const int PageSize = 4096;
-
         Func<HashLib.IHash> GetHP;
         HashLib.IHash[] HPs;
-        MiniSection Input;
-        string FileIn;
         public ConcurrentDictionary<int, List<HashRecord>> hashes;
 
 
-        public static HashRec[] CreateRecsFromMemory(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP, int OnlySize = 0, long VA = 0)
+        public static HashRec[] CreateRecsFromMemory(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP, int rID = 0, long VA = 0, int OnlySize = 0, bool PreSerialize = false)
         {
             if (MemPage == null)
                 return null;
 
             int RawSize = MemPage.Length;
-            var topCnt = BlockCount(RawSize, PageSize);
+            var topCnt = BlockCount(RawSize, PAGE_SIZE);
             if (getHP == null)
                 getHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
 
@@ -81,134 +78,24 @@ namespace inVtero.net.Hashing
                 {
                     localHashProv[lvl].TransformBytes(MemPage, arri * blockSize, blockSize);
                     var hashBytes = localHashProv[lvl].TransformFinal().GetBytes();
-                    sHash[hashLevelIndex + arri] = new HashRec(hashBytes, lvl);
-                }
-            }
 
-            return sHash;
-        }
+                    sHash[hashLevelIndex + arri] = new HashRec(hashBytes, lvl, rID);
 
-
-        public static HashRecord[] CreateFromMemory(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP)
-        {
-            int RawSize = MemPage.Length;
-            var topCnt = BlockCount(RawSize, PageSize);
-            if (getHP == null)
-                getHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
-
-            var levelMap = LevelMaps(RawSize, minBlockSize);
-            int LevelCount = levelMap.Count();
-            long TotalHashs = levelMap[LevelCount - 1].Item1 + levelMap[LevelCount - 1].Item2;
-            HashLib.IHash[] localHashProv = new HashLib.IHash[LevelCount];
-            var sHash = new HashRecord[TotalHashs];
-
-            // smallest to largest orginization 
-            for (int i = 0; i < LevelCount; i++)
-                localHashProv[i] = getHP();
-
-            for (byte lvl = 0; lvl < LevelCount; lvl++)
-            {
-                var blockSize = minBlockSize << lvl;
-                var blockCnt = PageSize / blockSize;
-
-                var hashLevelIndex = levelMap[lvl].Item1;
-
-                localHashProv[lvl].Initialize();
-
-                for (int arri = 0; arri < blockCnt; arri++)
-                {
-                    localHashProv[lvl].TransformBytes(MemPage, arri * blockSize, blockSize);
-                    var hashBytes = localHashProv[lvl].TransformFinal().GetBytes();
-                    sHash[hashLevelIndex + arri] = new HashRecord(hashBytes, lvl);
-                }
-            }
-
-            return sHash;
-        }
-
-        public static HashRecord[] CreateFromFile(string BackingFile, MiniSection input, int minBlockSize, Func<HashLib.IHash> getHP)
-        {
-            int RawSize = (int) ((input.RawFileSize + 0xfff) & ~0xfff);
-            //int VirtualSize = (int) input.VirtualSize;
-
-            var topCnt = BlockCount(RawSize, PageSize);
-            if (getHP == null)
-                getHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
-
-            var levelMap = LevelMaps(RawSize, minBlockSize);
-            int LevelCount = levelMap.Count();
-            long TotalHashs = levelMap[LevelCount - 1].Item1 + levelMap[LevelCount - 1].Item2;
-
-            var sHash = new HashRecord[TotalHashs];
-
-            HashLib.IHash[] localHashProv = new HashLib.IHash[LevelCount];
-
-            // smallest to largest orginization 
-            for (int i = 0; i < LevelCount; i++)
-                localHashProv[i] = getHP();
-
-            byte[] pageBuf;
-            byte[][] buffers = { new byte[PageSize], new byte[PageSize] };
-            int filled = 0;
-
-            // we do this many 4k Read's "top level"
-            var TopCnt = levelMap[LevelCount - 1].Item2;
-
-            using (var fs = new FileStream(BackingFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan))
-            {
-                fs.Position = input.RawFilePointer;
-                int remaining = RawSize;
-
-                int readIn = fs.Read(buffers[filled], 0, PageSize);
-                remaining -= readIn;
-
-                for (int i = 0; i < TopCnt; i++)
-                {
-                    // setup buffers for parallel load/read
-                    pageBuf = buffers[filled];
-
-                    // swap filled so parallel task can start loading while we compute previous chunk
-                    filled ^= 1;
-
-                    Parallel.Invoke(() =>
-                    Parallel.For(0, LevelCount, (lvl) =>
-                    {
-                        var blockSize = (int) levelMap[lvl].Item3;
-                        var blockCnt = PageSize / blockSize;
-                        var hashLevelIndex = levelMap[lvl].Item1;
-
-                        localHashProv[lvl].Initialize();
-
-                        for (int arri = 0; arri < blockCnt; arri++)
-                        {
-                            localHashProv[lvl].TransformBytes(pageBuf, arri * blockSize, blockSize);
-                            var hashBytes = localHashProv[lvl].TransformFinal().GetBytes();
-                            sHash[hashLevelIndex + arri + (i * blockCnt)] = new HashRecord(hashBytes, (byte) lvl);
-                        }
-                    }), () => {
-                        while (remaining > 0)
-                        {
-                            readIn = fs.Read(buffers[filled], 0, PageSize);
-                            if (readIn < PageSize)
-                            {
-                                Array.Clear(buffers[filled], readIn, PageSize - readIn);
-                                readIn = PageSize;
-                            }
-
-                            remaining -= readIn;
-                        }
-                    });
+                    // trying to reduce some load in the DB commit path
+                    if(PreSerialize)
+                        sHash[hashLevelIndex + arri].Serialized = HashRec.ToByteArr(sHash[hashLevelIndex + arri]);
                 }
             }
             return sHash;
         }
+
 
         public static long TotalHashesForSize(uint Size, int MinBlockSize)
         {
             long tally = 0;
             var AlignSize = ((Size + 0xfff) & ~0xfff);
 
-            int iheight = TreeHeight(MagicNumbers.PAGE_SIZE, MinBlockSize);
+            int iheight = TreeHeight(PAGE_SIZE, MinBlockSize);
             for (var i = 0; i < iheight; i++)
                 tally += BlockCount(AlignSize, MinBlockSize << i);
 
@@ -220,7 +107,7 @@ namespace inVtero.net.Hashing
             int RawSize = (int)((input.RawFileSize + 0xfff) & ~0xfff);
             //int VirtualSize = (int) input.VirtualSize;
 
-            var topCnt = BlockCount(RawSize, PageSize);
+            var topCnt = BlockCount(RawSize, PAGE_SIZE);
             if (getHP == null)
                 getHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
 
@@ -240,7 +127,7 @@ namespace inVtero.net.Hashing
                 localHashProv[i] = getHP();
 
             byte[] pageBuf;
-            byte[][] buffers = { new byte[PageSize], new byte[PageSize] };
+            byte[][] buffers = { new byte[PAGE_SIZE], new byte[PAGE_SIZE] };
             int filled = 0;
 
             // we do this many 4k Read's "top level"
@@ -251,11 +138,11 @@ namespace inVtero.net.Hashing
                 fs.Position = input.RawFilePointer;
                 int remaining = (int) input.RawFileSize;
 
-                int readIn = fs.Read(buffers[filled], 0, PageSize);
+                int readIn = fs.Read(buffers[filled], 0, PAGE_SIZE);
                 remaining -= readIn;
 
                 if(remaining < 0)
-                    Array.Clear(buffers[filled], (int) input.RawFileSize, PageSize - (int) input.RawFileSize);
+                    Array.Clear(buffers[filled], (int) input.RawFileSize, PAGE_SIZE - (int) input.RawFileSize);
 
                 for (int i = 0; i < TopCnt; i++)
                 {
@@ -270,7 +157,7 @@ namespace inVtero.net.Hashing
                         for (int lvl = 0; lvl < LevelCount; lvl++)
                         {
                             var blockSize = (int)levelMap[lvl].Item3;
-                            var blockCnt = PageSize / blockSize;
+                            var blockCnt = PAGE_SIZE / blockSize;
                             var hashLevelIndex = levelMap[lvl].Item1;
 
                             localHashProv[lvl].Initialize();
@@ -289,11 +176,11 @@ namespace inVtero.net.Hashing
                     }, () => {
                         while (remaining > 0)
                         {
-                            readIn = fs.Read(buffers[filled], 0, PageSize);
-                            if (readIn < PageSize)
+                            readIn = fs.Read(buffers[filled], 0, PAGE_SIZE);
+                            if (readIn < PAGE_SIZE)
                             {
-                                Array.Clear(buffers[filled], readIn, PageSize - readIn);
-                                readIn = PageSize;
+                                Array.Clear(buffers[filled], readIn, PAGE_SIZE - readIn);
+                                readIn = PAGE_SIZE;
                             }
                             if(readIn > remaining)
                                 Array.Clear(buffers[filled], remaining, readIn - remaining);
@@ -327,7 +214,7 @@ namespace inVtero.net.Hashing
                 GetHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
 
             hashes = new ConcurrentDictionary<int, List<HashRecord>>(); 
-            for (int i = MinBlockSize; i <= PageSize; i *= 2)
+            for (int i = MinBlockSize; i <= PAGE_SIZE; i *= 2)
             {
                 hList.Add(GetHP());
                 hashes[i] = new List<HashRecord>();
@@ -337,101 +224,6 @@ namespace inVtero.net.Hashing
 
         }
 
-        public FractHashTree(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP)
-            :this(minBlockSize, getHP)
-        {
-
-            for (byte lvl = 0; lvl < LevelCount; lvl++)
-            {
-                var blockSize = MinBlockSize << lvl;
-                var blockCnt = PageSize / blockSize;
-                HPs[lvl].Initialize();
-
-                for (int arri = 0; arri < blockCnt; arri++)
-                {
-                    HPs[lvl].TransformBytes(MemPage, arri * blockSize, blockSize);
-                    var hashBytes = HPs[lvl].TransformFinal().GetBytes();
-                    hashes[blockSize].Add(new HashRecord(hashBytes, lvl));
-                }
-            }
-        }
-
-        public FractHashTree(string BackingFile, MiniSection input, int minBlockSize, Func<HashLib.IHash> getHP)
-            :this(minBlockSize, getHP)
-        {
-            if (!IsPow2(minBlockSize))
-                return;
-
-            Input = input;
-            FileIn = BackingFile;
-
-            RunFromFile();
-        }
-
-        public List<HashRecord> DumpTree()
-        {
-            List<HashRecord> rv = new List<HashRecord>();
-            foreach (var hashx in hashes.Values)
-                rv.AddRange(hashx);
-
-            return rv;
-        }
-
-        public List<HashRec> DumpRecTree()
-        {
-            List<HashRec> rv = new List<HashRec>();
-            foreach (var hashx in hashes.Values)
-                foreach (var hash in hashx)
-                    rv.Add(hash as HashRecord);
-
-            return rv;
-        }
-
-
-        void RunFromFile()
-        {
-            byte[] pageBuf;
-            byte[][] buffers = { new byte[PageSize], new byte[PageSize] };
-            int filled = 0;
-
-            int RawSize = (int)((Input.RawFileSize + 0xfff) & ~0xfff);
-
-            var TopCnt = BlockCount(RawSize, PageSize);
-
-            using (var fs = new FileStream(FileIn, FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                fs.Position = Input.RawFilePointer;
-                int readIn = fs.Read(buffers[filled], 0, PageSize);
-
-                for (int i = 0; i < TopCnt; i++)
-                {
-                    // setup buffers for parallel load/read
-                    pageBuf = buffers[filled];
-
-                    // swap filled so parallel task can start loading while we compute previous chunk
-                    filled ^= 1;
-
-                    Parallel.Invoke(() => 
-                    Parallel.For(0, LevelCount, (lvl) =>
-                    {
-                        var blockSize = MinBlockSize << (int)lvl;
-                        var blockCnt = PageSize / blockSize;
-                        HPs[lvl].Initialize();
-
-                        for (int arri = 0; arri < blockCnt; arri++)
-                        {
-                            HPs[lvl].TransformBytes(pageBuf, arri * blockSize, blockSize);
-                            var hashBytes = HPs[lvl].TransformFinal().GetBytes();
-                            hashes[blockSize].Add(new HashRecord(hashBytes, (byte)lvl));
-                        }
-                    }), () => {
-                        readIn = fs.Read(buffers[filled], 0, PageSize);
-                        if (readIn < PageSize)
-                            Array.Clear(buffers[filled], readIn, PageSize - readIn);
-                    });
-                }
-            }
-        }
 
 
         /// <summary>
@@ -543,7 +335,7 @@ namespace inVtero.net.Hashing
         public static IList<Tuple<long, long, long>> LevelMaps(long insize, int minSize)
         {
             long tally = 0, levCnt;
-            int iheight = TreeHeight(MagicNumbers.PAGE_SIZE, minSize);
+            int iheight = TreeHeight(PAGE_SIZE, minSize);
             var rv = new List<Tuple<long, long, long>>();
 
             for (var i = 0; i < iheight; i++)

@@ -16,50 +16,151 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net.Hashing
 {
-
-    // we store in the DB 128 bit total
-    // 4 bits are the blocklen 
-    // 124 upper bits from the hash are stored in the table
-    // the lower N bits (depending on available) are the index
-    // so if it's 192 bit tiger, the upper 124 is stored
-    // the lower 72 are the index (less than that so we loose a few bits)
-    // for example a 1GB table would yield 67108864 entries (26 bits of index)
-    // So for a 1GB table you have 150 bit of hash maintained 
-    // PLUS a length specifier that indicates how large the input was that genrated that hash value
+    /// <summary>
+    /// Total Record Size = 32 bytes
+    /// 160 bit's reserved for hash check explicitally
+    /// variable amount of bit's used as the index location in the DB
+    /// 8 GB DB = 268435456 entries = 1111 1111 1111 1111 1111 1111 1111 (28 more bit's)
+    /// so an 8GB DB give's you effectivally 188 bit of un-wasted bits
+    /// </summary>
     public struct HashRec
     {
-        public HashRec(byte[] Hash, byte blockLen, long VA = 0)
+        public HashRec(byte[] Hash, byte blockLenFlag, int rID = 0)
         {
-            // upper 15 bytes
+            RID = rID << 2;
+            RID |= blockLenFlag; // 0 = 128, 1 = 256, 2 = 512, 3 = 1024, 4 = 2048|4096
+
+            CompressedHash = BitConverter.ToUInt64(Hash, 0);
+            CompressedShortHash = BitConverter.ToUInt32(Hash, 8);
+            Index = BitConverter.ToUInt64(Hash, Hash.Length - 8) << HASH_SHIFT;
+
+            Serialized = null;
+        }
+
+        public ulong Index;
+        public int RID;
+        public uint CompressedShortHash;
+        public ulong CompressedHash;
+
+        public byte[] Serialized;
+        public static byte[] ToByteArr(HashRec rec)
+        {
+            byte[] rv = new byte[HASH_REC_BYTES];
+
+            //Array.Copy(rec.HashData, 0, rv, 0, rec.HashData.Length);
+
+            Array.Copy(BitConverter.GetBytes(rec.CompressedHash), 0, rv, 0, 8);
+            Array.Copy(BitConverter.GetBytes(rec.CompressedShortHash), 0, rv, 8, 4);
+            Array.Copy(BitConverter.GetBytes(rec.RID), 0, rv, 12, 4);
+            
+            //Array.Copy(rec.HD2, 0, rv, 20, 3);
+            //rv[24] = rec.BlockLen;
+            // theorietcally we can use more of this for other purposes
+            // since the index is the location in the DB..
+            // depending on size, usually like 30something+ bits
+
+            return rv;
+        }
+        public static HashRec FromBytes(Byte[] arr)
+        {
+            HashRec rec;
+            //rec.HashData = new byte[16];
+            //rec.HD2 = new byte[3];
+            //Array.Copy(arr, 0, rec.HashData, 0, 16);
+            //rec.RID = BitConverter.ToInt32(arr, 16);
+            //Array.Copy(arr, 20, rec.HD2, 0, 3);
+            //rec.BlockLen = arr[24];
+
+            rec.CompressedHash = BitConverter.ToUInt64(arr, 0);
+            rec.CompressedShortHash = BitConverter.ToUInt32(arr, 8);
+            rec.RID = BitConverter.ToInt32(arr, 12);
+            rec.Serialized = null;
+            rec.Index = 0;
+            return rec;
+        }
+#if A32byteFormat
+        public HashRec(byte[] Hash, byte blockLen, long VA = 0, int rID = 0) 
+        {
+
+            RID = rID;
+            BlockLen = blockLen;
+
             HashData = new byte[16];
-            //Array.Copy(Hash, 0, HashData, 0, 16);
+            HD2 = new byte[4];
 
             for (int i = 0; i < 16; i++)
                HashData[i] = Hash[i];
 
-            // keep the upper nibble
-            HashData[15] = (byte)(HashData[15] & 0xf0);
-            HashData[15] |= blockLen;
+            for (int i = 16, j = 0; i < 20; i++, j++)
+                HD2[j] = Hash[i];
 
             // lower (variable sized) bytes are the index to the DB
             var indexLoc = Hash.Length - 8;
 
             // shift up since were 16 byte aligned
-            Index = BitConverter.ToUInt64(Hash, indexLoc) << 4;
-        }
-        public byte[] HashData;
-        public ulong Index;
+            Index = BitConverter.ToUInt64(Hash, indexLoc) << HASH_SHIFT;
 
-        public int Size { get { return HashData[15] & 0xf; } }
+            Serialized = null;
+        }
+
+
+        /*
+        public byte[] HashData; // 16
+        public int RID;         // 4 remote ID (meta DB)
+        public byte BlockLen;   // 1
+                                // public int Verified  // we steal 1 bit from RID to signafy at run time (since were a value struct) if verify was succsess
+                                // oddly enough a negative RID mean's PASSED verification
+        public byte[] HD2;      // 3
+        public ulong Index;     // 8
+
+        public byte[] Serialized;
+        */
+        public static byte[] ToByteArr(HashRec rec)
+        {
+            byte[] rv = new byte[HASH_REC_BYTES];
+
+            Array.Copy(rec.HashData, 0, rv, 0, rec.HashData.Length);
+            Array.Copy(BitConverter.GetBytes(rec.RID), 0, rv, 16, 4);
+            Array.Copy(rec.HD2, 0, rv, 20, 3);
+            rv[24] = rec.BlockLen;
+
+            // theorietcally we can use more of this for other purposes
+            // since the index is the location in the DB..
+            // depending on size, usually like 30something+ bits
+            Array.Copy(BitConverter.GetBytes(rec.Index), 0, rv, 24, 8);
+
+            return rv;
+        }
+        public static HashRec FromBytes(Byte[] arr)
+        {
+            HashRec rec;
+            rec.HashData = new byte[16];
+            rec.HD2 = new byte[3];
+
+            Array.Copy(arr, 0, rec.HashData, 0, 16);
+
+            rec.RID = BitConverter.ToInt32(arr, 16);
+
+            Array.Copy(arr, 20, rec.HD2, 0, 3);
+            rec.BlockLen = arr[24];
+
+            rec.Index = BitConverter.ToUInt64(arr, 24);
+            rec.Serialized = null;
+            return rec;
+        }
+#endif
+        public bool Verified { get { return RID < 0; } set { if (value) RID |= int.MinValue; else RID = RID & int.MaxValue; } }
+        public int Size { get { return RID & 0x3; } }
 
         public override string ToString()
         {
             return Index.ToString("X");
         }
+
     }
 
     public class SparseRegion
@@ -94,8 +195,8 @@ namespace inVtero.net.Hashing
 
                 for (int h=0; h < countOfSmallestHashBlocks; h++)
                 {
-                    var hashInfo = InnerList[i][h].HashData[15] & 0xf;
-                    if(hashInfo == 0xF)
+                    //var hashInfo = InnerList[i][h].HashData[15] & 0xf;
+                    if(InnerList[i][h].Verified)
                         yield return saddr + (h * MinSizeBlock);
                 }
             }
@@ -105,7 +206,7 @@ namespace inVtero.net.Hashing
     /// <summary>
     /// HashRecord is the accounting class primative for storing data about hashrec's 
     /// </summary>
-    public class HashRecord : IComparable
+    public class HashRecord 
     {
         public List<SparseRegion> Regions;
 
@@ -121,7 +222,7 @@ namespace inVtero.net.Hashing
                 r.SparseAddrs.Add(VA);
                 r.InnerList.Add(hashes);
                 r.Address = VA;
-                r.Len = 4096;
+                r.Len = PAGE_SIZE;
                 r.Validated = validated;
                 r.Total = hashes.Length;
                 Regions.Add(r);
@@ -135,7 +236,7 @@ namespace inVtero.net.Hashing
                 {
                     r.Validated += validated;
                     r.Total += hashes.Length;
-                    r.Len += 4096;
+                    r.Len += PAGE_SIZE;
                     r.SparseAddrs.Add(VA);
                     r.InnerList.Add(hashes);
                     return;
@@ -145,7 +246,7 @@ namespace inVtero.net.Hashing
             var rx = new SparseRegion() { OriginationInfo = Info, Address = VA };
             rx.SparseAddrs.Add(VA);
             rx.InnerList.Add(hashes);
-            rx.Len += 4096;
+            rx.Len += PAGE_SIZE;
             rx.Validated += validated;
             rx.Total += hashes.Length;
 
@@ -164,7 +265,7 @@ namespace inVtero.net.Hashing
                 r.InnerList.Add(hashes);
                 r.SparseAddrs.Add(VA);
                 r.Address = VA;
-                r.Len = 4096;
+                r.Len = PAGE_SIZE;
                 Regions.Add(r);
                 return;
             }
@@ -174,7 +275,7 @@ namespace inVtero.net.Hashing
                 // merge
                 if (Info == r.OriginationInfo)
                 {
-                    r.Len += 4096;
+                    r.Len += PAGE_SIZE;
                     r.SparseAddrs.Add(VA);
                     r.InnerList.Add(hashes);
                     r.Data.Add(data);
@@ -188,49 +289,9 @@ namespace inVtero.net.Hashing
 
             rx.InnerList.Add(hashes);
             rx.SparseAddrs.Add(VA);
-            rx.Len += 4096;
+            rx.Len += PAGE_SIZE;
             Regions.Add(rx);
         }
-
-
-        public HashRecord(byte[] Hash, byte blockLen)
-        {
-            // upper 15 bytes
-            HashData = new byte[16];
-            //Array.Copy(Hash, 0, HashData, 0, 16);
-
-            for (int i = 0; i < 16; i++)
-                HashData[i] = Hash[i];
-            
-            // keep the upper nibble
-            HashData[15] = (byte) (HashData[15] & 0xf0);
-            HashData[15] |= blockLen;
-
-            // lower (variable sized) bytes are the index to the DB
-            var indexLoc = Hash.Length - 8;
-
-            // shift up since were 16 byte aligned
-            Index = BitConverter.ToUInt64(Hash, indexLoc) << 4;
-        }
-
-        public static implicit operator HashRecord (HashRec rec)
-        {
-            return new HashRecord(rec.HashData, (byte) rec.Index);
-        }
-        public static implicit operator HashRec (HashRecord rec)
-        {
-            return new HashRec(rec.HashData, (byte)rec.Index);
-        }
-
-        public int CompareTo(object obj)
-        {
-            HashRecord hr = obj as HashRecord;
-            if (hr == null) return -1;
-            return Index.CompareTo(hr.Index);
-        }
-
-        public byte[] HashData;
-        public ulong Index;
 
         public override string ToString()
         {

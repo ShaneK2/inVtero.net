@@ -99,12 +99,15 @@
     </Content>
     <None Include="..\Scripts\AntiAntiDebug.py">
       <Link>AntiAntiDebug.py</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="..\Scripts\PoolScan.py">
       <Link>PoolScan.py</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="..\Scripts\VADVerifyDump.py">
       <Link>VADVerifyDump.py</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="Analyze.cs" />
     <Compile Include="Program.cs" />

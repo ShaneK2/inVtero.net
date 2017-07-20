@@ -15,7 +15,7 @@ from inVtero.net.Hashing import *
 
 # Basic option handling
 copts = ConfigOptions()
-copts.IgnoreSaveData = False
+copts.IgnoreSaveData = True
 copts.FileName = "C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem"   
 #copts.FileName = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows7.vmem"
 copts.VersionsToEnable = PTType.GENERIC
@@ -55,7 +55,8 @@ kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
 Console.ForegroundColor = ConsoleColor.Cyan
 print "kernel build: " + kMinorVer.ToString()
 
-vtero.HashAllProcs("C:\\temp\\iv.DB", "c:\\temp\\reloc", 1024*1024*1024*4, True);
+Vtero.VerboseLevel = 2
+vtero.HashAllProcs("C:\\temp\\inVtero.net\\iv.DB", "c:\\temp\\inVtero.net\Relocs", 1024*1024*1024*16, True);
 
 print "Done! Total runtime: " + TotalRunTime.Elapsed.ToString()
 

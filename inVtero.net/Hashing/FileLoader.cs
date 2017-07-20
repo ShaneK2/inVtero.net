@@ -28,22 +28,28 @@ using inVtero.net;
 using System.Threading.Algorithms;
 using System.Diagnostics;
 using System.Buffers;
+using static inVtero.net.MagicNumbers;
+using Monitor.Core.Utilities;
 
 namespace inVtero.net.Hashing
 {
     public class FileLoader : IDisposable
     {
+        MetaDB MDB;
         HashDB HDB;
 
         public string ScanExtensionsSpec = ":.EXE:.DLL:.SYS:.CPL:.OCX:.SCR:.DRV:.TSP:.MUI:";
         public string[] ScanExtensions;
 
+        // Documents and Settings, Default User and All Users are generally link's to C:\
+        // since that would traverse onto your other drives it's unlikely that's where we should be loading from
+        // TODO: fix Symlink/Junction code for C#
         public string MaskedEntriesSpec = ":.MSI:.MSP:.PDB:.TDLOG:.VHD:.WIM:.DMP:.MSU:.LOG:.FON:.TTF:.TTC:FONTS:.WMV:.WAV:.CUR:.ANI:HIBERFIL.SYS:PAGEFILE.SYS:SWAPFILE.SYS:";
         public string[] MaskedEntries;
 
         public List<string> LoadExceptions = new List<string>();
 
-        ConcurrentDictionary<int, Extract> LoadList = new ConcurrentDictionary<int, Extract>();
+        ConcurrentStack<Extract> LoadList = new ConcurrentStack<Extract>();
 
         bool DoneDirScan = false;
         bool DoneHashLoad = false;
@@ -51,17 +57,25 @@ namespace inVtero.net.Hashing
         int MinHashSize;
         string DBFile;
 
-        // A BILLION :)
+        // MANY!
         public int BufferCount = 1000 * 1000 * 10;
-        const int PageSize = MagicNumbers.PAGE_SIZE;
+
+        /// <summary>
+        /// Specify here like "This was my VM image blah" or whatever you like
+        /// 
+        /// </summary>
+        public string MetaInfoString;
 
         Func<HashLib.IHash> GetHP;
-        ArrayPool<HashRec> aPool;
+        //ArrayPool<HashRec> aPool;
         Stopwatch GenerateSW;
-        BlockingCollection<Tuple<int, HashRec[]>> ReadyQueue = new BlockingCollection<Tuple<int, HashRec[]>>();
+
+        // just have 1 deep queue since at one it get's picked up right away, so we'll actually have 3 in the "air" 
+        // at any time with just setting 1 here
+        BlockingCollection<Tuple<int, HashRec[]>> ReadyQueue = new BlockingCollection<Tuple<int, HashRec[]>>(1);
 
         
-        public FileLoader(HashDB hDB, int bufferCount = 0, Func<HashLib.IHash> getHP = null)
+        public FileLoader(MetaDB mDB, int bufferCount = 0, string metaInfoString = null, Func < HashLib.IHash> getHP = null)
         {
             var sep = new char[] { ':' };
 
@@ -72,9 +86,13 @@ namespace inVtero.net.Hashing
             if (GetHP == null)
                 GetHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
 
-            HDB = hDB;
+            MDB = mDB;
+            HDB = mDB.HDB;
+
+            MetaInfoString = metaInfoString;
+
             DBFile = HDB.HashDBFile;
-            SortMask = (ulong)HDB.DBSize - 1;
+            SortMask = HDB.DBEntriesMask << HASH_SHIFT;
 
             MinHashSize = HDB.MinBlockSize;
 
@@ -89,13 +107,13 @@ namespace inVtero.net.Hashing
                 List<bool> rv = new List<bool>();
                 int len = (int) new FileInfo(toScan).Length;
                 int alignLen = (int)((len + 0xfff) & ~0xfff);
-                var tot = FractHashTree.TotalHashesForSize((uint)alignLen, MinHashSize);
+
                 var buf = new byte[alignLen];
 
                 using (var f = new FileStream(toScan, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     f.Read(buf, 0, alignLen);
 
-                var toCheck = FractHashTree.CreateRecsFromMemory(buf, MinHashSize, GetHP, OnlySize);
+                var toCheck = FractHashTree.CreateRecsFromMemory(buf, MinHashSize, GetHP, 0, 0, OnlySize);
                 //var bits = HDB.BitmapScan(toCheck);
                 int Found = 0;
                 foreach(var bit in toCheck)
@@ -108,8 +126,6 @@ namespace inVtero.net.Hashing
                     else
                         rv.Add(false);
                 }
-
-
                 yield return Tuple.Create<string, double, List<bool>>(toScan, Found * 100.0 / toCheck.Length, rv);
             }
         }
@@ -122,7 +138,7 @@ namespace inVtero.net.Hashing
             {
                 if (Force && inputFile == null)
                 {
-                    var toCheck = FractHashTree.CreateRecsFromMemory(File.ReadAllBytes(aPath), MinHashSize, GetHP, OnlySize);
+                    var toCheck = FractHashTree.CreateRecsFromMemory(File.ReadAllBytes(aPath), MinHashSize, GetHP, 0, 0, OnlySize);
                     rv.AddRange(HashRecLookup(toCheck));
                 }
                 else
@@ -146,40 +162,39 @@ namespace inVtero.net.Hashing
         {
             int Count = hashArr.Length;
             var rv = new List<bool>(Count);
-            var DBEntriesMask = HDB.DBEntries - 1;
 
             ParallelAlgorithms.Sort<HashRec>(hashArr, 0, Count, GetICompareer<HashRec>(SortByDBSizeMask));
 
-            using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, PageSize*2))
+            using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, DB_READ_SIZE))
             {
                 // we need 2 pages now since were block reading and we might pick a hash that start's scan
                 // at the very end of a page
-                byte[] buff = new byte[PageSize*2];
-                byte[] zero = new byte[16];
+                byte[] buff = new byte[DB_READ_SIZE];
+                byte[] zero = new byte[HASH_REC_BYTES];
                 int i = 0, firstIndex = 0;
 
                 do
                 {
                     var Index = hashArr[i].Index;
                     // convert Index to PageIndex
-                    var DBPage = (long)((Index & SortMask) & ~0xfffUL);
+                    var DBPage = (ulong)((Index & SortMask) & ~DB_PAGE_MASK);
 
                     // find block offset for this hash
-                    fs.Seek(DBPage, SeekOrigin.Begin);
-                    fs.Read(buff, 0, PageSize * 2);
+                    fs.Seek((long) DBPage, SeekOrigin.Begin);
+                    fs.Read(buff, 0, DB_READ_SIZE);
 
                     do
                     {
                         // re-read Inxex since we could be on the inner loop
                         Index = hashArr[i].Index;
                         // Index inside of a page
-                        var PageIndex = (int)Index & 0xfff;
+                        var PageIndex = Index & DB_PAGE_MASK;
 
                         // Hash to populate the DB with
-                        var toRead = hashArr[i].HashData;
+                        var toRead = BitConverter.GetBytes(hashArr[i].CompressedHash);
 
                         // do we already have this hash from disk? 
-                        firstIndex = buff.SearchBytes(toRead, PageIndex, 16);
+                        firstIndex = buff.SearchBytes(toRead, (int) PageIndex, toRead.Length);
                         if (firstIndex >= 0)
                             rv.Add(true);
                         else
@@ -188,7 +203,7 @@ namespace inVtero.net.Hashing
                         i++;
 
                         // continue to next entry if it's in the same block
-                    } while (i < Count && (((hashArr[i].Index & SortMask) & ~0xfffUL) == (ulong)DBPage));
+                    } while (i < Count && (((hashArr[i].Index & SortMask) & ~DB_PAGE_MASK) == DBPage));
 
                 } while (i < Count);
             }
@@ -199,7 +214,6 @@ namespace inVtero.net.Hashing
         {
             int Count = hashArr.Length;
             var rv = new List<bool>(Count);
-            var DBEntriesMask = HDB.DBEntries - 1;
 
             for (int i = 0; i < hashArr.Length; i++)
             {
@@ -211,22 +225,7 @@ namespace inVtero.net.Hashing
                     {
                         var CheckHashes = hashArr[i].Regions[l].InnerList[m];
                         var checkedArr = HashRecLookup(CheckHashes).ToArray();
-
-                        /*
-                        if (hashRegion.OriginationInfo.Contains("rmclient.dll.text"))
-                        {
-
-                            var addr = hashRegion.SparseAddrs[m];
-
-                            var name = $"c:\\temp\\dumptest\\{hashRegion.OriginationInfo}-{addr:X}.bin";
-                            using (var dt = new FileStream(name, FileMode.Create, FileAccess.Write, FileShare.None, 4096))
-                            {
-                                dt.Seek(addr - hashRegion.Address + 1024, SeekOrigin.Begin);
-                                dt.Write(hashRegion.Data[m], 0, 4096);
-                            }
-                        }
-                        */
-
+                        
                         hashRegion.InnerCheckList.Add(checkedArr);
                         hashRegion.Total += checkedArr.Length;
 
@@ -244,165 +243,74 @@ namespace inVtero.net.Hashing
             }
             return;
         }
-
-        public int LoadFromMem(byte[] Input)
-        {
-            int written = 0;
-            var hashArr = FractHashTree.CreateRecsFromMemory(Input, MinHashSize, GetHP);
-            var Count = hashArr.Length;
-
-            using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, PageSize * 2))
-            {
-                // we need 2 pages now since were block reading and we might pick a hash that start's scan
-                // at the very end of a page
-                byte[] buff = new byte[PageSize * 2];
-                byte[] zero = new byte[16];
-                int i = 0, firstIndex = 0, zeroIndex = 0;
-                bool WriteBack = false;
-
-                var DBEntriesMask = HDB.DBEntries - 1;
-
-                do
-                {
-                    var Index = hashArr[i].Index;
-                    // convert Index to PageIndex
-                    var DBPage = (long)((Index & SortMask) & ~0xfffUL);
-
-                    // find block offset for this hash
-                    fs.Seek(DBPage, SeekOrigin.Begin);
-                    fs.Read(buff, 0, PageSize * 2);
-                    WriteBack = false;
-
-                    do
-                    {
-                        // skip duplicates
-                        if (i + 1 < Count
-                            && hashArr[i].Index == hashArr[i + 1].Index
-                        && UnsafeHelp.UnsafeCompare(hashArr[i].HashData, hashArr[i + 1].HashData))
-                        {
-                            i++;
-                            continue;
-                        }
-                        // were all done since the sort should of put these null entries at the end
-                        while (i < Count && hashArr[i].HashData == null)
-                            i++;
-
-                        if (i < Count)
-                        {
-                            // re-read Inxex since we could be on the inner loop
-                            Index = hashArr[i].Index;
-                            // Index inside of a page
-                            var PageIndex = (int)Index & 0xfff;
-
-                            // Hash to populate the DB with
-                            var toWrite = hashArr[i].HashData;
-                            // do we already have this hash from disk? 
-                            firstIndex = buff.SearchBytes(toWrite, PageIndex, 16);
-                            if (firstIndex < 0)
-                            {
-                                zeroIndex = buff.SearchBytes(zero, PageIndex, 16);
-                                if (zeroIndex >= 0)
-                                {
-                                    // we want the modified buffer to get written back
-                                    WriteBack = true;
-                                    // update buff with new hash entry for write back
-                                    //Array.Copy(toWrite, 0, buff, zeroIndex, toWrite.Length);
-                                    for (int j = zeroIndex, k = 0; j < zeroIndex + toWrite.Length; j++, k++)
-                                        buff[j] = toWrite[k];
-
-                                    written++;
-                                    // set to the origional index, shift down since were bit aligned
-                                    HDB.SetIdxBit(Index);
-                                }
-                                else if (zeroIndex < 0)
-                                {
-                                    var strerr = $"HASH TABLE SATURATED! YOU NEED TO MAKE THE DB LARGER!!";
-                                    WriteColor(ConsoleColor.Red, strerr);
-                                    throw new ApplicationException(strerr);
-                                }
-                            }
-                        }
-                        i++;
-
-                    // continue to next entry if it's in the same block
-                    } while (i < Count && (((hashArr[i].Index & SortMask) & ~0xfffUL) == (ulong)DBPage));
-
-                    if (WriteBack)
-                    {
-                        // reset seek position
-                        fs.Seek(DBPage, SeekOrigin.Begin);
-                        // only write back 1 page if we can help it
-                        fs.Write(buff, 0, PageSize * 2);
-                    }
-                } while (i < Count);
-            }
-            return written;
-        }
-
+        bool Abort;
+        CancellationTokenSource source;
         public void LoadFromPath(string Folder)
         {
-            aPool = ArrayPool<HashRec>.Create(BufferCount, 5);
+            source = new CancellationTokenSource();
+            
+            CancellationToken token = source.Token;
+            
+            var po = new ParallelOptions() { CancellationToken = token };
 
-            Parallel.Invoke(() =>
+            Parallel.Invoke((po), () =>
             {
                 GenerateSW = Stopwatch.StartNew();
-                RecursiveGenerate(Folder);
+                RecursiveGenerate(Folder, po);
                 DoneDirScan = true;
                 WriteColor(ConsoleColor.Green, $"Finished FS load from {Folder} task time: {GenerateSW.Elapsed}");
             }, 
             () => {
-                FillHashBuff();
+                Abort = FillHashBuff(po);
                 DoneHashLoad = true;
             }, 
-            () => DumpBufToDisk()
+            () => DumpBufToDisk(po)
             );
             WriteColor(ConsoleColor.White, $"Total task runtime: {GenerateSW.Elapsed}");
         }
 
 
-        void DumpBufToDisk()
+        void DumpBufToDisk(ParallelOptions po)
         {
-            var sw = Stopwatch.StartNew();
+            Stopwatch sw;
             long TotalDBWrites = 0;
             long TotalRequested = 0;
+            long DBPage = 0;
+            SortMask = HDB.DBEntriesMask << HASH_SHIFT;
             do
             {
-                sw.Stop();
-
                 var hashArrTpl = ReadyQueue.Take();
                 var hashArr = hashArrTpl.Item2;
-                var Count = hashArrTpl.Item1; 
+                var Count = hashArrTpl.Item1;
 
-                sw.Start();
-                
+
                 ParallelAlgorithms.Sort<HashRec>(hashArr, 0, Count, GetICompareer<HashRec>(SortByDBSizeMask));
-
                 TotalRequested += Count;
 
                 if (Vtero.VerboseLevel >= 1)
                     WriteColor(ConsoleColor.Cyan, $"Hash entries to store: {Count:N0}");
 
-                using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, PageSize*2))
+                using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, DB_READ_SIZE))
                 {
                     // we need 2 pages now since were block reading and we might pick a hash that start's scan
                     // at the very end of a page
-                    byte[] buff = new byte[PageSize * 2];
-                    byte[] zero = new byte[16];
+                    byte[] buff = new byte[DB_READ_SIZE];
+                    byte[] zero = new byte[HASH_REC_BYTES];
                     int i = 0, firstIndex = 0, zeroIndex = 0;
                     bool WriteBack = false;
 
-                    var DBEntriesMask = HDB.DBEntries - 1;
-
+                    sw = Stopwatch.StartNew();
                     do
                     {
                         var Index = hashArr[i].Index;
                         // convert Index to PageIndex
-                        var DBPage = (long)((Index & SortMask) & ~0xfffUL);
+                        DBPage = (long)((Index & SortMask) & ~DB_PAGE_MASK);
 
                         // find block offset for this hash
                         fs.Seek(DBPage, SeekOrigin.Begin);
-                        fs.Read(buff, 0, PageSize * 2);
+                        fs.Read(buff, 0, DB_READ_SIZE);
                         WriteBack = false;
+                        po.CancellationToken.ThrowIfCancellationRequested();
 
                         do
                         {
@@ -414,29 +322,30 @@ namespace inVtero.net.Hashing
                                 i++;
                                 continue;
                             }
-                            // were all done since the sort should of put these null entries at the end
-                            while(i < Count && hashArr[i].HashData == null)
-                                i++;
 
                             if (i < Count)
                             {
                                 // re-read Inxex since we could be on the inner loop
                                 Index = hashArr[i].Index;
                                 // Index inside of a page
-                                var PageIndex = (int)Index & 0xfff;
+                                var PageIndex = (int)(Index & DB_PAGE_MASK);
 
                                 // Hash to populate the DB with
-                                var toWrite = hashArr[i].HashData;
+                                var toWrite = BitConverter.GetBytes(hashArr[i].CompressedHash);
 
                                 // do we already have this hash from disk? 
-                                firstIndex = buff.SearchBytes(toWrite, PageIndex, 16);
+                                firstIndex = buff.SearchBytes(toWrite, PageIndex, HASH_REC_BYTES);
                                 if (firstIndex < 0)
                                 {
-                                    zeroIndex = buff.SearchBytes(zero, PageIndex, 16);
+                                    zeroIndex = buff.SearchBytes(zero, PageIndex, HASH_REC_BYTES);
                                     if (zeroIndex >= 0)
                                     {
                                         // we want the modified buffer to get written back
                                         WriteBack = true;
+
+                                        // we requested this to be pre-gen'd for us
+                                        toWrite = hashArr[i].Serialized;
+
                                         // update buff with new hash entry for write back
                                         //Array.Copy(toWrite, 0, buff, zeroIndex, toWrite.Length);
                                         for (int j = zeroIndex, k = 0; j < zeroIndex + toWrite.Length; j++, k++)
@@ -449,32 +358,32 @@ namespace inVtero.net.Hashing
                                     }
                                     else if (zeroIndex < 0)
                                     {
-                                        var strerr = $"HASH TABLE SATURATED! YOU NEED TO MAKE THE DB LARGER!!";
+                                        var strerr = $"HASH TABLE SATURATED!!! ({DBPage:X}:{PageIndex:X}) YOU NEED TO MAKE THE DB LARGER!!";
                                         WriteColor(ConsoleColor.Red, strerr);
-                                        throw new ApplicationException(strerr);
+                                        source.Cancel();
                                     }
                                 }
                             }
                             i++;
-                            
+
+                            if (i % 100000 == 0 && sw.Elapsed.TotalSeconds > 0)
+                                WriteColor(ConsoleColor.Cyan, $"DB commit entries: {i:N0} - per second {(i / sw.Elapsed.TotalSeconds):N0}");
+
                             // continue to next entry if it's in the same block
-                        } while (i < Count && (((hashArr[i].Index & SortMask) & ~0xfffUL) == (ulong)DBPage));
+                        } while (i < Count && (((hashArr[i].Index & SortMask) & ~DB_PAGE_MASK) == (ulong)DBPage));
 
                         if (WriteBack)
                         {
                             // reset seek position
                             fs.Seek(DBPage, SeekOrigin.Begin);
                             // only write back 1 page if we can help it
-                            fs.Write(buff, 0, PageSize * 2);
+                            fs.Write(buff, 0, DB_READ_SIZE);
                         }
-
-                        if (i % 100000 == 0 && sw.Elapsed.TotalSeconds > 0)
-                            WriteColor(ConsoleColor.Cyan, $"DB commit entries: {i:N0} - per second {(i / sw.Elapsed.TotalSeconds):N0} ");
-
+                        
                     } while (i < Count);
 
-                    WriteColor(ConsoleColor.Cyan, $"Buffer commited entries: {i:N0} - per second {(i / sw.Elapsed.TotalSeconds):N0} ");
-                    aPool.Return(hashArr);
+                    WriteColor(ConsoleColor.Cyan, $"DB entries: {i:N0} - per second {(i / sw.Elapsed.TotalSeconds):N0}");
+                    //aPool.Return(hashArr);
                 }
 
             } while (!DoneHashLoad || ReadyQueue.Count() > 0);
@@ -482,58 +391,74 @@ namespace inVtero.net.Hashing
             WriteColor(ConsoleColor.Cyan, $"Finished DB write {TotalDBWrites:N0} NEW entries. Requsted {TotalRequested:N0} (reduced count reflects de-duplication). Task time: {sw.Elapsed}");
         }
 
-        void FillHashBuff()
+        bool FillHashBuff(ParallelOptions po)
         {
             int TotalHashGenCount = 0;
             int HashGenCnt = 0;
             int LoadedCnt = 0;
-            int StartingAvailable = 0;
-
+            HashRec[] hashX;
+                
             Stopwatch sw = Stopwatch.StartNew();
+           
             do
             {
+                Extract next = null;
                 #region Partition
                 // prescan enough entries to not overspill the specified hash buffer count
-                int CurrAvailableMax = 0;
-                int LoadCnt = 0;
+                long CountForMaxBuff = 0;
+                ConcurrentStack<Extract> ReadyList = new ConcurrentStack<Extract>();
 
-                while(!DoneDirScan || (DoneDirScan && CurrAvailableMax != LoadList.Count()))
+                while (!DoneDirScan || !LoadList.IsEmpty)
                 {
-                    long CountForMaxBuff = 0;
-                    for (LoadCnt = StartingAvailable; LoadCnt != LoadList.Count(); LoadCnt++)
+                    LoadList.TryPop(out next);
+                    if(next == null && !DoneDirScan)
                     {
-                        foreach (var ms in LoadList[LoadCnt].Sections)
-                        {
-                            if (!ms.IsCode && !ms.IsExec)
-                                continue;
-
-                            CountForMaxBuff += FractHashTree.TotalHashesForSize(ms.RawFileSize, MinHashSize);
-                        }
-                        if (CountForMaxBuff >= BufferCount)
-                        {
-                            CurrAvailableMax = LoadCnt-1;
-                            break;
-                        }
+                        Thread.Yield();
+                        continue;
                     }
-                    if(DoneDirScan && LoadCnt == LoadList.Count())
-                        CurrAvailableMax = LoadCnt;
-                    
-                    if (CurrAvailableMax != 0)
+
+                    foreach (var ms in next.Sections)
+                    {
+                        if (!ms.IsCode && !ms.IsExec)
+                            continue;
+
+                        var BufferSize = (uint)((ms.RawFileSize + 0xfff) & ~0xfff);
+                        CountForMaxBuff += FractHashTree.TotalHashesForSize(BufferSize, MinHashSize);
+                    }
+
+                    if (CountForMaxBuff < BufferCount)
+                        ReadyList.Push(next);
+                    // add it back for reprocessing
+                    else
+                    {
+                        LoadList.Push(next);
+                        po.CancellationToken.ThrowIfCancellationRequested();
                         break;
-
-                    Thread.Yield();
+                    }
                 }
+
                 #endregion
+                try
+                {
+                    hashX = new HashRec[BufferCount];
+                }
+                catch (Exception ex)
+                {
+                    WriteColor(ConsoleColor.Red, $"BuferCount {BufferCount} too large, try something a bit smaller (however keep it as large as you can :)");
+                    WriteColor(ConsoleColor.Yellow, $"{ex.ToString()}");
+                    source.Cancel();
+                    return true;
+                }
 
-                var hashX = aPool.Rent(BufferCount);
-
-                WriteColor(ConsoleColor.White, $"Parallel partition from {StartingAvailable} to {CurrAvailableMax} starting.");
-                Parallel.For(StartingAvailable, CurrAvailableMax, 
-                    (i) =>
+                //WriteColor(ConsoleColor.White, $"Parallel partition from {StartingAvailable} to {CurrAvailableMax} starting.");
+                Parallel.ForEach(ReadyList, 
+                (hashFile) =>
                     //for (int i = StartingAvailable; i < CurrAvailableMax; i++)
                     {
-                        var hashFile = LoadList[i];
+                        if (po.CancellationToken.IsCancellationRequested)
+                            return;
 
+                        Interlocked.Increment(ref LoadedCnt);
                         foreach (var ms in hashFile.Sections)
                         {
                             // ONLY hash CODE/EXEC file sections & PEHeader
@@ -546,50 +471,59 @@ namespace inVtero.net.Hashing
                                 continue;
                             }
 
-                            var tot = (int)FractHashTree.TotalHashesForSize(ms.RawFileSize, MinHashSize);
-                            //var myCnt = Interlocked.Add(ref HashGenCnt, tot);
+                            //var tot = (int)FractHashTree.TotalHashesForSize(ms.RawFileSize, MinHashSize);
 
+                            //var myCnt = Interlocked.Add(ref HashGenCnt, tot);
                             //var fht = new FractHashTree(hashFile.FileName, ms, MinHashSize, GetHP);
                             //var dht = fht.DumpRecTree();
                             //var len = dht.Count();
                             //var myLim = Interlocked.Add(ref HashGenCnt, len);
                             //dht.CopyTo(0, hashX, myLim - len, len);
+
                             var ReadSize = ms.VirtualSize;
                             var BufferSize = (int)((ReadSize + 0xfff) & ~0xfff);
                             var memBuff = new byte[BufferSize];
 
-                            using (var fread = new FileStream(hashFile.FileName, FileMode.Open, FileAccess.Read, FileShare.Read, 4096))
+                            using (var fread = new FileStream(hashFile.FileName, FileMode.Open, FileAccess.Read, FileShare.Read, PAGE_SIZE))
                             {
                                 fread.Seek(ms.RawFilePointer, SeekOrigin.Begin);
                                 fread.Read(memBuff, 0, (int)ReadSize);
                             }
-                            var recs = FractHashTree.CreateRecsFromMemory(memBuff, MinHashSize, GetHP);
+
+                            var recs = FractHashTree.CreateRecsFromMemory(memBuff, MinHashSize, GetHP, hashFile.rID, 0, 0, true);
+                            if(HashGenCnt + recs.Length > hashX.Length)
+                            {
+                                LoadList.Push(hashFile);
+                                break;
+                            }
 
                             var myLim = Interlocked.Add(ref HashGenCnt, recs.Length);
                             recs.CopyTo(hashX, myLim - recs.Length);
 
                             //FractHashTree.CreateRecsFromFile(hashFile.FileName, ms, MinHashSize, tot, hashX, myCnt - tot, GetHP);
 
-                            if ((i % 100) == 0 && sw.Elapsed.TotalSeconds > 0)
-                                WriteColor(ConsoleColor.Green, $"HashGen: { ((TotalHashGenCount + HashGenCnt) / sw.Elapsed.TotalSeconds):N0} per second.");
+                            if ((LoadedCnt % 100) == 0 && sw.Elapsed.TotalSeconds > 0)
+                                WriteColor(ConsoleColor.Green, $"HashGen entries: {HashGenCnt:N0} - per second { ((TotalHashGenCount + HashGenCnt) / sw.Elapsed.TotalSeconds):N0}");
                         //}
                         }
                     });
+                if (po.CancellationToken.IsCancellationRequested)
+                    return true;
 
                 TotalHashGenCount += HashGenCnt;
 
                 WriteColor(ConsoleColor.Green, $"Filled queue {HashGenCnt:N0}, signaling readyqueue.");
-                WriteColor(ConsoleColor.Green, $"Loaded-Files/Generated-Hash-Values {CurrAvailableMax:N0}/{TotalHashGenCount:N0}.  HashGen: {(TotalHashGenCount / sw.Elapsed.TotalSeconds):N0} per second.");
-                
-                ReadyQueue.TryAdd(Tuple.Create<int, HashRec[]>(HashGenCnt, hashX));
+                WriteColor(ConsoleColor.Green, $"Loaded-Files/Generated-Hash-Values {LoadedCnt:N0}/{TotalHashGenCount:N0}.  HashGen: {(TotalHashGenCount / sw.Elapsed.TotalSeconds):N0} per second.");
+
+                sw.Stop();
+                ReadyQueue.Add(Tuple.Create<int, HashRec[]>(HashGenCnt, hashX));
                 HashGenCnt = 0;
-
-                StartingAvailable = CurrAvailableMax;
-
-            } while (!DoneDirScan || StartingAvailable < LoadList.Count());
+                sw.Start();
+            } while (!DoneDirScan || !LoadList.IsEmpty);
 
             sw.Stop();
             WriteColor(ConsoleColor.Green, $"Finished Files/Hashes {LoadedCnt:N0}/{TotalHashGenCount:N0}.  HashGen: {(TotalHashGenCount / sw.Elapsed.TotalSeconds):N0} per second.");
+            return false;
         }
 
         void LogEx(int Level, string message)
@@ -639,29 +573,37 @@ namespace inVtero.net.Hashing
             }
         }
 
+        int ScreenCount = 0;
         /// <summary>
         /// Pre-Screen files to find out if it's a binary we care about
         /// </summary>
         /// <param name="Path"></param>
         /// <returns></returns>
-        Extract CheckFile(string Path)
+        Extract CheckFile(string aPath)
         {
             Extract rv = null;
-            byte[] block = new byte[PageSize];
+            byte[] block = new byte[PAGE_SIZE];
             try
             {
-                using (var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.Read, PageSize))
+                using (var fs = new FileStream(aPath, FileMode.Open, FileAccess.Read, FileShare.Read, PAGE_SIZE))
                 {
-                    var minRead = fs.Length >= PageSize ? PageSize : MagicNumbers.PE_TYPICAL_HEADER_SIZE;
+                    var minRead = fs.Length >= PAGE_SIZE ? PAGE_SIZE : PE_TYPICAL_HEADER_SIZE;
 
                     int readIn = fs.Read(block, 0, minRead);
                     if (readIn != minRead)
-                        LogEx(1, $"Unable to read {minRead} from file {Path}, only {readIn} available.");
+                        LogEx(1, $"Unable to read {minRead} from file {aPath}, only {readIn} available.");
 
                     rv = Extract.IsBlockaPE(block);
                     if (rv != null)
                     {
-                        rv.FileName = Path;
+                        // also populate the meta DB
+                        var newID = MDB.AddFileInfo(aPath, MetaInfoString);
+                        if (newID < 0)
+                            return null;
+
+                        rv.rID = newID;
+                        rv.FileName = aPath;
+
                         ExtractRelocData(rv);
                     }
                 }
@@ -669,20 +611,23 @@ namespace inVtero.net.Hashing
             }
             catch (Exception ex)
             {
-                LogEx(1, $"Skipping file [{Path}] due to error {ex.Message}.");
+                LogEx(1, $"Skipping file [{aPath}] due to error {ex.Message}.");
             }
             return rv;
         }
 
-        void RecursiveGenerate(string Path)
+        void RecursiveGenerate(string aPath, ParallelOptions po)
         {
             var TmpList = new List<string>();
             var CheckedList = new List<string>();
             IEnumerable<string> files = null;
 
+            if (Abort)
+                return;
+
             // First get the file list inclusive of our file extensions list
             files = from afile in Directory.EnumerateFiles(
-                                    Path, "*.*",
+                                    aPath, "*.*",
                                     SearchOption.TopDirectoryOnly)
                     let file = afile.ToUpper()
                     from just in ScanExtensions
@@ -713,28 +658,122 @@ namespace inVtero.net.Hashing
                 var carved = CheckFile(check);
                 if (carved != null)
                 {
-                    LoadList.TryAdd(LoadList.Count(), carved);
-                    if(LoadList.Count() % 1000 == 0 && GenerateSW.Elapsed.TotalSeconds > 0)
-                        WriteColor(ConsoleColor.Gray, $"Loaded {LoadList.Count()} code files. {(LoadList.Count() / GenerateSW.Elapsed.TotalSeconds):N0} per second.");
-
+                    LoadList.Push(carved);
+                    Interlocked.Increment(ref ScreenCount);
+                    if(ScreenCount % 1000 == 0 && GenerateSW.Elapsed.TotalSeconds > 0)
+                        WriteColor(ConsoleColor.Gray, $"Loaded {ScreenCount} code files. {(ScreenCount / GenerateSW.Elapsed.TotalSeconds):N0} per second.");
                 }
             }
 
             // Parse subdirectories
-            foreach (var subdir in Directory.EnumerateDirectories(Path, "*.*", SearchOption.TopDirectoryOnly))
+            foreach (var subdir in Directory.EnumerateDirectories(aPath, "*.*", SearchOption.TopDirectoryOnly))
             {
                 var dirs = from banned in MaskedEntries
                             where !subdir.ToUpper().Contains(banned)
                             select banned;
                 if (dirs.Count() > 0)
                 {
-                    try { RecursiveGenerate(subdir); }
+                    try {
+                        if (!Abort && !JunctionPoint.Exists(subdir))
+                            RecursiveGenerate(subdir, po);
+                    }
                     catch (Exception ex)
                     {
                         LogEx(1, $"Problem with scanning folder: {subdir} Exeption: {ex.Message}");
                     }
                 }
             }
+        }
+
+        public int LoadFromMem(byte[] Input)
+        {
+            int written = 0;
+            var hashArr = FractHashTree.CreateRecsFromMemory(Input, MinHashSize, GetHP);
+            var Count = hashArr.Length;
+
+            using (var fs = new FileStream(DBFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, DB_READ_SIZE))
+            {
+                // we need 2 pages now since were block reading and we might pick a hash that start's scan
+                // at the very end of a page
+                byte[] buff = new byte[DB_READ_SIZE];
+                byte[] zero = new byte[HASH_REC_BYTES];
+                int i = 0, firstIndex = 0, zeroIndex = 0;
+                bool WriteBack = false;
+
+                do
+                {
+                    var Index = hashArr[i].Index;
+                    // convert Index to PageIndex
+                    var DBPage = (long)((Index & SortMask) & ~DB_PAGE_MASK);
+
+                    // find block offset for this hash
+                    fs.Seek(DBPage, SeekOrigin.Begin);
+                    fs.Read(buff, 0, DB_READ_SIZE);
+                    WriteBack = false;
+
+                    do
+                    {
+                        // skip duplicates
+                        if (i + 1 < Count
+                            && hashArr[i].Index == hashArr[i + 1].Index
+                        && hashArr[i].CompressedHash == hashArr[i + 1].CompressedHash)
+                        {
+                            i++;
+                            continue;
+                        }
+
+                        if (i < Count)
+                        {
+                            // re-read Inxex since we could be on the inner loop
+                            Index = hashArr[i].Index;
+                            // Index inside of a page
+                            var PageIndex = Index & DB_PAGE_MASK;
+
+                            // Hash to populate the DB with
+                            var toWrite = HashRec.ToByteArr(hashArr[i]);
+
+                            // do we already have this hash from disk? 
+                            firstIndex = buff.SearchBytes(toWrite, (int)PageIndex, toWrite.Length);
+                            if (firstIndex < 0)
+                            {
+                                zeroIndex = buff.SearchBytes(zero, (int)PageIndex, zero.Length);
+                                if (zeroIndex >= 0)
+                                {
+                                    // we want the modified buffer to get written back
+                                    WriteBack = true;
+                                    int j, k;
+                                    // update buff with new hash entry for write back
+                                    //Array.Copy(toWrite, 0, buff, zeroIndex, toWrite.Length);
+                                    for (j = zeroIndex, k = 0; j < zeroIndex + toWrite.Length; j++, k++)
+                                        buff[j] = toWrite[k];
+
+                                    written++;
+                                    // set to the origional index, shift down since were bit aligned
+                                    HDB.SetIdxBit(Index);
+                                }
+                                else if (zeroIndex < 0)
+                                {
+                                    var strerr = $"HASH TABLE SATURATED! YOU NEED TO MAKE THE DB LARGER!!";
+                                    WriteColor(ConsoleColor.Red, strerr);
+                                    throw new ApplicationException(strerr);
+                                }
+                            }
+                        }
+                        i++;
+
+                        // continue to next entry if it's in the same block
+                    } while (i < Count && (((hashArr[i].Index & SortMask) & ~DB_PAGE_MASK) == (ulong)DBPage));
+
+                    if (WriteBack)
+                    {
+                        // reset seek position
+                        fs.Seek(DBPage, SeekOrigin.Begin);
+                        // only write back 1 page if we can help it
+                        fs.Write(buff, 0, DB_READ_SIZE);
+                    }
+                } while (i < Count);
+            }
+            return written;
         }
 
         #region Compare Stuff
@@ -761,19 +800,14 @@ namespace inVtero.net.Hashing
                 return this.comparison(x, y);
             }
         }
-        static ulong SortMask = 0;
-        static int SortByDBSizeMask(HashRec x, HashRec y)
+        ulong SortMask = 0;
+        public int SortByDBSizeMask(HashRec hx, HashRec hy)
         {
-            if (x.HashData == null)
-            {
-                if (y.HashData == null)
-                    return 0;
-                return 1;
-            }
-            else if (y.HashData == null)
-                return -1;
 
-            return (x.Index & SortMask) == (y.Index & SortMask) ? 0 : (x.Index & SortMask) > (y.Index & SortMask) ? 1 : -1;
+            ulong xx = hx.Index & SortMask;
+            ulong yy = hy.Index & SortMask;
+
+            return xx == yy ? 0 : xx > yy ? 1 : -1;
         }
 
         #region IDisposable Support

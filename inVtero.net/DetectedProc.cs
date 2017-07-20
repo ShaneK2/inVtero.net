@@ -33,6 +33,7 @@ using static HashLib.HashFactory.Crypto;
 using System.Globalization;
 using inVtero.net.Hashing;
 using System.Dynamic;
+using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net
 {
@@ -203,7 +204,7 @@ namespace inVtero.net
             if (!rv)
             {
                 WriteColor(ConsoleColor.Red, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
-                return MagicNumbers.BAD_VALUE_READ;
+                return BAD_VALUE_READ;
             }
 
             SymbolStore.Add(AddrName, symInfo.Address);
@@ -281,7 +282,7 @@ namespace inVtero.net
                 }
                 if (range.PTE.Valid && !range.PTE.NoExecute)
                 {
-                    foreach (var artifact in KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? LARGE_PAGE_SIZE : MagicNumbers.PAGE_SIZE), range))
+                    foreach (var artifact in KVS.Run(range.VA.Address, range.VA.Address + (range.PTE.LargePage ? LARGE_PAGE_SIZE : PAGE_SIZE), range))
                     {
                         var ms = new MemSection() { IsExec = true, Module = artifact, VA = new VIRTUAL_ADDRESS(artifact.VA), Source = range };
                         var extracted = ExtractCVDebug(ms);
@@ -615,8 +616,8 @@ namespace inVtero.net
                     EndingVPN = EndingVPNHighTmp << 32 | EndingVPNTmp;
                 }
 
-                long StartingAddress = StartingVPN << MagicNumbers.PAGE_SHIFT;
-                long Length = (EndingVPN - StartingVPN) * MagicNumbers.PAGE_SIZE;
+                long StartingAddress = StartingVPN << PAGE_SHIFT;
+                long Length = (EndingVPN - StartingVPN) * PAGE_SIZE;
                 if (IsExec)
                 {
                     var ssPtr = memRead[ssPos / 8];
@@ -705,7 +706,7 @@ namespace inVtero.net
             /// including kernel
             var execPages = PT.FillPageQueue(false, true);
             foreach (var pte in execPages)
-                codeRanges.TryAdd(pte.VA.Address, pte.VA.Address + (pte.PTE.LargePage ? MagicNumbers.LARGE_PAGE_SIZE : MagicNumbers.PAGE_SIZE));
+                codeRanges.TryAdd(pte.VA.Address, pte.VA.Address + (pte.PTE.LargePage ? LARGE_PAGE_SIZE : PAGE_SIZE));
 
             // Walk Vad and inject into 'sections'
             // scan VAD data to additionally bind 
@@ -932,7 +933,7 @@ namespace inVtero.net
                 // proc is set in hashrecord so we can track it back later if we want to see what/where
                 var hRecord = new HashRecord();
 
-                for (long SecOffset = 0; SecOffset < s.Value.VadLength; SecOffset += MagicNumbers.PAGE_SIZE)
+                for (long SecOffset = 0; SecOffset < s.Value.VadLength; SecOffset += PAGE_SIZE)
                 {
                     var pte = MemAccess.VirtualToPhysical(CR3Value, VA + SecOffset);
 
@@ -1039,12 +1040,12 @@ namespace inVtero.net
                 if (VIRTUAL_ADDRESS.IsKernelRange(VA) && !KernelSpace)
                     continue;
 
-                for (long SecOffset = 0; SecOffset < s.Value.VadLength; SecOffset += MagicNumbers.PAGE_SIZE)
+                for (long SecOffset = 0; SecOffset < s.Value.VadLength; SecOffset += PAGE_SIZE)
                 {
                     bool PagedIn = false;
                     block = VGetBlock(VA + SecOffset, ref PagedIn);
                     if (block == null)
-                        block = new byte[MagicNumbers.PAGE_SIZE];
+                        block = new byte[PAGE_SIZE];
 
                     var sec = GetEnclosingSection(VA + SecOffset, true);
                     if (sec != null)
@@ -1372,7 +1373,7 @@ namespace inVtero.net
 
         public byte[] VGetBlock(long VA, ref bool GotData)
         {
-            byte[] rv = new byte[MagicNumbers.PAGE_SIZE];
+            byte[] rv = new byte[PAGE_SIZE];
 
             var _va = VA & ~0xfff;
 
@@ -1416,7 +1417,7 @@ namespace inVtero.net
                 using (var fsAccess = new FileStream(MemAccess.IOFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                 {
                     byte[] byteArr = null;
-                    byte[] testArr = new byte[MagicNumbers.PAGE_SIZE];
+                    byte[] testArr = new byte[PAGE_SIZE];
 
                     // why not read the data in and make sure we see what we think we should see?
                     var hw = MemAccess.VirtualToPhysical(CR3Value, Address);
@@ -1591,7 +1592,7 @@ namespace inVtero.net
 
         public long[] GetVirtualLong(long VA)
         {
-            return GetVirtualLongLen(VA, MagicNumbers.PAGE_SIZE);
+            return GetVirtualLongLen(VA, PAGE_SIZE);
         }
         public long[] GetVirtualLongLen(long VA, int len = 4096)
         {
@@ -1613,7 +1614,7 @@ namespace inVtero.net
 
             do
             {
-                VA += MagicNumbers.PAGE_SIZE;
+                VA += PAGE_SIZE;
                 var block2 = VGetBlockLong(VA);
                 int copy_cnt = len - done < 4096 ? (len - done) / 8 : 512;
                 Array.Copy(block2, 0, rv, count, copy_cnt);
@@ -1651,25 +1652,25 @@ namespace inVtero.net
         public byte[] GetVirtualByte(long VA)
         {
             long startIndex = VA & 0xfff;
-            long count = MagicNumbers.PAGE_SIZE - startIndex;
-            var rv = new byte[count + MagicNumbers.PAGE_SIZE];
+            long count = PAGE_SIZE - startIndex;
+            var rv = new byte[count + PAGE_SIZE];
 
             var block = VGetBlock(VA);
             if (block == null)
                 return rv;
 
             Array.Copy(block, startIndex, rv, 0, count);
-            VA += MagicNumbers.PAGE_SIZE;
+            VA += PAGE_SIZE;
             var block2 = VGetBlock(VA);
             if (block2 != null)
-                Array.Copy(block2, 0, rv, count, MagicNumbers.PAGE_SIZE);
+                Array.Copy(block2, 0, rv, count, PAGE_SIZE);
             return rv;
         }
 
-        public byte[] GetVirtualByteLen(long VA, int len = MagicNumbers.PAGE_SIZE)
+        public byte[] GetVirtualByteLen(long VA, int len = PAGE_SIZE)
         {
             long startIndex = VA & 0xfff;
-            long count = MagicNumbers.PAGE_SIZE - startIndex;
+            long count = PAGE_SIZE - startIndex;
             var rv = new byte[count];
 
             var block = VGetBlock(VA);
@@ -1687,12 +1688,12 @@ namespace inVtero.net
             // keep going until we satisfy the amount requested
             do
             {
-                VA += MagicNumbers.PAGE_SIZE;
+                VA += PAGE_SIZE;
                 var block2 = VGetBlock(VA);
-                var copy_cnt = len - done < MagicNumbers.PAGE_SIZE ? (len - done) : MagicNumbers.PAGE_SIZE;
+                var copy_cnt = len - done < PAGE_SIZE ? (len - done) : PAGE_SIZE;
                 Array.Copy(block2, 0, rv, count, copy_cnt);
-                done += MagicNumbers.PAGE_SIZE;
-                count += MagicNumbers.PAGE_SIZE;
+                done += PAGE_SIZE;
+                count += PAGE_SIZE;
             } while (done < len);
 
             return rv;
