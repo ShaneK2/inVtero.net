@@ -158,6 +158,7 @@ namespace inVtero.net
         }
 
         public ulong FullAddr { get { return ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address); } }
+        public string xStr { get { return ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address).ToString("x16"); } }
 
         public override string ToString() => $"VA: {((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address):X12}, PML4E {PML4:X3}, DPO:{DirectoryPointerOffset:X3}, DO:{DirectoryOffset:X3}, TO: {TableOffset:X3}, O: {Offset:X4}";
 

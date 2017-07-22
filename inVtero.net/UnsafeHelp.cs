@@ -46,10 +46,10 @@ namespace inVtero.net
                 SetMemory(allSetBits, 0xff, PAGE_SIZE);
         }
 
-        public UnsafeHelp(string BitmapFileName, long ByteSize = 0, bool InMemory = false)
+        public UnsafeHelp(string BitmapFileName, long CountOfEntries = 0, bool InMemory = false)
         {
             var bitmapName = "UnsafeBitmap" + Path.GetFileNameWithoutExtension(BitmapFileName);
-
+            long ByteSize = CountOfEntries >> LONG_SHIFT;
             if (InMemory)
             {
                 try

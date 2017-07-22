@@ -93,6 +93,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="..\Scripts\Capstone.py">
+      <Link>Capstone.py</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\Scripts\DBLoad.py">
       <Link>DBLoad.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -109,7 +113,6 @@
       <Link>VADVerifyDump.py</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="Analyze.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

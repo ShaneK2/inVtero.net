@@ -24,7 +24,7 @@ using System.Collections.Concurrent;
 using inVtero.net.Support;
 using ProtoBuf;
 using inVtero.net.Specialties;
-
+using static inVtero.net.MagicNumbers; 
 using System.Diagnostics;
 
 // Details on this struct can be found here and likely many other sources
@@ -96,9 +96,6 @@ namespace inVtero.net
         [ProtoIgnore]
         public string IOFile { get { if (Vtero.AllowWrite) return MemoryDump; return string.Empty; } }
 
-        const long PAGE_SIZE = 0x1000;
-        const long LARGE_PAGE_SIZE = 1024 * 1024 * 2;
-
         [ProtoIgnore]
         Guid ID;
         [ProtoIgnore]
@@ -144,7 +141,7 @@ namespace inVtero.net
             MD = parent.MD;
             ID = parent.ID;
 
-            DumpedPFNBitmap = new UnsafeHelp(ID.ToString(), MaxLimit >> sizeof(long), true);
+            DumpedPFNBitmap = new UnsafeHelp(ID.ToString(), MaxLimit, true);
 
             StartOfMemory = parent.StartOfMemory;
             MemoryDump = parent.MemoryDump;
@@ -203,7 +200,7 @@ namespace inVtero.net
             }
 
             thiz.ID = new Guid();
-            thiz.DumpedPFNBitmap = new UnsafeHelp(thiz.ID.ToString(), thiz.MaxLimit >> MagicNumbers.LONG_SHIFT, true);
+            thiz.DumpedPFNBitmap = new UnsafeHelp(thiz.ID.ToString(), thiz.MaxLimit, true);
 
             thiz.SetupStreams();
 
@@ -308,7 +305,7 @@ namespace inVtero.net
         {
             long rv = 0;
 
-            var aPFN = offset >> MagicNumbers.PAGE_SHIFT;
+            var aPFN = offset >> PAGE_SHIFT;
 
             for (int i = 0; i < MD.PhysMemDesc.NumberOfRuns; i++)
             {
@@ -373,7 +370,7 @@ namespace inVtero.net
                 return -1;
 
             // Determine file offset based on indexed/gap adjusted PFN and page size
-            var FileOffset = StartOfMemory + (bIndexedPFN << MagicNumbers.PAGE_SHIFT);
+            var FileOffset = StartOfMemory + (bIndexedPFN << PAGE_SHIFT);
 
             return FileOffset;
 

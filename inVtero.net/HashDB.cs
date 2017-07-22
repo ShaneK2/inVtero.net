@@ -76,7 +76,7 @@ namespace inVtero.net
 
             ReRe = new ReReDB(relocFolder);
 
-            HDBBitMap = new UnsafeHelp(HashDBBitMap, (long) DBEntries >> LONG_SHIFT);
+            HDBBitMap = new UnsafeHelp(HashDBBitMap, (long) DBEntries);
         }
 
         /// <summary>
@@ -106,12 +106,12 @@ namespace inVtero.net
 
         public bool GetIdxBit(ulong bit)
         {
-            return HDBBitMap.GetBit(((long) bit >> HASH_SHIFT) & (long)DBEntriesMask);
+            return HDBBitMap.GetBit((long) bit & (long)DBEntriesMask);
         }
 
         public void SetIdxBit(ulong bit)
         {
-            HDBBitMap.SetBit(((long) bit >> HASH_SHIFT) & (long)DBEntriesMask);
+            HDBBitMap.SetBit((long) bit & (long)DBEntriesMask);
         }
         /*
         public void AddNullInput()

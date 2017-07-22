@@ -7,17 +7,23 @@ clr.AddReferenceToFileAndPath("inVteroUI.dll")
 
 from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
+from inVtero.net.Hashing import *
 from inVteroUI import *
 from System.IO import Directory, File, FileInfo, Path
-from System import Environment, String, Console, ConsoleColor
-from System import Text
+from System import Environment, String, Console, ConsoleColor, Text, BitConverter
 from System.Diagnostics import Stopwatch
+from System.Text import Encoding
+from System.Text.RegularExpressions import Regex, RegexOptions
 
 import Analyze
 import CloudLeech
+import PoolScan
 
 from Analyze import *
 from CloudLeech import *
+from Capstone import *
+from PoolScan import *
+
 
 # BELOW LIST IS USED BY "test()" method. 
 MemList = [
@@ -46,7 +52,6 @@ print "\nConfigured input files (for test() method); "
 for line in MemList:
     print '{0} {1}'.format(i, line)
     i+=1
-
 
 
 

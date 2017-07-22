@@ -68,7 +68,7 @@ def UnLock(vtero):
 	insn = Capstone.cs_insn()
 	detail = Capstone.cs_detail()
 	BuffOffset = insnHandle.ToInt64()
-	insn_size = System.Runtime.InteropServices.Marshal.SizeOf(insn)
+	insn_size = Marshal.SizeOf(insn)
 	PatchAddr = 0
 	NopCnt = 0
 	Console.ForegroundColor = ConsoleColor.Green

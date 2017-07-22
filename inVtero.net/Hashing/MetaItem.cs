@@ -6,17 +6,24 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using System.Diagnostics;
 using System.IO;
+using System.Security;
+using System.Text.RegularExpressions;
 
 namespace inVtero.net.Hashing
 {
     public static class MetaItem
     {
+        public static string Printable(string input)
+        { return Regex.Replace(input, @"[^\w\.\[\]\=\;\(\)-_]", "").Trim(); }
+
+
         public static XElement GenMetaDataEntry(FileInfo File, long HashID = 0, string Info = null)
         {
             var fVerInfo = FileVersionInfo.GetVersionInfo(File.FullName);
 
             var check = new XElement(ElementNames.xMetaData,
-                new XAttribute(xFullName, File.FullName),
+                //new XAttribute(xFullName, File.FullName),
+                string.IsNullOrWhiteSpace(File.Name) ? null : new XAttribute(xName, File.Name),
                 HashID != 0 ? null : new XAttribute(AttributeNames.xHashID, HashID),
                 string.IsNullOrWhiteSpace(Info) ? null : new XAttribute(AttributeNames.xInfo, Info.GetHashCode().ToString("X")),
                 File.GetXElement(),
@@ -30,16 +37,16 @@ namespace inVtero.net.Hashing
 
         public static XElement GetXElement(this FileInfo f)
         {
+
             var check = new XElement(ElementNames.xFileInfo
-                     , string.IsNullOrWhiteSpace(f.Name) ? null : new XAttribute(xName, f.Name)
                      , string.IsNullOrWhiteSpace(f.FullName) ? null : new XAttribute(xFullName, f.FullName)
                      , string.IsNullOrWhiteSpace(f.Extension) ? null : new XAttribute(xExtension, f.Extension)
                      , f.Exists ? new XAttribute(xExists, f.Exists) : null
                      , f.Length == 0 ? null : new XAttribute(xLength, f.Length)
                      , (int)f.Attributes == 0 ? null : new XAttribute(xAttributes, f.Attributes.ToString())
                      //, f.LastAccessTimeUtc == null ? null : new XAttribute(xLastAccessTimeUtc, f.LastAccessTimeUtc)
-                     , f.LastWriteTimeUtc == null ? null : new XAttribute(xLastWriteTimeUtc, f.LastWriteTimeUtc)
                      , f.CreationTimeUtc == null ? null : new XAttribute(xCreationTimeUtc, f.CreationTimeUtc)
+                     , f.CreationTimeUtc == f.LastWriteTimeUtc ? null : f.LastWriteTimeUtc == null ? null : new XAttribute(xLastWriteTimeUtc, f.LastWriteTimeUtc)
                      );
             if (check.HasAttributes)
                 return check;
@@ -96,11 +103,11 @@ namespace inVtero.net.Hashing
                    , !string.IsNullOrWhiteSpace(fvi.Comments) ? new XAttribute(xComments, fvi.Comments) : null
                    , !string.IsNullOrWhiteSpace(fvi.CompanyName) ? new XAttribute(xCompanyName, fvi.CompanyName) : null
                    , !string.IsNullOrWhiteSpace(fvi.FileDescription) ? new XAttribute(xFileDescription, fvi.FileDescription) : null
-                   , !string.IsNullOrWhiteSpace(fvi.FileVersion) ? new XAttribute(xFileVersion, fvi.FileVersion) : null
+                   , !string.IsNullOrWhiteSpace(fvi.FileVersion) ? new XAttribute(xFileVersion, Printable(fvi.FileVersion)) : null
                    , !string.IsNullOrWhiteSpace(fvi.InternalName) ? new XAttribute(xInternalName, fvi.InternalName) : null
                    , !string.IsNullOrWhiteSpace(fvi.Language) ? new XAttribute(xLanguage, fvi.Language) : null
-                   , !string.IsNullOrWhiteSpace(fvi.LegalTrademarks) ? new XAttribute(xLegalTrademarks, fvi.LegalTrademarks) : null
-                   , !string.IsNullOrWhiteSpace(fvi.LegalCopyright) ? new XAttribute(xLegalCopyright, fvi.LegalCopyright) : null
+                   //, !string.IsNullOrWhiteSpace(fvi.LegalTrademarks) ? new XAttribute(xLegalTrademarks, fvi.LegalTrademarks) : null
+                   //, !string.IsNullOrWhiteSpace(fvi.LegalCopyright) ? new XAttribute(xLegalCopyright, fvi.LegalCopyright) : null
                    , !string.IsNullOrWhiteSpace(fvi.OriginalFilename) ? new XAttribute(xOriginalFilename, fvi.OriginalFilename) : null
                    , !string.IsNullOrWhiteSpace(fvi.PrivateBuild) ? new XAttribute(xPrivateBuild, fvi.PrivateBuild) : null
                    , !string.IsNullOrWhiteSpace(fvi.ProductVersion) ? new XAttribute(xProductVersion, fvi.ProductVersion) : null

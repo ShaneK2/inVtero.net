@@ -59,6 +59,11 @@ namespace inVtero.net
         // Often PE section data will overlap the MM system's protection scheme
         public List<MemSection> SubSections;
 
+        public override string ToString()
+        {
+            return $"{(String.IsNullOrWhiteSpace(NormalizedName) ? (String.IsNullOrWhiteSpace(Name) ? VadFile : Name) : NormalizedName)} Address: {Address:x}";
+        }
+
         public int CompareTo(object obj)
         {
             var other = obj as MemSection;

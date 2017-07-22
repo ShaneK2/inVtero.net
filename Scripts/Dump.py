@@ -25,7 +25,7 @@ vtero = Scan.Scanit(copts)
 
 # Global
 CollectKernel = False
-newdir = copts.FileName + ".dumped.fresh"
+newdir = copts.FileName + ".dumped.latest"
 topDir = Directory.CreateDirectory(newdir)
 Vtero.DiagOutput = False
 
@@ -61,7 +61,10 @@ for proc in proc_arr:
         CollectKernel = True
     else:
         CollectKernel = False
-    currProcBase = newdir + "\\" + proc.OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "]"
+    OSFileName = getattr(proc, "OSFileName", None)
+    if OSFileName is None:
+        OSFileName = "UNK"
+    currProcBase = newdir + "\\" + OSFileName + " PID[" + proc.ProcessID.ToString() + "] CR3[" + proc.CR3Value.ToString("X") + "]"
     if Directory.Exists(currProcBase):
         continue
     dir = Directory.CreateDirectory(currProcBase)
@@ -71,11 +74,11 @@ for proc in proc_arr:
     proc.CopySymbolsForVad(vtero.KernelProc)
     PerProcDumpTime = Stopwatch.StartNew()
     #DumpProc uses PageTable to map memory for dump
-    if CollectKernel:
-        entries = proc.DumpProc(currProcBase + "\\", False, CollectKernel)
-    else:
+    #if CollectKernel:
+    #    entries = proc.DumpProc(currProcBase + "\\", False, CollectKernel)
+    #else:
         # VADDUmp is based on VAD as source for dumping
-        proc.VADDump(currProcBase + "\\", CollectKernel, False)
+    proc.VADDump(currProcBase + "\\", CollectKernel, False)
     print "Dumped Process: %s, time: %s " % (proc.ShortName, PerProcDumpTime.Elapsed.ToString())
     # use Reloc.Delocate.DeLocateFile to repair a dumped section into a block that matches disk representation 
     # this allows for secure hash validation of memory blocks

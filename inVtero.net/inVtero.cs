@@ -54,6 +54,9 @@ namespace inVtero.net
         public long FileSize;
         public double GroupThreshold;
 
+        // reset this every time we load a crashdump
+        public static ConcurrentDictionary<long, MemSection> ModuleCache;
+
         ConfigOptions ConfOpts;
 
         // Preserve detected results to avoid aggressive kernel / symbol scanning loading
@@ -162,6 +165,7 @@ namespace inVtero.net
                 VerboseOutput = DisableProgressBar = true;
             }
 
+            ModuleCache = new ConcurrentDictionary<long, MemSection>();
             ProgressBarz.pBarColor = ConsoleColor.Yellow;
         }
 
@@ -175,7 +179,7 @@ namespace inVtero.net
                 scan = new Scanner(MemFile, this);
 
                 // MemAccess.MaxLimit is max pages after index by the memory runs
-                PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
+                PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit, true);
             }
         }
 
@@ -190,7 +194,7 @@ namespace inVtero.net
                 scan = new Scanner(MemFile, this);
 
                 // MemAccess.MaxLimit is max pages after index by the memory runs
-                PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit >> sizeof(long), true);
+                PFNBitmap = new UnsafeHelp(ID.ToString(), MemAccess.MaxLimit, true);
             }
         }
 
@@ -352,7 +356,7 @@ namespace inVtero.net
         }
 
         // These parallel function's almost always are I/O bound and slower 
-        public void HashAllProcs(string DB, string Relocs, long Size, bool DoBitmapScan = true)
+        public void HashAllProcs(MetaDB DB, bool DoBitmapScan = true)
         {
             ConcurrentBag<Tuple<long, string, string>[]> rv = new ConcurrentBag<Tuple<long, string, string>[]>();
             HashRecord[] hr;
@@ -361,8 +365,9 @@ namespace inVtero.net
 
             KernelProc.InitSymbolsForVad();
 
-            var mdb = new MetaDB("c:\\temp\\inVtero.net", Size, 128);
-            var fl = new FileLoader(mdb);
+            var mdb = DB;
+            var fl = mdb.Loader;
+
             MemAccess.MapViewSize = 128 * 1024;
 
             long TotalTotal = 0;
@@ -524,7 +529,7 @@ namespace inVtero.net
             // expected kernel hardcoded
 
             var pdbFile = (from kern in dp.Sections
-                           where kern.Value.Name.Contains("ntkrnlmp")
+                           where (kern.Value.Name.Contains("ntkrnlmp") || kern.Value.Name.Contains("ntoskrnl"))
                            select kern.Value.DebugDetails.PDBFullPath).FirstOrDefault();
 
             if (string.IsNullOrWhiteSpace(pdbFile))

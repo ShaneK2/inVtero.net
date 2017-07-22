@@ -243,14 +243,18 @@ namespace inVtero.net.Hashing
             }
             return;
         }
-        bool Abort;
+        string InitialScanFolder;
         CancellationTokenSource source;
         public void LoadFromPath(string Folder)
         {
+            InitialScanFolder = Folder;
+
             source = new CancellationTokenSource();
-            
+
+            source.Token.Register(() => WriteColor(ConsoleColor.Red, $"Cancelation requested. {LoadExceptions.Count} file load exceptions occured."), true);
+
+
             CancellationToken token = source.Token;
-            
             var po = new ParallelOptions() { CancellationToken = token };
 
             Parallel.Invoke((po), () =>
@@ -261,12 +265,12 @@ namespace inVtero.net.Hashing
                 WriteColor(ConsoleColor.Green, $"Finished FS load from {Folder} task time: {GenerateSW.Elapsed}");
             }, 
             () => {
-                Abort = FillHashBuff(po);
+                FillHashBuff(po);
                 DoneHashLoad = true;
             }, 
             () => DumpBufToDisk(po)
             );
-            WriteColor(ConsoleColor.White, $"Total task runtime: {GenerateSW.Elapsed}");
+            WriteColor(ConsoleColor.White, $"Total task runtime: {GenerateSW.Elapsed}.  {LoadCount} folders/files were filtered out of import.");
         }
 
 
@@ -279,10 +283,10 @@ namespace inVtero.net.Hashing
             SortMask = HDB.DBEntriesMask << HASH_SHIFT;
             do
             {
-                var hashArrTpl = ReadyQueue.Take();
+
+                var hashArrTpl = ReadyQueue.Take(po.CancellationToken);
                 var hashArr = hashArrTpl.Item2;
                 var Count = hashArrTpl.Item1;
-
 
                 ParallelAlgorithms.Sort<HashRec>(hashArr, 0, Count, GetICompareer<HashRec>(SortByDBSizeMask));
                 TotalRequested += Count;
@@ -310,6 +314,7 @@ namespace inVtero.net.Hashing
                         fs.Seek(DBPage, SeekOrigin.Begin);
                         fs.Read(buff, 0, DB_READ_SIZE);
                         WriteBack = false;
+                        if (po.CancellationToken.IsCancellationRequested) return;
                         po.CancellationToken.ThrowIfCancellationRequested();
 
                         do
@@ -374,6 +379,7 @@ namespace inVtero.net.Hashing
 
                         if (WriteBack)
                         {
+                            if (po.CancellationToken.IsCancellationRequested) return;
                             // reset seek position
                             fs.Seek(DBPage, SeekOrigin.Begin);
                             // only write back 1 page if we can help it
@@ -391,7 +397,7 @@ namespace inVtero.net.Hashing
             WriteColor(ConsoleColor.Cyan, $"Finished DB write {TotalDBWrites:N0} NEW entries. Requsted {TotalRequested:N0} (reduced count reflects de-duplication). Task time: {sw.Elapsed}");
         }
 
-        bool FillHashBuff(ParallelOptions po)
+        void FillHashBuff(ParallelOptions po)
         {
             int TotalHashGenCount = 0;
             int HashGenCnt = 0;
@@ -413,6 +419,7 @@ namespace inVtero.net.Hashing
                     LoadList.TryPop(out next);
                     if(next == null && !DoneDirScan)
                     {
+                        if (po.CancellationToken.IsCancellationRequested) return;
                         Thread.Yield();
                         continue;
                     }
@@ -432,6 +439,7 @@ namespace inVtero.net.Hashing
                     else
                     {
                         LoadList.Push(next);
+                        if (po.CancellationToken.IsCancellationRequested) return;
                         po.CancellationToken.ThrowIfCancellationRequested();
                         break;
                     }
@@ -447,7 +455,7 @@ namespace inVtero.net.Hashing
                     WriteColor(ConsoleColor.Red, $"BuferCount {BufferCount} too large, try something a bit smaller (however keep it as large as you can :)");
                     WriteColor(ConsoleColor.Yellow, $"{ex.ToString()}");
                     source.Cancel();
-                    return true;
+                    return;
                 }
 
                 //WriteColor(ConsoleColor.White, $"Parallel partition from {StartingAvailable} to {CurrAvailableMax} starting.");
@@ -507,8 +515,7 @@ namespace inVtero.net.Hashing
                         //}
                         }
                     });
-                if (po.CancellationToken.IsCancellationRequested)
-                    return true;
+                if (po.CancellationToken.IsCancellationRequested) return;
 
                 TotalHashGenCount += HashGenCnt;
 
@@ -523,7 +530,7 @@ namespace inVtero.net.Hashing
 
             sw.Stop();
             WriteColor(ConsoleColor.Green, $"Finished Files/Hashes {LoadedCnt:N0}/{TotalHashGenCount:N0}.  HashGen: {(TotalHashGenCount / sw.Elapsed.TotalSeconds):N0} per second.");
-            return false;
+            return;
         }
 
         void LogEx(int Level, string message)
@@ -573,7 +580,7 @@ namespace inVtero.net.Hashing
             }
         }
 
-        int ScreenCount = 0;
+        int LoadCount = 0;
         /// <summary>
         /// Pre-Screen files to find out if it's a binary we care about
         /// </summary>
@@ -622,17 +629,29 @@ namespace inVtero.net.Hashing
             var CheckedList = new List<string>();
             IEnumerable<string> files = null;
 
-            if (Abort)
-                return;
-
-            // First get the file list inclusive of our file extensions list
-            files = from afile in Directory.EnumerateFiles(
-                                    aPath, "*.*",
-                                    SearchOption.TopDirectoryOnly)
-                    let file = afile.ToUpper()
-                    from just in ScanExtensions
+            try
+            {
+                // First get the file list inclusive of our file extensions list
+                files = from afile in Directory.EnumerateFiles(
+                                        aPath, "*.*",
+                                        SearchOption.TopDirectoryOnly)
+                        let file = afile.ToUpper()
+                        from just in ScanExtensions
                         where file.EndsWith(just)
-                    select file;
+                        select file;
+
+            } catch(Exception ex) {
+                string err = $"Unable to enumerate folder {aPath}.  {ex.ToString()}";
+                if (aPath.Equals(InitialScanFolder))
+                {
+                    LogEx(0, $"Canceling, failed with initial folder. {err}");
+                    source.Cancel();
+                    return;
+                }
+                else
+                    LogEx(1, err);
+            }
+
             bool banner = false;
 
             // strip out any banned items
@@ -655,13 +674,15 @@ namespace inVtero.net.Hashing
             // get list of PE's we can hash
             foreach (var check in TmpList)
             {
+                if (source.IsCancellationRequested) return;
+
                 var carved = CheckFile(check);
                 if (carved != null)
                 {
                     LoadList.Push(carved);
-                    Interlocked.Increment(ref ScreenCount);
-                    if(ScreenCount % 1000 == 0 && GenerateSW.Elapsed.TotalSeconds > 0)
-                        WriteColor(ConsoleColor.Gray, $"Loaded {ScreenCount} code files. {(ScreenCount / GenerateSW.Elapsed.TotalSeconds):N0} per second.");
+                    Interlocked.Increment(ref LoadCount);
+                    if(LoadCount % 100 == 0 && GenerateSW.Elapsed.TotalSeconds > 0)
+                        WriteColor(ConsoleColor.Gray, $"Loaded {LoadCount} code files. {(LoadCount / GenerateSW.Elapsed.TotalSeconds):N0} per second.");
                 }
             }
 
@@ -674,7 +695,7 @@ namespace inVtero.net.Hashing
                 if (dirs.Count() > 0)
                 {
                     try {
-                        if (!Abort && !JunctionPoint.Exists(subdir))
+                        if (!JunctionPoint.Exists(subdir))
                             RecursiveGenerate(subdir, po);
                     }
                     catch (Exception ex)

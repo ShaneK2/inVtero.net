@@ -1,35 +1,32 @@
 import clr
 import sys
-reload(sys)
-sys.setdefaultencoding('utf-8')
+from sys import argv
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
-clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
 
 from inVtero.net import *
-from inVtero.net.ConsoleUtils import *
 from System.IO import Directory, File, FileInfo, Path
 from System.Diagnostics import Stopwatch
 from inVtero.net.Hashing import *
 
-Vtero.VerboseLevel = 1
 
+importFolder = "F:\\"
+if argv.Count > 0:
+    importFolder = argv.pop()
+
+print "Loading files from input: " + importFolder
+
+Vtero.VerboseLevel = 1
 aBufferCount = 60000000
 
 mdb = MetaDB("c:\\temp\\inVtero.net", 1024*1024*1024*16, 128, aBufferCount)
 
 fl = mdb.Loader
-fl.LoadFromPath("f:\\")
+fl.LoadFromPath(importFolder)
 
 mdb.Save()
 
-#db = HashDB(128, "C:\\temp\\iv.DB", "c:\\temp\\reloc", 
-#db.AddNullInput()
-#fl = FileLoader(db)
-#fl.BufferCount = aBufferCount 
 
-#fl.LoadFromPath("g:\\")
-#fl.LoadFromPath("c:\\temp\\single\\")
 
 
 #rv = fl.FileChecker("c:\\temp\\advapi32.dll.text", True)
@@ -46,16 +43,3 @@ mdb.Save()
 #        for index in range(0, f.Item3.Count):
 #            if f.Item3[index] == False:
 #                print " miss @ 0x" + (index * 128).ToString("X"),
-## Load the DB, min hash size for inputs is 64
-## The size is stored in the DB from the min block
-## i.e. here "64" is the min block size so 64 = 0
-## 128 = 1, 256 = 2, 512 = 3, 1024 = 4, 2048 = 5 & 4096 = 6
-##BufferCount = 5000000
-##fl = FileLoader(db, 128, BufferCount)
-## How many entrier per DB buffer write (keep it under 200Million or else .NET has issues)
-## 10M is enough for most deployments
-
-
-#print fl.LoadExceptions.Count.ToString() + " File load exceptions encountered."
-
-

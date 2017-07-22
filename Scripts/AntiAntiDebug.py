@@ -1,7 +1,5 @@
 import clr
 import sys
-reload(sys)
-sys.setdefaultencoding('utf-8')
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")

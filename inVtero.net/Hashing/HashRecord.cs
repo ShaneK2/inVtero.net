@@ -196,7 +196,7 @@ namespace inVtero.net.Hashing
                 for (int h=0; h < countOfSmallestHashBlocks; h++)
                 {
                     //var hashInfo = InnerList[i][h].HashData[15] & 0xf;
-                    if(InnerList[i][h].Verified)
+                    if(!InnerList[i][h].Verified)
                         yield return saddr + (h * MinSizeBlock);
                 }
             }

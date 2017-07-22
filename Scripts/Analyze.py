@@ -16,7 +16,6 @@
 #
 # NtBuildNumber == kernel version
 #
-
 import clr,sys
 import System
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
@@ -184,9 +183,9 @@ def WalkModules(proc, ModLinkHead, Verbose):
     while True:
         _LDR_DATA = proc.xStructInfo("_LDR_DATA_TABLE_ENTRY", _LDR_DATA_ADDR)
         if Verbose:
-            print "Loaded Base: 0x" + _LDR_DATA.DllBase.Value.ToString("x") + " Length: 0x" + _LDR_DATA.SizeOfImage.Value.ToString("x8") + " \t Module: " + _LDR_DATA.FullDllName.Value
+            print "Loaded Base: 0x" + _LDR_DATA.DllBase.Value.ToString("x") + " EntryPoint: 0x" + _LDR_DATA.EntryPoint.Value.ToString("x") + " Length: 0x" + _LDR_DATA.SizeOfImage.Value.ToString("x8") + " \t Module: " + _LDR_DATA.FullDllName.Value
         modlist.append(_LDR_DATA)
-        _LDR_DATA_ADDR = _LDR_DATA.InLoadOrderLinks.Value
+        _LDR_DATA_ADDR = _LDR_DATA.InLoadOrderLinks.Flink.Value
         if _LDR_DATA_ADDR == ModLinkHead:
             return modlist
 
@@ -197,8 +196,15 @@ def LoadAllUserSymbols(vtero):
         px.MemAccess = vtero.MemAccess
         px.ScanAndLoadModules("", False, False, True, False, True)
 
-
+# Walk registry hives
 def hives(proc):
+    #CmpRegistryRootObject = proc.GetSymValueLong("CmpRegistryRootObject")
+    #CmpMasterHive = proc.GetSymValueLong("CmpMasterHive")
+    #KeyHive = proc.GetSymValueLong("_HHIVE", CmpMasterHive)
+    #KeyBody = proc.GetSymValueLong("_CM_KEY_BODY", CmpRegistryRootObject)
+    #KeyControlBlock = proc.GetSymValueLong("_CM_KEY_CONTROL_BLOCK", KeyBody.KeyControlBlock.Value)
+    #KeyCell = KeyControlBlock.KeyCell.Value
+    #KeyNode = _CM_KEY_NODE
     _HIVE_HEAD_ADDR = proc.GetSymValueLong("CmpHiveListHead")
     typedef = proc.xStructInfo("_CMHIVE")
     hiveOffsetOf = typedef.HiveList.OffsetPos
@@ -220,10 +226,10 @@ def YaraAll(YaraRules, vtero):
     print "elapsed " + dumptime.Elapsed.ToString()
     return yall
 
-def QuickSetup(MemoryDump):
+def QuickSetup(MemoryDump, IgnoreSave = False):
     # Basic option handling
     copts = ConfigOptions()
-    copts.IgnoreSaveData = False
+    copts.IgnoreSaveData = IgnoreSave
     copts.FileName = MemoryDump
     copts.VersionsToEnable = PTType.GENERIC
     copts.VerboseOutput = False
@@ -261,12 +267,52 @@ def QuickSetup(MemoryDump):
     print "Kernel build: " + kMinorVer.ToString()
     return vtero
 
-
+#########################################################################
+# search symbols like this
+# SymList(proc, "*POOL*")
 # pretty print symbols matching string
+#########################################################################
 def SymList(proc, MatchString):
     for match in proc.MatchSymbols(MatchString):
         print match.Item1 + " @ 0x" + match.Item2.ToString("x")
  
+def dt(dynObj):
+    print dynObj.TypeName,
+    print " len: 0x" + dynObj.Length.ToString("x")
+    for member in dynObj.Dictionary.Keys:
+        pyMember = getattr(dynObj, member, None)
+        print "  +0x" + pyMember.OffsetPos.ToString("x"),
+        currName = pyMember.MemberName.split(".")
+        print currName[currName.Count-1] + "\t\t:",
+        bitPos = getattr(pyMember, "BitPosition", None)
+        bitCnt = getattr(pyMember, "BitCount", None)
+        if bitPos is not None:
+            print "Pos " + bitPos.ToString() + ", " + bitCnt.ToString() + " Bits",
+        prop = getattr(pyMember, "IsPtr", None)
+        if prop:
+            print "*",
+            ptrType = getattr(pyMember, "PtrTypeName", None) 
+            if ptrType is not None:
+                print ptrType,
+        arrCnt = getattr(pyMember, "ArrayCount", None)
+        if arrCnt is not None:
+            print "[" + arrCnt.ToString() + "] ",
+            arrType = getattr(pyMember, "ArrayMemberType", None)
+            if arrType is not None:
+                print arrType,
+            print " member len(" + pyMember.ArrayMemberLen.ToString() + ")",
+        typName = getattr(pyMember, "TypeName", None)
+        if typName is not None:
+            print typName,
+        value = getattr(pyMember, "ConstValue", None)
+        if value is not None:
+            print "0x" + value.ToString("x"),
+        print " len(0x" + pyMember.Length.ToString("x") + ")",
+        if dynObj.Dictionary[member] is not None:
+            print " = 0x" + dynObj.Dictionary[member].ToString("x")
+        else:
+            print " "
+
 
 
 # Example of walking process list

@@ -220,9 +220,14 @@ namespace Dia2Sharp
             var InfoDict= new Dictionary<string, object>();
             Info.Dictionary = InfoDict;
             long lvalue = 0;
+            ulong Length = 0, memberLen=0;
+            string memberName = string.Empty;
 
             IDiaSymbol Sub = null;
             IDiaEnumSymbols Enum2 = null;
+            IDiaSymbol TypeType;
+            SymTagEnum TypeTypeTag;
+
             uint compileFetched = 0;
 
             Master.findChildren(SymTagEnum.SymTagNull, null, 10, out Enum2);
@@ -240,20 +245,44 @@ namespace Dia2Sharp
 
                 var master = zym.InstanceName = Master.name;
                 var sType = Sub.type;
-                var typeName = zym.TypeName = sType.name;
-                var currName = zym.MemberName = $"{preName}.{Sub.name}";
+                var typeName = sType.name;
+                var currName = $"{preName}.{Sub.name}";
+
+                // LocIsConstant
+                if (Sub.locationType == 0xA)
+                    zym.ConstValue = Sub.value;
+
                 int Pos = CurrOffset + Sub.offset;
 
+                zym.TypeName = typeName;
+                zym.MemberName = currName;
+
                 zym.Tag = (SymTagEnum)Sub.symTag;
-                zym.Length = sType.length;
+                Length = sType.length;
+                zym.Length = Length;
+
                 zym.OffsetPos = Pos;
                 zym.vAddress = vAddress;
-
+                
+                // bitfield
                 if (Sub.locationType == 6)
+                {
                     zym.BitPosition = Sub.bitPosition;
+                    zym.BitCount = Sub.length;
+                }
+                if (SymTagEnum.SymTagArrayType == (SymTagEnum)sType.symTag)
+                {
+                    TypeType = sType.type;
+
+                    memberLen = TypeType.length;
+                    memberName = TypeType.name;
+
+                    zym.ArrayCount = Length / memberLen;
+                    zym.ArrayMemberLen = memberLen;
+                    zym.ArrayMemberType = memberName;
+                }
 
                 bool KeepRecur = true;
-
                 if (memRead != null)
                 {
                     bool captured = false;
@@ -274,9 +303,6 @@ namespace Dia2Sharp
                             var strLen = (short)lvalue & 0xffff;
                             
                             var strByteArr = GetMem(StringAddr, strLen + 2);
-
-                            if (strLen > strByteArr.Length / 2 || strLen <= 0)
-                                strLen = strByteArr.Length / 2;
 
                             strVal = Encoding.Unicode.GetString(strByteArr, 0, strLen);
                         }
@@ -339,17 +365,36 @@ namespace Dia2Sharp
                             // were dealing with some sort of array or weird sized type not nativly supported (yet, e.g. GUID)
                             // if we start with a _ we are going to be descending recursivly into this type so don't extract it here
                             // this is really for basic type array's or things' were not otherwise able to recursivly extract
-                            if(!captured && !sType.name.StartsWith("_"))
+                            if(!captured && (SymTagEnum.SymTagArrayType == (SymTagEnum)sType.symTag))
                             {
-                                byte[] arr = new byte[sType.length];
-                                int BytesReadRoom = (memRead.Length*8) - Pos;
-                                int len = BytesReadRoom > arr.Length ? arr.Length : BytesReadRoom;
+                                int BytesReadRoom = 0, len = 0;
+                                if (memberLen == 1 || memberLen > 8) {
+                                    byte[] barr = new byte[sType.length];
+                                    BytesReadRoom = (memRead.Length * 8) - Pos;
+                                    len = BytesReadRoom > barr.Length ? barr.Length : BytesReadRoom;
+                                    Buffer.BlockCopy(memRead, Pos, barr, 0, len);
 
+                                    Izym.Add(defName, barr);
+                                    staticDict.Add(currName, barr);
+                                } else if (memberLen == 4) {
+                                    int arrLen = (int) Length / (int) memberLen;
+                                    int[] iarr = new int[arrLen];
+                                    BytesReadRoom = (memRead.Length * 8) - Pos;
+                                    len = BytesReadRoom > (int) Length ? (int) Length : BytesReadRoom;
+                                    Buffer.BlockCopy(memRead, Pos, iarr, 0, len);
 
-                                Buffer.BlockCopy(memRead, Pos, arr, 0, len);
+                                    Izym.Add(defName, iarr);
+                                    staticDict.Add(currName, iarr);
+                                } else {
+                                    int arrLen = (int)Length / (int)memberLen;
+                                    long[] larr = new long[arrLen];
+                                    BytesReadRoom = (memRead.Length * 8) - Pos;
+                                    len = BytesReadRoom > (int)Length ? (int)Length : BytesReadRoom;
+                                    Buffer.BlockCopy(memRead, Pos, larr, 0, len);
 
-                                Izym.Add(defName, arr);
-                                staticDict.Add(currName, arr);
+                                    Izym.Add(defName, larr);
+                                    staticDict.Add(currName, larr);
+                                }
                             }
                         }
                         if (captured)
@@ -363,9 +408,9 @@ namespace Dia2Sharp
                 // This is a pointer really, so type.type... of course!
                 if (KeepRecur)
                 {
-                    var TypeType = sType.type;
-                    var TypeTypeTag = sType.symTag;
-                    if ((SymTagEnum)TypeTypeTag == SymTagEnum.SymTagPointerType)
+                    TypeType = sType.type;
+                    TypeTypeTag = (SymTagEnum) sType.symTag;
+                    if (TypeTypeTag == SymTagEnum.SymTagPointerType)
                     {
                         zym.IsPtr = true;
                         if (TypeType != null && !string.IsNullOrWhiteSpace(TypeType.name))

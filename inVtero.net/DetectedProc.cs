@@ -104,11 +104,11 @@ namespace inVtero.net
         [ProtoIgnore]
         public HashDB HDB;
 
-        public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntkrnlmp")
+        public dynamic xStructInfo(string Struct, long Address, int minLen = 4096, string Module = "ntoskrnl")
         {
             MemSection pdb = null;
 
-            if (Module == "ntkrnlmp" && KernelSection != null)
+            if ((Module == "ntkrnlmp" || Module == "ntoskrnl") && KernelSection != null)
                 pdb = KernelSection;
             else
             {
@@ -119,7 +119,7 @@ namespace inVtero.net
                                select files;
 
                 pdb = pdbPaths.FirstOrDefault();
-                if (Module == "ntkrnlmp")
+                if ((Module == "ntkrnlmp" || Module == "ntoskrnl"))
                     KernelSection = pdb;
             }
 
@@ -133,11 +133,11 @@ namespace inVtero.net
             return rv;
         }
 
-        public dynamic xStructInfo(string Struct, long[] memRead = null, string Module = "ntkrnlmp")
+        public dynamic xStructInfo(string Struct, long[] memRead = null, string Module = "ntoskrnl")
         {
             MemSection pdb = null;
 
-            if (Module == "ntkrnlmp" && KernelSection != null)
+            if ((Module == "ntkrnlmp" || Module == "ntoskrnl") && KernelSection != null)
                 pdb = KernelSection;
             else
             {
@@ -148,7 +148,7 @@ namespace inVtero.net
                                select files;
 
                 pdb = pdbPaths.FirstOrDefault();
-                if (Module == "ntkrnlmp")
+                if ((Module == "ntkrnlmp" || Module == "ntoskrnl"))
                     KernelSection = pdb;
             }
             if (sym == null)
@@ -177,7 +177,7 @@ namespace inVtero.net
             return value;
         }
 
-        public Tuple<String, ulong, ulong>[] MatchSymbols(string Match, string Module = "ntkrnlmp")
+        public Tuple<String, ulong, ulong>[] MatchSymbols(string Match, string Module = "ntoskrnl")
         {
             List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
             foreach (var sec in Sections)
@@ -203,13 +203,32 @@ namespace inVtero.net
             var rv = DebugHelp.SymFromName(ID.GetHashCode(), SymName, ref symInfo);
             if (!rv)
             {
-                WriteColor(ConsoleColor.Red, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
+                if(Vtero.VerboseLevel > 1)
+                    WriteColor(ConsoleColor.Yellow, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
                 return BAD_VALUE_READ;
             }
 
             SymbolStore.Add(AddrName, symInfo.Address);
 
             return symInfo.Address;
+        }
+
+        public string GetSymName(long Address)
+        {
+            ulong displaced = 0;
+            DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
+
+            symInfo.SizeOfStruct = 0x58;
+            symInfo.MaxNameLen = 1024;
+
+            var rv = DebugHelp.SymFromAddrW(ID.GetHashCode(), (ulong) Address, ref displaced, ref symInfo);
+            if (!rv)
+            {
+                if(Vtero.VerboseLevel > 2)
+                    WriteColor(ConsoleColor.Yellow, $"GetSymName: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
+                return string.Empty;
+            }
+            return symInfo.Name;
         }
 
         public void LoadModulesInRange(long VA, long length, string OnlyModule = null)
@@ -257,7 +276,7 @@ namespace inVtero.net
         /// you can still scan for * by passing null or empty string
         /// </summary>
         /// <param name="OnlyModule">Stop when the first module named this is found</param>
-        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntkrnlmp.pdb", bool OnlyLarge = true, bool IncludeKernelSpace = true, bool OnlyValid = true, bool IncludeData = false, bool DoExtraHeaderScan = true)
+        public VirtualScanner ScanAndLoadModules(string OnlyModule = "ntoskrnl.exe", bool OnlyLarge = true, bool IncludeKernelSpace = true, bool OnlyValid = true, bool IncludeData = false, bool DoExtraHeaderScan = true)
         {
             const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
             var curr = 0;
@@ -300,8 +319,13 @@ namespace inVtero.net
                             Sections.TryAdd(artifact.VA, ms);
 
                         // cache this for everybody
-                        if (ms.Name == "ntkrnlmp.pdb")
+                        if (ms.Name == "ntkrnlmp.pdb" || ms.Name == "ntoskrnl.exe")
+                        {
                             KernelSection = ms;
+                            KernelSection.VadLength = KernelSection.Length = artifact.SizeOfImage;
+                            KernelSection.VadAddr = artifact.VA;
+                            KernelSection.VadFile = ms.Name = "ntoskrnl.exe";
+                        }
 
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
@@ -920,15 +944,28 @@ namespace inVtero.net
                 if (memsec.Module == null)
                 {
                     block = VGetBlock(VA, ref PagedIn);
-
-                    if (PagedIn)
+                    if (PagedIn) 
                         memsec.Module = Extract.IsBlockaPE(block);
                 }
 
-                if (ProcessID == 4 && memsec.DebugDetails != null)
-                    memsec.NormalizedName = GetNormalized(memsec.DebugDetails.PdbName, true);
-                else
-                    memsec.NormalizedName = GetNormalized(memsec.VadFile, true);
+                //if (ProcessID == 4 && memsec.DebugDetails != null)
+                //    memsec.NormalizedName = GetNormalized(memsec.DebugDetails.PdbName, true);
+                //else
+                memsec.NormalizedName = GetNormalized(memsec.VadFile, true);
+
+                if (memsec.Module != null && !Vtero.ModuleCache.ContainsKey(VA))
+                    Vtero.ModuleCache[VA] = memsec;
+
+                if (memsec.Module == null)
+                {
+                    // find this from other process
+                    if (Vtero.ModuleCache.ContainsKey(VA))
+                    {
+                        var cachdSec = Vtero.ModuleCache[VA];
+                        if (cachdSec.NormalizedName.Contains(memsec.NormalizedName) && cachdSec.Module != null)
+                            memsec.Module = cachdSec.Module;
+                    }
+                }
 
                 // proc is set in hashrecord so we can track it back later if we want to see what/where
                 var hRecord = new HashRecord();
@@ -948,17 +985,18 @@ namespace inVtero.net
                         continue;
 
                     // skip since we cheated and got the header early
-                    if (SecOffset > 0)
+                    if (SecOffset > 0 || block == null)
                         block = VGetBlock(VA + SecOffset, ref PagedIn);
 
                     if (!PagedIn)
                         continue;
 
+                    Name = memsec.NormalizedName;
+
                     if (memsec.Module != null)
                     {
                         MiniSection ms = MiniSection.Empty;
                         // apply the module name
-                        Name = memsec.NormalizedName;
                         // append the module section name (.text whatever)
                         for (int i = 0; i < memsec.Module.Sections.Count(); i++)
                         {
@@ -973,6 +1011,8 @@ namespace inVtero.net
                         if (ExecOnly && (ms.IsExec || ms.IsCode) && DoReReLocate)
                             AttemptDelocate(block, memsec, SecOffset);
                     }
+                    else
+                        Name += $"+0x{SecOffset:x}";
 
                     var hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null, 0, VA + SecOffset);
 
@@ -1085,6 +1125,14 @@ namespace inVtero.net
         {
             String FileName = string.Empty;
 
+            /*
+            // we already know this but..
+            var ntosBase = GetSymValueLong("PsNtosImageBase");
+            var ntosEnd = GetSymValueLong("PsNtosImageEnd");
+            var halBase = GetSymValueLong("PsHalImageBase");
+            var halEnd = GetSymValueLong("PsHalImageEnd");
+            */
+
             // add all drivers to sections list
             var pModuleHead = GetSymValueLong("PsLoadedModuleList");
             var _LDR_DATA_Def = xStructInfo("_LDR_DATA_TABLE_ENTRY");
@@ -1105,14 +1153,12 @@ namespace inVtero.net
                 var StartingAddress = _LDR_DATA[DllBaseOffsetOf / 8];
                 var Length = _LDR_DATA[SizeOfImageOffsetOf / 8] & 0xffffffff;
                 var lvalue = _LDR_DATA[FullDllNameOffsetOf / 8];
-                var FileNamePtr = _LDR_DATA[(FullDllNameOffsetOf + 8) / 8];
+                var FileNamePtr = _LDR_DATA[((FullDllNameOffsetOf + 8) / 8)];
                 if (FileNamePtr != 0)
                 {
                     var strLen = (short)lvalue & 0xffff;
-                    var strByteArr = GetVirtualByteLen(FileNamePtr, strLen + 2);
+                    var strByteArr = GetVirtualByteLen(FileNamePtr, strLen + 0x10);
 
-                    if (strLen > strByteArr.Length / 2 || strLen <= 0)
-                        strLen = strByteArr.Length / 2;
                     FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
                 }
                 bool KnownSection = false;
@@ -1291,6 +1337,10 @@ namespace inVtero.net
                 sec.Name = str2.Substring(0, str2.IndexOf(".pdb") + 4).ToLower();
             else
                 sec.Name = str2.ToLower();
+
+            if (sec.Name == "ntkrnlmp.pdb")
+                sec.Name = "ntoskrnl.exe";
+
             sec.DebugDetails = cv2;
             return cv2;
         }
@@ -1624,7 +1674,7 @@ namespace inVtero.net
             return rv;
         }
 
-        public long[] GetVirtualULong(ulong VA)
+        public ulong[] GetVirtualULong(ulong VA)
         {
             // offset to index
             ulong startIndex = (VA & 0xfff) / 8;
@@ -1633,7 +1683,7 @@ namespace inVtero.net
             var block = VGetBlockLong((long)VA);
 
             // adjust into return array 
-            var rv = new long[count + 512];
+            var rv = new ulong[count + 512];
             Array.Copy(block, (long)startIndex, rv, 0, count);
 
             VA += 4096;
@@ -1669,31 +1719,36 @@ namespace inVtero.net
 
         public byte[] GetVirtualByteLen(long VA, int len = PAGE_SIZE)
         {
+            long VAlign = (VA + 0xfff) & ~0xfff;
             long startIndex = VA & 0xfff;
-            long count = PAGE_SIZE - startIndex;
-            var rv = new byte[count];
+            long FirstPageCount = VAlign - VA;
+            if (VA + len < VA + FirstPageCount)
+                FirstPageCount = len;
+
+            var rv = new byte[len];
 
             var block = VGetBlock(VA);
             if (block == null)
                 return rv;
 
             // align the returned buffer to start precisely at the VA requested
-            Array.Copy(block, startIndex, rv, 0, count);
-            var done = count;
+            Array.Copy(block, startIndex, rv, 0, FirstPageCount);
+            var done = FirstPageCount;
 
             // if we have done more than requested quick return
             if (done >= len)
                 return rv;
 
+            // we should be aligned to a page size now
+            VA += done;
             // keep going until we satisfy the amount requested
             do
             {
-                VA += PAGE_SIZE;
                 var block2 = VGetBlock(VA);
                 var copy_cnt = len - done < PAGE_SIZE ? (len - done) : PAGE_SIZE;
-                Array.Copy(block2, 0, rv, count, copy_cnt);
+                Array.Copy(block2, 0, rv, done, copy_cnt);
+                VA += PAGE_SIZE;
                 done += PAGE_SIZE;
-                count += PAGE_SIZE;
             } while (done < len);
 
             return rv;

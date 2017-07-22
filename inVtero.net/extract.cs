@@ -234,7 +234,8 @@ namespace Reloc
                 pos += 14;
                 extracted_struct.EntryPoint = BitConverter.ToUInt32(block, pos); pos += 4;
                 extracted_struct.BaseOfCode = BitConverter.ToUInt32(block, pos); pos += 4;
-                extracted_struct.ImageBaseOffset = pos;
+                // we wan't this to be page aligned to typical small page size
+                extracted_struct.ImageBaseOffset = pos & 0xfff;
                 extracted_struct.ImageBase = BitConverter.ToUInt64(block, pos); pos += 8;
             }
             else
@@ -242,7 +243,7 @@ namespace Reloc
                 pos += 18;
                 extracted_struct.EntryPoint = BitConverter.ToUInt32(block, pos); pos += 4;
                 extracted_struct.BaseOfCode = BitConverter.ToUInt32(block, pos); pos += 4;
-                extracted_struct.ImageBaseOffset = pos;
+                extracted_struct.ImageBaseOffset = pos & 0xfff;
                 extracted_struct.ImageBase = BitConverter.ToUInt32(block, pos); pos += 4;
             }
             extracted_struct.SectionAlignment = BitConverter.ToUInt32(block, pos); pos += 4;

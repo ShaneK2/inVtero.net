@@ -76,13 +76,15 @@ namespace inVtero.net
         {
             try
             {
-                List<string> FullArgs = new List<string>(args);
+                List<string> FullArgs = new List<string>();
 
                 CancelKeyPress += Console_CancelKeyPress;
                 AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
 
                 if (Environment.GetEnvironmentVariable("TERM") == null)
                     Environment.SetEnvironmentVariable("TERM", "ANSI");
+
+                Environment.SetEnvironmentVariable("PYTHONSTARTUP", "Main.py");
 
                 WriteColor(ConsoleColor.Cyan, "QuickDumps is an IronPython shell.");
                 WriteColor(ConsoleColor.Cyan, "use dir() help() and the python language.");
@@ -102,13 +104,15 @@ namespace inVtero.net
                     Write("MemList");
 
                     WriteColor(ConsoleColor.Cyan, " array.");  
-                    FullArgs.Add("Main.py");
+                    //FullArgs.Add("Main.py");
                 }
 
                 FullArgs.Add("-X:FullFrames");
                 //FullArgs.Add("-X:TabCompletion");
                 FullArgs.Add("-X:ColorfulConsole");
                 //FullArgs.Add("-X:AutoIndent");
+
+                FullArgs.AddRange(args);
 
                 ForegroundColor = ConsoleColor.White;
                 pch.Run(FullArgs.ToArray());
