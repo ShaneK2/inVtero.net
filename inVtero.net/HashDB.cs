@@ -36,7 +36,7 @@ namespace inVtero.net
         public ulong DBEntries;
         public ulong DBEntriesMask;
         public int MinBlockSize;
-
+        public ulong BDBEntriesMask;
         public ReReDB ReRe;
 
         [ProtoIgnore]
@@ -76,7 +76,9 @@ namespace inVtero.net
 
             ReRe = new ReReDB(relocFolder);
 
-            HDBBitMap = new UnsafeHelp(HashDBBitMap, (long) DBEntries);
+            BDBEntriesMask = (DBEntriesMask << LONG_SHIFT) | 0xf;
+
+            HDBBitMap = new UnsafeHelp(HashDBBitMap, (long)BDBEntriesMask+1);
         }
 
         /// <summary>
@@ -106,12 +108,12 @@ namespace inVtero.net
 
         public bool GetIdxBit(ulong bit)
         {
-            return HDBBitMap.GetBit((long) bit & (long)DBEntriesMask);
+            return HDBBitMap.GetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
         }
 
         public void SetIdxBit(ulong bit)
         {
-            HDBBitMap.SetBit((long) bit & (long)DBEntriesMask);
+            HDBBitMap.SetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
         }
         /*
         public void AddNullInput()

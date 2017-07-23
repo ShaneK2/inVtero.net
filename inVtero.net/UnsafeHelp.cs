@@ -109,7 +109,7 @@ namespace inVtero.net
             view.SafeMemoryMappedViewHandle.ReleasePointer();
         }
 
-        long* lp = (long *)0;
+        ulong* lp = (ulong *)0;
 
         public unsafe void MemSetBitmap(int c)
         {
@@ -120,7 +120,7 @@ namespace inVtero.net
         {
             var ptr = (byte*)0;
             BitMapView.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-            lp = (long *)ptr;
+            lp = (ulong *)ptr;
         }
 
         public unsafe void ReleaseBitmapHandle()
@@ -128,17 +128,17 @@ namespace inVtero.net
             BitMapView.SafeMemoryMappedViewHandle.ReleasePointer();
         }
 
-        public unsafe bool GetBit(long bit)
+        public unsafe bool GetBit(ulong bit)
         {
-            long slot = lp[(bit >> WORD_BIT_SHIFT)];
-            long bitMasked = (1L << (int)(bit & WORD_MOD_SIZE));
-            long slotBit = slot & bitMasked;
+            ulong slot = lp[bit >> WORD_BIT_SHIFT];
+            ulong bitMasked = (1UL << ((int)bit & WORD_MOD_SIZE));
+            ulong slotBit = slot & bitMasked;
             return slotBit != 0;
 
         }
-        public unsafe void SetBit(long bit)
+        public unsafe void SetBit(ulong bit)
         {
-            lp[(bit >> WORD_BIT_SHIFT)] |= (1L << (int)(bit & WORD_MOD_SIZE));
+            lp[(bit >> WORD_BIT_SHIFT)] |= (1UL << ((int)bit & WORD_MOD_SIZE));
         }
 
         /// <summary>

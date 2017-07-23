@@ -18,11 +18,15 @@ from System.Text.RegularExpressions import Regex, RegexOptions
 import Analyze
 import CloudLeech
 import PoolScan
+import Basic
+import Capstone
 
 from Analyze import *
 from CloudLeech import *
 from Capstone import *
 from PoolScan import *
+from Basic import *
+
 
 
 # BELOW LIST IS USED BY "test()" method. 

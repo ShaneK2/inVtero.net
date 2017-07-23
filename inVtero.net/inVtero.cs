@@ -399,28 +399,37 @@ namespace inVtero.net
                     TotalValid += proc.ProcValidate;
 
                     if (rate == 100.0)
-                        WriteColor(ConsoleColor.Green,  ConsoleColor.Black, $"{proc} Validated to {rate:N3}");
-                    else
+                        WriteColor(ConsoleColor.Green, ConsoleColor.Black, $"{proc} Validated to {rate:N3}");
+                    else if (double.IsNaN(rate))
+                        WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, $"{proc} is not paged in memory {rate:N3}");
+                    else 
                     {
-                        WriteColor(ConsoleColor.Yellow, ConsoleColor.Black, $"{Environment.NewLine}{proc} Validated to {rate:N3}");
-                        if(Vtero.VerboseLevel > 1)
-                        if (proc.HashRecords != null && proc.HashRecords.Length > 0)
+                        foreach (var hrx in proc.HashRecords)
                         {
-                            foreach (var h in proc.HashRecords)
+                            foreach (var re in hrx.Regions)
                             {
-                                foreach (var r in h.Regions)
+                                if (re.PercentValid != 100.0d)
                                 {
-                                    if (r.PercentValid != 100.0d)
+                                    if (re.OriginationInfo.Contains("PEHeader") && re.Validated == 63 && re.Total == 64)
+                                        WriteColor(ConsoleColor.White, ConsoleColor.Black, $"{proc}{re} verify is likely due to known header relocation pattern {rate:N3}");
+                                    else
                                     {
-                                        WriteColor(ConsoleColor.Yellow, ConsoleColor.Black, $"{r}");
-                                        WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"Failure address list; ");
-                                        foreach (var UnVerifiedAddr in r.GetFailedOffsets(mdb.MinHashSize))
+                                        WriteColor(proc.ProcessID == 4 ? ConsoleColor.Yellow : ConsoleColor.Red, ConsoleColor.Black, $"{Environment.NewLine}{proc} Validated to {rate:N3}");
+                                        if (Vtero.VerboseLevel > 0 && proc.HashRecords != null && proc.HashRecords.Length > 0)
                                         {
-                                            WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"{UnVerifiedAddr:X} ");
-                                            if (CursorLeft >= WindowWidth - 16)
+                                            WriteColor(ConsoleColor.Yellow, ConsoleColor.Black, $"{re}");
+                                            if (Vtero.VerboseLevel > 1)
+                                            {
+                                                WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"Failure address list; ");
+                                                foreach (var UnVerifiedAddr in re.GetFailedOffsets(mdb.MinHashSize))
+                                                {
+                                                    WxColor(ConsoleColor.Black, ConsoleColor.Yellow, $"{UnVerifiedAddr:X} ");
+                                                    if (CursorLeft >= WindowWidth - 16)
+                                                        Write(Environment.NewLine);
+                                                }
                                                 Write(Environment.NewLine);
+                                            }
                                         }
-                                        Write(Environment.NewLine);
                                     }
                                 }
                             }

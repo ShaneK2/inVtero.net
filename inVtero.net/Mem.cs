@@ -169,12 +169,12 @@ namespace inVtero.net
             if (PTE.LargePage)
                 return false;
 
-            return DumpedPFNBitmap.GetBit(PTE.PFN);
+            return DumpedPFNBitmap.GetBit((ulong)PTE.PFN);
         }
 
         public void SetDumpedPFN(HARDWARE_ADDRESS_ENTRY PTE)
         {
-            DumpedPFNBitmap.SetBit(PTE.PFN);
+            DumpedPFNBitmap.SetBit((ulong)PTE.PFN);
         }
 
         public static Mem InitMem(String mFile, AMemoryRunDetector Detector, uint[] BitmapArray = null) //: this()

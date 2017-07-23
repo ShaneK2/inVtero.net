@@ -250,7 +250,10 @@ namespace inVtero.net
 
                 // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                 // entirely by the handle ID really which is local to our GUID so....   
-                sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                var local = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                if (local != null)
+                    sym = local;
+
                 if (Vtero.VerboseOutput)
                     WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.DebugDetails.PDBFullPath}]");
             }
@@ -263,7 +266,9 @@ namespace inVtero.net
             {
                 if (OnlyMS == null || (OnlyMS != null && OnlyMS.VA.Address == ms.Key))
                 {
-                    sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
+                    var local = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
+                    if (local != null)
+                        sym = local;
                     if (Vtero.VerboseOutput)
                         WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.Value.DebugDetails.PDBFullPath}]");
                 }
@@ -281,21 +286,15 @@ namespace inVtero.net
             const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
             var curr = 0;
             PageTable.AddProcess(this, new Mem(MemAccess));
-            //var cnt = PT.FillPageQueue(OnlyLarge, IncludeKernelSpace);
-
             var KVS = new VirtualScanner(this, new Mem(MemAccess), DoExtraHeaderScan);
 
             // single threaded worked best so far 
-            //Parallel.For(0, cnt, (i, loopState) => x
             foreach (var range in PT.FillPageQueue(OnlyLarge, IncludeKernelSpace, OnlyValid, IncludeData))
-            //for (int i = 0; i < cnt; i++)
             {
                 curr++;
                 bool stop = false;
                 if (Vtero.VerboseLevel > 1)
                 {
-                    //var curr = cnt - PT.PageQueue.Count;
-                    //var done = Convert.ToDouble(curr) / Convert.ToDouble(cnt) * 100.0;
                     Console.CursorLeft = 0;
                     Console.Write($"{curr} scanned");
                 }
@@ -329,7 +328,10 @@ namespace inVtero.net
 
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
-                        sym = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                        var local = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                        if (local != null)
+                            sym = local;
+
                         if (Vtero.VerboseOutput)
                         {
                             WriteColor((sym != null) ? ConsoleColor.Green : ConsoleColor.Yellow, $" symbol loaded = [{sym != null}] PDB [{ms.DebugDetails.PDBFullPath}] @ {range.VA.Address:X}, {ms.Name}");
@@ -342,19 +344,12 @@ namespace inVtero.net
                             if (!string.IsNullOrWhiteSpace(ms.Name) && ms.Name == OnlyModule)
                             {
                                 stop = true;
-                                //loopState.Stop();
                                 break;
                             }
                         }
-                        //if (loopState.IsStopped)
-                        //return;
                         if (stop) break;
                     }
                 }
-
-                //if (loopState.IsStopped)
-                //    return;e
-                //});
                 if (stop) break;
             }
             return KVS;
@@ -493,17 +488,13 @@ namespace inVtero.net
             // at this point we habe ThreadStacks saved and can scan for RoP badness
             // also need to scan the TEB for TEB base/limit and add those ranges for user space roppers
         }
-
-        [ProtoIgnore]
-        public dynamic _MMVAD_Def, _SUBSECTION_Def, _CONTROL_AREA_Def, _SEGMENT_Def, _FILE_OBJECT_Def;
-        [ProtoIgnore]
-        public long ssPos, caPos, segPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
-        [ProtoIgnore]
-        public long startingVPNPos, endingVPNPPos, startHighPos, endHighPos;
-        [ProtoIgnore]
-        public long rightPos, leftPos;
-        [ProtoIgnore]
-        public int vadLength;
+    
+        // TODO: Double check the perf benifit of using these over the ExpandoObject
+        dynamic _MMVAD_Def, _SUBSECTION_Def, _CONTROL_AREA_Def, _SEGMENT_Def, _FILE_OBJECT_Def;
+        long ssPos, caPos, segPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
+        long startingVPNPos, endingVPNPPos, startHighPos, endHighPos;
+        long rightPos, leftPos;
+        int vadLength;
 
         public void InitSymbolsForVad()
         {
@@ -573,7 +564,7 @@ namespace inVtero.net
             vadLength = other.vadLength;
         }
 
-        public void ListVad(long AddressRoot = 0)
+        public void ListVad(long AddressRoot = 0, bool AllVad = false)
         {
             if (_MMVAD_Def == null)
                 InitSymbolsForVad();
@@ -608,9 +599,10 @@ namespace inVtero.net
 
                 LeftPtr = memRead[leftPos / 8];
                 RightPtr = memRead[rightPos / 8];
-                if ((VADflags & 2) != 0)
+                if (((VADflags & 2) != 0) || AllVad)
                 {
-                    IsExec = true;
+                    if((VADflags & 2) != 0)
+                        IsExec = true;
 
                     int shift;
                     long StartingVPNHighTmp = 0, EndingVPNHighTmp = 0;
@@ -658,10 +650,8 @@ namespace inVtero.net
 
                     if (foPtr != 0)
                     {
-                        var strByteArr = GetVirtualByte(fnPtr);
                         var strLen = (short)lvalue & 0xffff;
-                        if (strLen > strByteArr.Length / 2 || strLen <= 0)
-                            strLen = strByteArr.Length / 2;
+                        var strByteArr = GetVirtualByteLen(fnPtr, strLen);
                         var FileName = Encoding.Unicode.GetString(strByteArr, 0, strLen);
 
                         if (Vtero.VerboseLevel > 2 & Vtero.DiagOutput)
@@ -683,7 +673,7 @@ namespace inVtero.net
                             }
                         }
                         // if it's unknown, that the VAD is the sole source of information
-                        if (!KnownSection)
+                        if (!KnownSection && (StartingAddress != 0 && Length != 0))
                             Sections.TryAdd(StartingAddress, new MemSection()
                             {
                                 Length = Length,
@@ -694,9 +684,16 @@ namespace inVtero.net
                                 VA = new VIRTUAL_ADDRESS(StartingAddress)
                             });
                     }
-                }
-                ListVad(LeftPtr);
-                ListVad(RightPtr);
+                } else if(StartingAddress != 0 && Length != 0)
+                    Sections.TryAdd(StartingAddress, new MemSection()
+                    {
+                        Length = Length,
+                        VadLength = Length,
+                        VadAddr = StartingAddress,
+                        VA = new VIRTUAL_ADDRESS(StartingAddress)
+                    });
+                ListVad(LeftPtr, AllVad);
+                ListVad(RightPtr, AllVad);
             } catch (Exception all)
             {
                 // dynamic drop exceptions
@@ -846,6 +843,9 @@ namespace inVtero.net
                 {
                     // should be block aligned
                     var test = VGetBlock(sec.VadAddr);
+                    if (test == null)
+                        continue;
+
                     var ext = Extract.IsBlockaPE(test);
                     sec.Module = ext;
                 }
@@ -1190,7 +1190,6 @@ namespace inVtero.net
                         Name = FileName,
                         VA = new VIRTUAL_ADDRESS(StartingAddress)
                     });
-
             } while (_LDR_DATA_ADDR != pModuleHead);
         }
 
@@ -1210,7 +1209,7 @@ namespace inVtero.net
             long ContigSizeState = 0, curr = 0;
             // single threaded worked best so far 
             //Parallel.For(0, cnt, (i, loopState) => x
-            foreach (var range in PT.FillPageQueue(false, KernelSpace))
+            foreach (var range in PT.FillPageQueue(false, KernelSpace, true, !IncludeData))
             {
                 curr++;
                 if (Vtero.VerboseLevel > 1)
@@ -1238,6 +1237,8 @@ namespace inVtero.net
         public static string GetNormalized(string Name, bool IsFileName = true)
         {
             string modName, normName;
+            if (string.IsNullOrWhiteSpace(Name))
+                return string.Empty;
 
             var pathTrim = Name.Split('\x0');
 
@@ -1646,30 +1647,34 @@ namespace inVtero.net
         }
         public long[] GetVirtualLongLen(long VA, int len = 4096)
         {
-            // offset to index
-            long startIndex = (VA & 0xfff) / 8;
-            int count = 512 - (int)startIndex;
-            // get data
+            long VAlign = (VA + 0xfff) & ~0xfff;
+            long startIndex = VA & 0xfff;
+            long FirstPageCount = VAlign - VA;
+            if (VA + len < VA + FirstPageCount)
+                FirstPageCount = len;
+
+            var rv = new long[len/8];
             var block = VGetBlockLong(VA);
+            if (block == null) return null;
 
-            long extra = len / 8;
+            // align the returned buffer to start precisely at the VA requested
+            Array.Copy(block, startIndex/8, rv, 0, FirstPageCount/8);
+            var done = FirstPageCount;
 
-            // adjust into return array 
-            var rv = new long[count + extra];
-            Array.Copy(block, startIndex, rv, 0, count);
-
-            var done = count * 8;
+            // if we have done more than requested quick return
             if (done >= len)
                 return rv;
 
+            // we should be aligned to a page size now
+            VA += done;
+            // keep going until we satisfy the amount requested
             do
             {
-                VA += PAGE_SIZE;
                 var block2 = VGetBlockLong(VA);
-                int copy_cnt = len - done < 4096 ? (len - done) / 8 : 512;
-                Array.Copy(block2, 0, rv, count, copy_cnt);
+                var copy_cnt = len - done < 4096 ? (len - done) / 8 : 512;
+                Array.Copy(block2, 0, rv, done/8, copy_cnt);
                 done += 512 * 8;
-                count += 512;
+                VA += PAGE_SIZE;
             } while (done < len);
             return rv;
         }

@@ -47,6 +47,21 @@ namespace inVtero.net
             }
             return -1;
         }
+        public static int SearchLong(this long[] haystack, long[] needle, int startPos = 0, int alignCount = 1)
+        {
+            var len = needle.Length;
+            var limit = haystack.Length - len;
+            for (var i = startPos; i <= limit; i += alignCount)
+            {
+                var k = 0;
+                for (; k < len; k++)
+                {
+                    if (needle[k] != haystack[i + k]) break;
+                }
+                if (k == len) return i;
+            }
+            return -1;
+        }
 
         /*  Sort of a waste of memory anyhow, reworked algorithm so this is not needed.
 

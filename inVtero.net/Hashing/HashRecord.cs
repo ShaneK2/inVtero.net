@@ -191,7 +191,7 @@ namespace inVtero.net.Hashing
             for(int i=0; i < SparseAddrs.Count; i++)
             {
                 var saddr = SparseAddrs[i];
-                var countOfSmallestHashBlocks = (InnerList[i].Count() / 2 + 1);
+                var countOfSmallestHashBlocks = InnerList[i].Count();
 
                 for (int h=0; h < countOfSmallestHashBlocks; h++)
                 {

@@ -130,33 +130,6 @@ namespace inVtero.net.Hashing
             }
         }
 
-        public List<bool> FileChecker(string aPath, bool Force = false, int OnlySize = 0)
-        {
-            var rv = new List<bool>();
-            var inputFile = CheckFile(aPath);
-            if (inputFile != null || Force)
-            {
-                if (Force && inputFile == null)
-                {
-                    var toCheck = FractHashTree.CreateRecsFromMemory(File.ReadAllBytes(aPath), MinHashSize, GetHP, 0, 0, OnlySize);
-                    rv.AddRange(HashRecLookup(toCheck));
-                }
-                else
-                {
-                    foreach (var ms in inputFile.Sections)
-                    {
-                        if (!ms.IsCode || !ms.IsExec)
-                            continue;
-
-                        var totSiz = FractHashTree.TotalHashesForSize(ms.RawFileSize, MinHashSize);
-                        var hr = new HashRec[totSiz];
-                        FractHashTree.CreateRecsFromFile(aPath, ms, MinHashSize, (int) totSiz, hr, 0, GetHP);
-                        rv.AddRange(HashRecLookup(hr));
-                    }
-                }
-            }
-            return rv;
-        }
 
         public List<bool> HashRecLookup(HashRec[] hashArr)
         {
@@ -348,8 +321,7 @@ namespace inVtero.net.Hashing
                                         // we want the modified buffer to get written back
                                         WriteBack = true;
 
-                                        // we requested this to be pre-gen'd for us
-                                        toWrite = hashArr[i].Serialized;
+                                        toWrite = HashRec.ToByteArr(hashArr[i]);
 
                                         // update buff with new hash entry for write back
                                         //Array.Copy(toWrite, 0, buff, zeroIndex, toWrite.Length);
@@ -498,7 +470,7 @@ namespace inVtero.net.Hashing
                                 fread.Read(memBuff, 0, (int)ReadSize);
                             }
 
-                            var recs = FractHashTree.CreateRecsFromMemory(memBuff, MinHashSize, GetHP, hashFile.rID, 0, 0, true);
+                            var recs = FractHashTree.CreateRecsFromMemory(memBuff, MinHashSize, GetHP, hashFile.rID, 0, 64, false);
                             if(HashGenCnt + recs.Length > hashX.Length)
                             {
                                 LoadList.Push(hashFile);

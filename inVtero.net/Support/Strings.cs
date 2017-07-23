@@ -63,13 +63,13 @@ namespace inVtero.net.Support
             yield break;
         }
 
-        public static IEnumerable<ulong> ByteScan(Byte[] ToFind, DetectedProc dp, int align = 1, int MaxCount = 0)
+        public static IEnumerable<ulong> ByteScan(Byte[] ToFind, DetectedProc dp, int align = 1, bool DoKernel = false, int MaxCount = 0)
         {
             byte[] block4k = new byte[PAGE_SIZE];
             byte[] block2MB = new byte[LARGE_PAGE_SIZE];
             string s = string.Empty;
 
-            foreach (var entry in dp.PT.FillPageQueue(false, true, true, false))
+            foreach (var entry in dp.PT.FillPageQueue(false, DoKernel, true, false))
             {
                 bool GotData = false;
                 byte[] block = entry.PTE.LargePage ? block2MB : block4k;
@@ -93,6 +93,40 @@ namespace inVtero.net.Support
                     i += ToFind.Length;
 
                 } while (i <= (block.Length-ToFind.Length));
+            }
+            yield break;
+        }
+
+        public static IEnumerable<ulong> QWordScan(long[] ToFind, DetectedProc dp, int align = 1, bool DoKernel = false, int MaxCount = 0)
+        {
+            long[] block4k = new long[PAGE_SIZE];
+            long[] block2MB = new long[LARGE_PAGE_SIZE];
+            string s = string.Empty;
+
+            foreach (var entry in dp.PT.FillPageQueue(false, DoKernel, true, false))
+            {
+                bool GotData = false;
+                long[] block = entry.PTE.LargePage ? block2MB : block4k;
+
+                dp.MemAccess.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
+
+                if (!GotData)
+                    continue;
+
+                int i = 0;
+                do
+                {
+                    i = block.SearchLong(ToFind, i, align);
+                    if (i < 0)
+                        break;
+
+                    var VA = (entry.VA.FullAddr + (uint)i);
+
+                    yield return VA;
+
+                    i += ToFind.Length;
+
+                } while (i <= (block.Length - ToFind.Length));
             }
             yield break;
         }

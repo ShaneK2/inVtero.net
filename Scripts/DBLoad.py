@@ -10,16 +10,12 @@ from System.Diagnostics import Stopwatch
 from inVtero.net.Hashing import *
 
 
-importFolder = "F:\\"
-if argv.Count > 0:
-    importFolder = argv.pop()
-
-print "Loading files from input: " + importFolder
+importFolder = "e:\\"
 
 Vtero.VerboseLevel = 1
-aBufferCount = 60000000
+aBufferCount = 175000000
 
-mdb = MetaDB("c:\\temp\\inVtero.net", 1024*1024*1024*16, 128, aBufferCount)
+mdb = MetaDB("c:\\temp\\inVtero.net", 1024*1024*1024*16, 64, aBufferCount)
 
 fl = mdb.Loader
 fl.LoadFromPath(importFolder)

@@ -40,52 +40,55 @@ namespace inVtero.net.Hashing
             if (MemPage == null)
                 return null;
 
+            // TESTING
+            OnlySize = 64;
+            var LevelCount = 1;
             int RawSize = MemPage.Length;
-            var topCnt = BlockCount(RawSize, PAGE_SIZE);
+            var TotalHashs = BlockCount(RawSize, minBlockSize);
+
+            //var topCnt = BlockCount(RawSize, PAGE_SIZE);
             if (getHP == null)
                 getHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
-
+            /*
             var levelMap = LevelMaps(RawSize, minBlockSize);
             int LevelCount = levelMap.Count();
             long TotalHashs = levelMap[LevelCount - 1].Item1 + levelMap[LevelCount - 1].Item2;
-            HashLib.IHash[] localHashProv = new HashLib.IHash[LevelCount];
+            */
+            HashLib.IHash localHashProv;
 
             var sHash = new HashRec[TotalHashs];
 
-            if(OnlySize != 0)
-            {
-                LevelCount = 1;
+            //if(OnlySize != 0)
+            //{
                 minBlockSize = OnlySize;
-                TotalHashs = BlockCount(RawSize, minBlockSize);
-
-                sHash = new HashRec[TotalHashs];
-            }
+                //sHash = new HashRec[TotalHashs];
+            //}
 
             // smallest to largest orginization 
-            for (int i = 0; i < LevelCount; i++)
-                localHashProv[i] = getHP();
+           // for (int i = 0; i < LevelCount; i++)
+                localHashProv = getHP();
 
-            for (byte lvl = 0; lvl < LevelCount; lvl++)
-            {
-                var blockSize = minBlockSize << lvl;
-                var blockCnt = BlockCount(RawSize, blockSize);
+            //for (byte lvl = 0; lvl < LevelCount; lvl++)
+            //{
+                //var blockSize = minBlockSize << lvl;
+                //var blockCnt = BlockCount(RawSize, OnlySize);
 
-                var hashLevelIndex = levelMap[lvl].Item1;
+                //ar hashLevelIndex = levelMap[lvl].Item1;
 
-                localHashProv[lvl].Initialize();
+                localHashProv.Initialize();
 
-                for (int arri = 0; arri < blockCnt; arri++)
+                for (int arri = 0; arri < TotalHashs; arri++)
                 {
-                    localHashProv[lvl].TransformBytes(MemPage, arri * blockSize, blockSize);
-                    var hashBytes = localHashProv[lvl].TransformFinal().GetBytes();
+                    localHashProv.TransformBytes(MemPage, arri * OnlySize, OnlySize);
+                    var hashBytes = localHashProv.TransformFinal().GetBytes();
 
-                    sHash[hashLevelIndex + arri] = new HashRec(hashBytes, lvl, rID);
+                    sHash[arri] = new HashRec(hashBytes, 0, rID);
 
                     // trying to reduce some load in the DB commit path
                     if(PreSerialize)
-                        sHash[hashLevelIndex + arri].Serialized = HashRec.ToByteArr(sHash[hashLevelIndex + arri]);
+                        sHash[arri].Serialized = HashRec.ToByteArr(sHash[arri]);
                 }
-            }
+            //}
             return sHash;
         }
 
@@ -95,13 +98,43 @@ namespace inVtero.net.Hashing
             long tally = 0;
             var AlignSize = ((Size + 0xfff) & ~0xfff);
 
-            int iheight = TreeHeight(PAGE_SIZE, MinBlockSize);
-            for (var i = 0; i < iheight; i++)
-                tally += BlockCount(AlignSize, MinBlockSize << i);
+            // TESTING
+            //int iheight = TreeHeight(64, 64);
+            //for (var i = 0; i < iheight; i++)
+                tally += BlockCount(AlignSize, MinBlockSize);
 
             return tally;
         }
 
+#if FALSE
+
+        public List<bool> FileChecker(string aPath, bool Force = false, int OnlySize = 0)
+        {
+            var rv = new List<bool>();
+            var inputFile = CheckFile(aPath);
+            if (inputFile != null || Force)
+            {
+                if (Force && inputFile == null)
+                {
+                    var toCheck = FractHashTree.CreateRecsFromMemory(File.ReadAllBytes(aPath), MinHashSize, GetHP, 0, 0, OnlySize);
+                    rv.AddRange(HashRecLookup(toCheck));
+                }
+                else
+                {
+                    foreach (var ms in inputFile.Sections)
+                    {
+                        if (!ms.IsCode || !ms.IsExec)
+                            continue;
+
+                        var totSiz = FractHashTree.TotalHashesForSize(ms.RawFileSize, MinHashSize);
+                        var hr = new HashRec[totSiz];
+                        FractHashTree.CreateRecsFromFile(aPath, ms, MinHashSize, (int)totSiz, hr, 0, GetHP);
+                        rv.AddRange(HashRecLookup(hr));
+                    }
+                }
+            }
+            return rv;
+        }
         public static HashRec[] CreateRecsFromFile(string BackingFile, MiniSection input, int minBlockSize, int Totalhash,  HashRec[] DestArr, int DestIdx, Func<HashLib.IHash> getHP)
         {
             int RawSize = (int)((input.RawFileSize + 0xfff) & ~0xfff);
@@ -111,10 +144,13 @@ namespace inVtero.net.Hashing
             if (getHP == null)
                 getHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
 
+            /*
             var levelMap = LevelMaps(RawSize, minBlockSize);
             int LevelCount = levelMap.Count();
             long TotalHashs = levelMap[LevelCount - 1].Item1 + levelMap[LevelCount - 1].Item2;
-
+            */
+            int LevelCount = 1;
+            var TotalHashs = BlockCount(RawSize, minBlockSize);
             HashRec[] sHash = null;
             
             if(DestArr == null)
@@ -131,8 +167,8 @@ namespace inVtero.net.Hashing
             int filled = 0;
 
             // we do this many 4k Read's "top level"
-            var TopCnt = levelMap[LevelCount - 1].Item2;
-
+            // var TopCnt = levelMap[LevelCount - 1].Item2;
+            var TopCnt = 1;
             using (var fs = new FileStream(BackingFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan))
             {
                 fs.Position = input.RawFilePointer;
@@ -156,9 +192,9 @@ namespace inVtero.net.Hashing
                     {
                         for (int lvl = 0; lvl < LevelCount; lvl++)
                         {
-                            var blockSize = (int)levelMap[lvl].Item3;
-                            var blockCnt = PAGE_SIZE / blockSize;
-                            var hashLevelIndex = levelMap[lvl].Item1;
+                            //var blockSize = (int)levelMap[lvl].Item3;
+                            //var blockCnt = PAGE_SIZE / blockSize;
+                            //var hashLevelIndex = levelMap[lvl].Item1;
 
                             localHashProv[lvl].Initialize();
 
@@ -194,17 +230,7 @@ namespace inVtero.net.Hashing
             }
             return sHash;
         }
-
-        public static long BlockCount(long insize, int BlockSize)
-        {
-            if (insize == 0) return 0;
-
-            var count = insize / BlockSize;
-            if (insize % BlockSize > 0) count++;
-
-            return count;
-        }
-
+        
         public FractHashTree(int minBlockSize, Func<HashLib.IHash> getHP)
         {
             MinBlockSize = minBlockSize;
@@ -222,6 +248,17 @@ namespace inVtero.net.Hashing
             HPs = hList.ToArray();
             LevelCount = hList.Count();
 
+        }
+
+#endif
+        public static long BlockCount(long insize, int BlockSize)
+        {
+            if (insize == 0) return 0;
+
+            var count = insize / BlockSize;
+            if (insize % BlockSize > 0) count++;
+
+            return count;
         }
 
 

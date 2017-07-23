@@ -89,17 +89,20 @@ def PoolInfo(vtero):
 # "strings" like functionality (UNICODE/UTF8/ASCII) modes/regex
 #########################################################################
 def strings(p, rx):
-    regx = Regex("\w{5,}", RegexOptions.Compiled)
+    regx = Regex(rx, RegexOptions.Compiled)
     for s in Strings.SimpleRegex(regx, p):
         print s.Item1.ToString("X") + " " + s.Item2
 
 #########################################################################
 # This is a FULL address space search (bytescan)
 #########################################################################
-def scan(p, toFind, align = 4):
-    for addr in Strings.ByteScan(Encoding.ASCII.GetBytes(toFind), p, align):
+def scan(p, toFind, align = 4, Kernel = False):
+    for addr in Strings.ByteScan(Encoding.ASCII.GetBytes(toFind), p, align, Kernel):
         print addr.ToString("X")
 #########################################################################
 # example pull in one of the ListHeads from System import BitConverter
 # BitConverter.ToUInt64(np.ListHeads.Value, 0).ToString("X")
 #########################################################################
+def scanq(p, toFind, align = 4, Kernel = False):
+    for addr in Strings.QWordScan(toFind, p, align, Kernel):
+        print addr.ToString("X")
