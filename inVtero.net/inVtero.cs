@@ -50,6 +50,8 @@ namespace inVtero.net
     [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
     public class Vtero : IDisposable
     {
+        [ProtoIgnore]
+        public string SaveStateLoad;
         public string MemFile;
         public long FileSize;
         public double GroupThreshold;
@@ -259,13 +261,22 @@ namespace inVtero.net
             return SerName;
         }
 
-        public Vtero CheckpointRestoreState(string SaveFile)
+        public Vtero CheckpointRestoreState(string Filename)
         {
+
+            var SaveFile = $"{Filename}.inVtero.net";
+
+            if (!File.Exists(SaveFile))
+                return null;
+
+            var memFileInfo = new FileInfo(Filename);
+            var finfo = new FileInfo(SaveFile);
+
+            if (finfo.Length == 0 || finfo.CreationTime < memFileInfo.CreationTime)
+                return null;
+
             Vtero ThisInstance = new Vtero();
 
-            var siz = new FileInfo(SaveFile).Length;
-            if (siz == 0)
-                return null;
             try
             {
                 using (var SerData = File.OpenRead(SaveFile))
@@ -278,7 +289,7 @@ namespace inVtero.net
                 File.Move(SaveFile, backup);
                 ThisInstance = null;
             }
-
+            ThisInstance.SaveStateLoad = SaveFile;
             return ThisInstance;
         }
 
@@ -397,7 +408,6 @@ namespace inVtero.net
 
                     TotalTotal += proc.ProcTotal;
                     TotalValid += proc.ProcValidate;
-
                     if (rate == 100.0)
                         WriteColor(ConsoleColor.Green, ConsoleColor.Black, $"{proc} Validated to {rate:N3}");
                     else if (double.IsNaN(rate))
@@ -575,6 +585,7 @@ namespace inVtero.net
             {
                 // walk the offset back to the head of the _EPROCESS
                 // this needs to adjsut since we get the entire block here based to the page not offset 
+                var vAddress = flink - offset_of;
                 memRead = dp.GetVirtualLong((flink - offset_of), ref GotData);
                 if (!GotData)
                     break;
@@ -647,8 +658,8 @@ namespace inVtero.net
                             staticDict.Add(defName, lval);
                             break;
                     }
-                } 
-
+                }
+                lproc.vAddress = vAddress;
                 lproc.ImagePath = ImagePath;
                 lproc.ImageFileName = filename;
                 dp.LogicalProcessList.Add(lproc);

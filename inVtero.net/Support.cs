@@ -45,7 +45,7 @@ namespace inVtero.net
         public const int HASH_REC_BYTES = 16;
         public const int HASH_REC_BYTES_INDEX = 8;
         public const int HASH_SHIFT = 4; // 16 bytes each
-        public const int LONG_SHIFT = 3; // to represent a set of longs as bits
+        public const int BIT_SHIFT = 3; // to represent bits
         public const long BAD_VALUE_READ = -0xbad00;
         public const long BAD_RUN_CONFIG_READ = -0xbad01;
         public const long PAGE_REQUESTED_IS_IN_RUN_GAP = -0xbad02;
@@ -151,6 +151,12 @@ namespace inVtero.net
         public static bool IsKernelRange(long VA)
         {
             return (VA < 0 || VA > HIGHEST_USER_ADDRESS);
+        }
+
+        // we connstrin addresses so much so that it's easier for python
+        public static long Reduce(long VA)
+        {
+            return (long)((ulong)VA & ~0xffff000000000000);
         }
         public static ulong Extend(long Address)
         {

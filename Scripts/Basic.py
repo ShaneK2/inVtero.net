@@ -17,6 +17,8 @@ from System import ConsoleColor, Console, Environment, Char, String
 from System.Text import Encoding
 
 
+
+
 def GetProc(v, str, prev = None):
     SeenPrev = False
     if prev is None:
@@ -31,6 +33,7 @@ def GetProc(v, str, prev = None):
                 p.KernelSection = v.KernelProc.KernelSection
                 p.CopySymbolsForVad(v.KernelProc)
                 p.ID = v.KernelProc.ID
+                p.sym = v.KernelProc.sym
                 return p
 
 

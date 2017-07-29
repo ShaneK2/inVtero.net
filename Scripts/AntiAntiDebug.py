@@ -13,7 +13,9 @@ from System.Diagnostics import Stopwatch
 from System import Environment, String, Console, ConsoleColor
 from System.Text import Encoding
 
-MemoryDump = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem"
+#MemoryDump = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98e6.vmem"
+
+MemoryDump = "D:\\Users\\files\\VMs\\Windows Server 2016\\Windows Server 2016-02431799.vmem"
 
 ###
 #
@@ -24,53 +26,24 @@ MemoryDump = "C:\\Users\\files\\VMs\\Windows 7 x64 ULT\\Windows 7 x64 ULT-360b98
 ###
 Vtero.AllowWrite = True
 
-# Basic option handling
-copts = ConfigOptions()
-copts.IgnoreSaveData = False
-copts.FileName = MemoryDump
-copts.VersionsToEnable = PTType.GENERIC
-copts.VerboseOutput = False
-copts.VerboseLevel = 0
-# Vtero options are global
-Vtero.DiagOutput = False
-# perform full page scan
-# this scans the input in it's entirety and set's up 
-# the basis for traversing memory appropiatly as the CPU would
-# through the page table (including nested) 
-vtero = Scan.Scanit(copts)
-proc_arr = vtero.Processes.ToArray()
-low_proc = proc_arr[0]
-for proc in proc_arr:
-    if proc.CR3Value < low_proc.CR3Value:
-        low_proc = proc
+vtero = QuickSetup(MemoryDump)
 
-proc = low_proc
-print "Assumed Kernel Proc: " + proc.ToString()
-vtero.KernelProc = proc
-proc.MemAccess = Mem(vtero.MemAccess)
-    
-# Here we bring up symbol support to the Windows Kernel
-# if we have a save state we skip the scan and directly load it
-if vtero.KVS is None:
-    kvs = proc.ScanAndLoadModules()
-    vtero.KVS = kvs
-else:
-    proc.LoadSymbols()
 
-# having the kernel build info displayed mean's were good to go
-kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
-Console.ForegroundColor = ConsoleColor.Cyan
-print "Kernel build: " + kMinorVer.ToString()
 
-psHead = proc.GetSymValueLong("PsActiveProcessHead")
-x = proc.xStructInfo("_EPROCESS")
-ProcListOffsetOf = x.ActiveProcessLinks.Flink.OffsetPos
-_EPROC = proc.xStructInfo("_EPROCESS", psHead - ProcListOffsetOf)
-print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] " + _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
+## having the kernel build info displayed mean's were good to go
+#kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
+#Console.ForegroundColor = ConsoleColor.Cyan
+#print "Kernel build: " + kMinorVer.ToString()
 
-xaddr = _EPROC.ActiveProcessLinks.Flink.Value - ProcListOffsetOf
-_EPROC = proc.xStructInfo("_EPROCESS", xaddr)
-print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] " + _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
+#psHead = proc.GetSymValueLong("PsActiveProcessHead")
+#x = proc.xStructInfo("_EPROCESS")
+#ProcListOffsetOf = x.ActiveProcessLinks.Flink.OffsetPos
+#_EPROC = proc.xStructInfo("_EPROCESS", psHead - ProcListOffsetOf)
+#print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] " + _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
+
+#xaddr = _EPROC.ActiveProcessLinks.Flink.Value - ProcListOffsetOf
+#_EPROC = proc.xStructInfo("_EPROCESS", xaddr)
+#print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] " + _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
 
 Vtero.VerboseLevel = 2
 

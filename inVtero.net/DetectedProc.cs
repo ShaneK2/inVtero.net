@@ -86,6 +86,9 @@ namespace inVtero.net
         // Relevant when parsing Kernel
         public List<dynamic> LogicalProcessList;
 
+        [ProtoIgnore]
+        public bool KernelModulesMerged;
+
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
 
@@ -211,6 +214,41 @@ namespace inVtero.net
             SymbolStore.Add(AddrName, symInfo.Address);
 
             return symInfo.Address;
+        }
+
+        public string GetSymNameHard(ulong Address, MemSection sec = null)
+        {
+            MemSection s = null;
+
+            if (sec == null)
+                s = GetEnclosingSection((long)Address);
+            else
+                s = sec;
+
+            var detailed = GetSymNameDetails((long) Address, s);
+            if (detailed != null)
+                return detailed.Item1;
+
+
+            return GetSymName((long)Address);
+        }
+
+        public Tuple<string, ulong, ulong> GetSymNameDetails(long Address, MemSection enclosedBy = null)
+        {
+            Tuple<string, ulong, ulong> rv = Tuple.Create<string, ulong, ulong>(string.Empty, 0, 0);
+            MemSection PDB = null;
+
+            if (enclosedBy == null || enclosedBy.DebugDetails == null)
+                PDB = GetEnclosingSection(Address, true);
+            else
+                PDB = enclosedBy;
+
+            if (PDB == null || PDB.DebugDetails == null || string.IsNullOrWhiteSpace(PDB.DebugDetails.PDBFullPath))
+                return rv;
+
+            rv = sym.FindSymByAddress((ulong) Address, PDB.DebugDetails.PDBFullPath, (ulong) PDB.VadAddr);
+
+            return rv;
         }
 
         public string GetSymName(long Address)
@@ -430,15 +468,17 @@ namespace inVtero.net
         }
 
         // tid&buffer
-        List<Tuple<long, long[]>> ThreadStacks;
-        List<Tuple<long, long[]>> UserThreadStacks;
+        public List<Tuple<long, long[]>> KernelThreadStacks;
+        public List<Tuple<long, long[]>> UserThreadStacks;
 
-        public void LoadThreads()
+        public long LoadThreads()
         {
             if (EThreadPtr == 0)
-                return;
+                return 0;
 
-            ThreadStacks = new List<Tuple<long, long[]>>();
+            long PossiableStackEntries = 0;
+
+            KernelThreadStacks = new List<Tuple<long, long[]>>();
             UserThreadStacks = new List<Tuple<long, long[]>>();
 
             var _ETHR_ADDR = EThreadPtr;
@@ -458,19 +498,21 @@ namespace inVtero.net
             var tebOffsetOf = typedef.Tcb.Teb.OffsetPos;
 
             var etr = _ETHR_ADDR - ThreadOffsetOf;
-            var memRead = GetVirtualLong(etr);
+            var memRead = GetVirtualLongLen(etr, (int) typedef.Length);
             do
             {
                 _ETHR_ADDR = memRead[ThreadOffsetOf / 8];
                 if (_ETHR_ADDR == EThreadPtr)
-                    return;
+                    return PossiableStackEntries;
 
                 var ID = memRead[cidOffsetOf / 8];
                 var StackLimit = memRead[sbLimitOf / 8];
                 var CurrentUse = memRead[CurrKerUseOffsetOf / 8];
                 var len = (int)(CurrentUse - StackLimit);
 
-                ThreadStacks.Add(Tuple.Create<long, long[]>(ID, GetVirtualLongLen(StackLimit, len)));
+                PossiableStackEntries += len >> 3;
+
+                KernelThreadStacks.Add(Tuple.Create<long, long[]>(ID, GetVirtualLongLen(StackLimit, len)));
 
                 // read out user space info
                 var teb_tib_read = memRead[tebOffsetOf / 8];
@@ -479,6 +521,7 @@ namespace inVtero.net
                 var UserLim = memRead[userStackLimitOffsetOf / 8];
                 var UserBase = memRead[userStackBaseOffsetOf / 8];
                 var userLen = (int)(UserBase - UserLim);
+                PossiableStackEntries += userLen >> 3;
 
                 UserThreadStacks.Add(Tuple.Create<long, long[]>(ID, GetVirtualLongLen(UserLim, userLen)));
 
@@ -487,11 +530,12 @@ namespace inVtero.net
 
             // at this point we habe ThreadStacks saved and can scan for RoP badness
             // also need to scan the TEB for TEB base/limit and add those ranges for user space roppers
+            return PossiableStackEntries;
         }
     
         // TODO: Double check the perf benifit of using these over the ExpandoObject
-        dynamic _MMVAD_Def, _SUBSECTION_Def, _CONTROL_AREA_Def, _SEGMENT_Def, _FILE_OBJECT_Def;
-        long ssPos, caPos, segPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
+        dynamic _MMVAD_Def, _SUBSECTION_Def, _CONTROL_AREA_Def, _FILE_OBJECT_Def;
+        long ssPos, caPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
         long startingVPNPos, endingVPNPPos, startHighPos, endHighPos;
         long rightPos, leftPos;
         int vadLength;
@@ -669,6 +713,8 @@ namespace inVtero.net
                                 sec.Value.VadFile = FileName;
                                 sec.Value.VadAddr = StartingAddress;
                                 sec.Value.VadLength = Length;
+                                if (sec.Value.Length < sec.Value.VadLength)
+                                    sec.Value.Length = sec.Value.VadLength;
                                 break;
                             }
                         }
@@ -727,8 +773,10 @@ namespace inVtero.net
             /// including kernel
             var execPages = PT.FillPageQueue(false, true);
             foreach (var pte in execPages)
-                codeRanges.TryAdd(pte.VA.Address, pte.VA.Address + (pte.PTE.LargePage ? LARGE_PAGE_SIZE : PAGE_SIZE));
-
+            {
+                var Len = pte.PTE.LargePage ? LARGE_PAGE_SIZE : PAGE_SIZE;
+                codeRanges.TryAdd(pte.VA.Address, pte.VA.Address + Len);
+            }
             // Walk Vad and inject into 'sections'
             // scan VAD data to additionally bind 
             ListVad(VadRootPtr);
@@ -736,7 +784,7 @@ namespace inVtero.net
             // Dig all threads
             if (DoStackCheck)
             {
-                LoadThreads();
+                var StackEntries = LoadThreads();
                 var checkPtrs = new ConcurrentBag<long>();
 
                 // instead of using memsections we should use apge table info
@@ -762,7 +810,7 @@ namespace inVtero.net
                 }, () =>
                 {
                     // each stack
-                    foreach (var kernelRange in ThreadStacks)
+                    foreach (var kernelRange in KernelThreadStacks)
                     {
                         // every value
                         foreach (var pointer in kernelRange.Item2)
@@ -779,18 +827,33 @@ namespace inVtero.net
                     }
                 });
 
+                WriteColor(ConsoleColor.Cyan, $"Identified {checkPtrs.Count} possiable code pointers from the stack of a total {StackEntries}");
+
+                bool GotData = false;
+
+                var CheckArr = checkPtrs.ToArray();
+                Array.Sort(CheckArr);
+                long lastPtr = 0;
+                byte[] ptrTo = null;
+
                 // validate checkPtrs pointers here
-                // TODO: group pointers so we can minimize page reads
-                foreach (var ptr in checkPtrs)
+                foreach (var ptr in CheckArr)
                 {
+                    // if the pointer is page aligned perfectly we skip it
                     var idx = ptr & 0xfff;
-                    if (idx < 10)
+                    if (idx < 10 || ptr == lastPtr)
                         continue;
 
-                    // every pointer needs to be a function start
-                    // or a properly call/ret pair
-                    var ptrTo = VGetBlock(ptr);
-                    //BYTE* bp = (BYTE*)RefFramePtr;
+                    // if the curr ptr and the lastPtr are farther then a page we need a new load
+                    if ((ptr & ~0xfff) != (lastPtr & ~0xfff))
+                    {
+                        // every pointer needs to be a function start
+                        // or a properly call/ret pair
+                        ptrTo = VGetBlock(ptr, ref GotData);
+                        if (!GotData)
+                            continue;
+                    }
+                    lastPtr = ptr;
 
                     var IsCCBefore = ptrTo[idx - 1];
                     var IsCallE8 = ptrTo[idx - 5];
@@ -822,15 +885,25 @@ namespace inVtero.net
 
                     if (!FoundFFCode && IsCCBefore != 0xcc && IsCallE8 != 0xe8 && IsCallE8_second != 0xe8 && IsCall9A != 0x9a && IsCall9A_second != 0x9a)
                     {
-                        WriteColor(ConsoleColor.Cyan, $"Stack pointer is wild {ptr:x}");
                         var cs = Capstone.Dissassemble(ptrTo, ptrTo.Length, (ulong)(ptr & -4096));
-                        for (int i = 0; i < cs.Length; i++)
+                        for (int i = 1; i < cs.Length; i++)
                         {
-                            if (cs[i].insn.address == (ulong)ptr)
+                            var BeforeRetRefAddr = cs[i - 1].insn.address;
+                            var RetTarget = cs[i].insn.address;
+                            // if we go through the whole page before the pointer and do not find our instruction.
+                            // it could be a capstone bug or more likely it was some data/alignment random bytes
+                            if (RetTarget == (ulong)ptr)
                             {
-                                WriteColor(ConsoleColor.Yellow, $"{cs[i - 1].insn.address:x} {cs[i - 1].insn.bytes[0]:x} {cs[i - 1].insn.mnemonic} {cs[i - 1].insn.operands}");
-                                WriteColor(ConsoleColor.Yellow, $"{cs[i].insn.address:x} {cs[i].insn.bytes[0]:x} {cs[i].insn.mnemonic} {cs[i].insn.operands}");
-                            }
+                                WriteColor(ConsoleColor.Cyan, $"Stack pointer is wild {ptr:x}");
+
+                                var Module = GetEnclosingSection((long) RetTarget, true);
+
+                                var details = GetSymNameDetails((long)RetTarget, Module);
+                                WriteColor(ConsoleColor.Yellow, $"{Module.VadFile} {BeforeRetRefAddr:x} [{details.Item1}+{(RetTarget - details.Item2):x}] {cs[i - 1].insn.bytes[0]:x} {cs[i - 1].insn.mnemonic} {cs[i - 1].insn.operands}");
+
+                                details = GetSymNameDetails((long)BeforeRetRefAddr, Module);
+                                WriteColor(ConsoleColor.Yellow, $"{Module.VadFile} {RetTarget:x} [{details.Item1}+{(BeforeRetRefAddr - details.Item2):x}] {cs[i].insn.bytes[0]:x} {cs[i].insn.mnemonic} {cs[i].insn.operands}");
+                            } 
                         }
                     }
                 }
@@ -1019,8 +1092,8 @@ namespace inVtero.net
                     if (BitmapScan)
                     {
                         var passed = HDB.BitmapScan(hrecs);
-                        ProcTotal += hrecs.Length;
-                        ProcValidate += passed;
+                        //ProcTotal += hrecs.Length;
+                        //ProcValidate += passed;
                         hRecord.AddBlock(Name, VA + SecOffset, hrecs, passed);
                     } else
                         // setup records for expensive check by caller
@@ -1121,17 +1194,34 @@ namespace inVtero.net
             }
         }
 
-        void MergeKernelModules()
+        /// <summary>
+        /// Any time were looking into kernel stuff we need to call here.
+        /// </summary>
+        public void MergeKernelModules()
         {
             String FileName = string.Empty;
 
-            /*
+            if (_MMVAD_Def == null)
+                InitSymbolsForVad();
+
             // we already know this but..
             var ntosBase = GetSymValueLong("PsNtosImageBase");
             var ntosEnd = GetSymValueLong("PsNtosImageEnd");
             var halBase = GetSymValueLong("PsHalImageBase");
             var halEnd = GetSymValueLong("PsHalImageEnd");
-            */
+            if(GetEnclosingSection(halEnd, false) == null)
+            {
+                FileName = "hal.dll";
+                Sections.TryAdd(halBase, new MemSection()
+                {
+                    Length = halEnd - halBase,
+                    VadLength = halEnd - halBase,
+                    VadAddr = halBase,
+                    VadFile = FileName,
+                    Name = FileName,
+                    VA = new VIRTUAL_ADDRESS(halBase)
+                });
+            }
 
             // add all drivers to sections list
             var pModuleHead = GetSymValueLong("PsLoadedModuleList");
@@ -1191,6 +1281,8 @@ namespace inVtero.net
                         VA = new VIRTUAL_ADDRESS(StartingAddress)
                     });
             } while (_LDR_DATA_ADDR != pModuleHead);
+
+            KernelModulesMerged = true;
         }
 
         public long DumpProc(string Folder, bool IncludeData = false, bool KernelSpace = true)
@@ -1244,7 +1336,7 @@ namespace inVtero.net
 
             var ImagePath = pathTrim[0];
 
-            if (IsFileName && ImagePath.Contains("."))
+            if (IsFileName && ImagePath.Contains(".") && pathTrim[0].LastIndexOf(".") + 4 < pathTrim[0].Length)
                 ImagePath = ImagePath.Substring(0, pathTrim[0].LastIndexOf(".") + 4);
 
             if (ImagePath.Contains(Path.DirectorySeparatorChar))
@@ -1265,6 +1357,10 @@ namespace inVtero.net
 
         public MemSection GetEnclosingSection(long VA, bool WithHeader = false)
         {
+            // likely kernel address mask it.
+            if (VIRTUAL_ADDRESS.IsKernelRange(VA))
+                VA = VIRTUAL_ADDRESS.Reduce(VA);
+
             var modName = string.Empty;
             foreach (var sec in Sections)
                 if (VA >= sec.Key &&

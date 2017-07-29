@@ -14,7 +14,7 @@ namespace inVtero.net.Hashing
     public static class MetaItem
     {
         public static string Printable(string input)
-        { return Regex.Replace(input, @"[^\w\.\[\]\=\;\(\)-_]", "").Trim(); }
+        { return Regex.Replace(input, @"[^\(\)\\\:\w\s\.\-]", "", RegexOptions.Compiled).Trim(); }
 
 
         public static XElement GenMetaDataEntry(FileInfo File, long HashID = 0, string Info = null)
@@ -99,20 +99,17 @@ namespace inVtero.net.Hashing
                    , fvi.ProductMajorPart == 0 ? null : new XAttribute(xProductMajorPart, fvi.ProductMajorPart)
                    , fvi.ProductMinorPart == 0 ? null : new XAttribute(xProductMinorPart, fvi.ProductMinorPart)
                    , fvi.ProductPrivatePart == 0 ? null : new XAttribute(xProductPrivatePart, fvi.ProductPrivatePart)
-                   //, !string.IsNullOrWhiteSpace(fvi.FileName) ? new XAttribute(xFileName, fvi.FileName) : null
-                   , !string.IsNullOrWhiteSpace(fvi.Comments) ? new XAttribute(xComments, fvi.Comments) : null
-                   , !string.IsNullOrWhiteSpace(fvi.CompanyName) ? new XAttribute(xCompanyName, fvi.CompanyName) : null
-                   , !string.IsNullOrWhiteSpace(fvi.FileDescription) ? new XAttribute(xFileDescription, fvi.FileDescription) : null
+                   , !string.IsNullOrWhiteSpace(fvi.Comments) ? new XAttribute(xComments, Printable(fvi.Comments)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.CompanyName) ? new XAttribute(xCompanyName, Printable(fvi.CompanyName)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.FileDescription) ? new XAttribute(xFileDescription, Printable(fvi.FileDescription)) : null
                    , !string.IsNullOrWhiteSpace(fvi.FileVersion) ? new XAttribute(xFileVersion, Printable(fvi.FileVersion)) : null
-                   , !string.IsNullOrWhiteSpace(fvi.InternalName) ? new XAttribute(xInternalName, fvi.InternalName) : null
-                   , !string.IsNullOrWhiteSpace(fvi.Language) ? new XAttribute(xLanguage, fvi.Language) : null
-                   //, !string.IsNullOrWhiteSpace(fvi.LegalTrademarks) ? new XAttribute(xLegalTrademarks, fvi.LegalTrademarks) : null
-                   //, !string.IsNullOrWhiteSpace(fvi.LegalCopyright) ? new XAttribute(xLegalCopyright, fvi.LegalCopyright) : null
-                   , !string.IsNullOrWhiteSpace(fvi.OriginalFilename) ? new XAttribute(xOriginalFilename, fvi.OriginalFilename) : null
-                   , !string.IsNullOrWhiteSpace(fvi.PrivateBuild) ? new XAttribute(xPrivateBuild, fvi.PrivateBuild) : null
-                   , !string.IsNullOrWhiteSpace(fvi.ProductVersion) ? new XAttribute(xProductVersion, fvi.ProductVersion) : null
-                   , !string.IsNullOrWhiteSpace(fvi.SpecialBuild) ? new XAttribute(xSpecialBuild, fvi.SpecialBuild) : null
-                   , !string.IsNullOrWhiteSpace(fvi.ProductName) ? new XAttribute(xProductName, fvi.ProductName) : null
+                   , !string.IsNullOrWhiteSpace(fvi.InternalName) ? new XAttribute(xInternalName, Printable(fvi.InternalName)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.Language) ? new XAttribute(xLanguage, Printable(fvi.Language)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.OriginalFilename) ? new XAttribute(xOriginalFilename, Printable(fvi.OriginalFilename)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.PrivateBuild) ? new XAttribute(xPrivateBuild, Printable(fvi.PrivateBuild)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.ProductVersion) ? new XAttribute(xProductVersion, Printable(fvi.ProductVersion)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.SpecialBuild) ? new XAttribute(xSpecialBuild, Printable(fvi.SpecialBuild)) : null
+                   , !string.IsNullOrWhiteSpace(fvi.ProductName) ? new XAttribute(xProductName, Printable(fvi.ProductName)) : null
                    );
             if (check.HasAttributes)
                 return check;

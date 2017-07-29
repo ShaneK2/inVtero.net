@@ -7,11 +7,47 @@ clr.AddReferenceToFileAndPath("inVtero.net.dll")
 from inVtero.net import *
 from System.IO import Directory, File, FileInfo, Path
 from System.Diagnostics import Stopwatch
-from Analyze import QuickSetup
 
 # p.ScanAndLoadModules("") for hal/ntos
 # p.ScanAndLoadModules("", False) 
 
+def LoadAllUserSymbols(vtero):
+    psx = vtero.Processes.ToArray()
+    for px in psx:
+        px.MemAccess = vtero.MemAccess
+        px.ScanAndLoadModules("", False, False, True, False, True)
+
+class WalkList:
+    def __init__(self, proc, type, head, offsetOf, moduleName = "ntoskrnl"):
+        self.head = head 
+        self.proc = proc
+        self.type = type
+        self.ptr = 0
+        self.offsetOf = offsetOf
+        self.typeLen = proc.xStructInfo(type).Length
+        self.FirstDone = False
+        self.Obj = None
+        self.moduleName = moduleName
+    
+    def __iter__(self):
+        return self
+    
+    def next(self):
+        if self.FirstDone and self.ptr == self.head:
+            raise StopIteration()
+        if self.FirstDone and self.ptr == 0:
+            raise StopIteration()
+        if not self.FirstDone and self.ptr == 0:
+            self.curr = self.head
+            self.FirstDone = True
+        else:
+            self.curr = self.ptr
+        block = self.proc.GetVirtualLongLen(self.curr - self.offsetOf, self.typeLen)
+        self.ptr = block[self.offsetOf / 8]
+        self.Obj = self.proc.xStructInfo(self.type, block, self.moduleName)
+        return self
+
+            
 # Not finished, extract / handle NT object directory 
 def DumpObj(o):
     oHdr = p.xStructInfo("_OBJECT_HEADER")
@@ -50,16 +86,24 @@ def DescriptorTables(p):
     for i in range(0, 256):
         nextIdt = KPCR.IdtBase.Value+(i*0x10)
         entryidt = p.xStructInfo("_KIDTENTRY64", nextIdt, 0x10)
-        isrAddr = (entryidt.OffsetHigh.Value & 0x0fffffff) << 32 | entryidt.OffsetMiddle.Value << 16 | entryidt.OffsetLow.Value
-        kInt =  p.xStructInfo("_KINTERRUPT", isrAddr - kintDef.DispatchCode.OffsetPos, kintDef.Length)
-        if kInt.Type.Value == 22:
-            print "Routine Address: " + kInt.ServiceRoutine.Value.ToString("x") + " [" + p.GetSymName(kInt.ServiceRoutine.Value) + "]" + " type: " + kInt.Type.Value.ToString()
-            print "List Entry: " + kInt.InterruptListEntry.Flink.Value.ToString("x")
+        isrPtrAddr = (entryidt.OffsetHigh.Value & 0x0fffffff) << 32 | entryidt.OffsetMiddle.Value << 16 | entryidt.OffsetLow.Value
+        print "*ISRAddr: " + isrPtrAddr.ToString("x") + " [" + p.GetSymName(isrPtrAddr) + "]"
+        DispatchAddr = getattr(kintDef, "DispatchAddress", None)
+        if DispatchAddr == None:
+            kInt =  p.xStructInfo("_KINTERRUPT", isrAddr - kintDef.DispatchCode.OffsetPos, kintDef.Length)
+            if kInt.Type.Value == 22:
+                print "Routine Address: " + kInt.ServiceRoutine.Value.ToString("x") + " [" + p.GetSymName(kInt.ServiceRoutine.Value) + "]" + " type: " + kInt.Type.Value.ToString()
+                print "List Entry: " + kInt.InterruptListEntry.Flink.Value.ToString("x")
+    if DispatchAddr != None:
+        disList = WalkList(p, "_KINTERRUPT", KPCR.Prcb.InterruptObjectPool.vAddress + kintDef.InterruptListEntry.OffsetPos, kintDef.InterruptListEntry.OffsetPos)
+        for x in disList:
+            print "_KINTERRUPT Service Routine: 0x" + x.Obj.ServiceRoutine.Value.ToString("x")
     gdt = p.xStructInfo("_KGDTENTRY64", KPCR.GdtBase.Value, 0x10)
     for g in range(0, 256):
         gdt = p.xStructInfo("_KGDTENTRY64", KPCR.GdtBase.Value+(g*0x10), 0x10)
         Entry = (gdt.BaseUpper.Value & 0x0fffffff) << 32 | (gdt.Bytes.BaseHigh.Value << 24) | (gdt.Bytes.BaseMiddle.Value << 16) | gdt.BaseLow.Value;
-        print "GDT: " + Entry.ToString("x") 
+        if Entry != 0:
+            print "GDT: " + Entry.ToString("x") 
 
 # Dump the SSDT
 def ssdt(p):
@@ -81,4 +125,9 @@ def ssdt(p):
         Address = Address + 8
         # dissassemble with capstone
         if ServiceAddress > ntosEnd or ServiceAddress < ntosBase:
-            print "ServiceDescriptor is out of kernel bounds! " + ServiceAddress.ToString("x")
+            DestValue = p.GetLongValue(ServiceAddress)
+            print "ServiceDescriptor is out of kernel bounds! " + ServiceAddress.ToString("x"),
+            if(DestValue == 0 or DestValue == -1):
+                print "Value is null or not mapped yet (safe)"
+            else:
+                print ""

@@ -24,6 +24,7 @@ using System.IO.MemoryMappedFiles;
 using System.Threading;
 using Reloc;
 using static inVtero.net.MagicNumbers;
+using RoaringCLI;
 
 namespace inVtero.net
 {
@@ -38,6 +39,9 @@ namespace inVtero.net
         public int MinBlockSize;
         public ulong BDBEntriesMask;
         public ReReDB ReRe;
+
+        [ProtoIgnore]
+        Roar r;
 
         [ProtoIgnore]
         UnsafeHelp HDBBitMap;
@@ -62,7 +66,7 @@ namespace inVtero.net
                 if (!FractHashTree.IsPow2(DBSize))
                     throw new InternalBufferOverflowException($"DB SIZE not a power of 2!");
 
-                using (var fileStream = new FileStream(HashDBFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var fileStream = new FileStream(HashDBFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
                     fileStream.SetLength(DBSize + (DB_READ_SIZE));
             }
             else
@@ -76,9 +80,11 @@ namespace inVtero.net
 
             ReRe = new ReReDB(relocFolder);
 
-            BDBEntriesMask = (DBEntriesMask << LONG_SHIFT) | 0xf;
-
-            HDBBitMap = new UnsafeHelp(HashDBBitMap, (long)BDBEntriesMask+1);
+            // arbitrarially big
+            BDBEntriesMask = (DBEntriesMask << 8) | 0xfff;
+            r = new Roar();
+            LoadBDB(HashDBBitMap);
+            //HDBBitMap = new UnsafeHelp(HashDBBitMap, (long)BDBEntriesMask+1);
         }
 
         /// <summary>
@@ -108,12 +114,16 @@ namespace inVtero.net
 
         public bool GetIdxBit(ulong bit)
         {
-            return HDBBitMap.GetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
+            return r.contains((bit >> HASH_SHIFT) & BDBEntriesMask);
+
+            //return HDBBitMap.GetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
         }
 
         public void SetIdxBit(ulong bit)
         {
-            HDBBitMap.SetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
+            r.add((bit >> HASH_SHIFT) & BDBEntriesMask);
+
+            //HDBBitMap.SetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
         }
         /*
         public void AddNullInput()
@@ -122,6 +132,23 @@ namespace inVtero.net
             var wrote = fl.LoadFromMem(new byte[MagicNumbers.PAGE_SIZE]);
         }
         */
+        public void LoadBDB(string aFile)
+        {
+            if (File.Exists(aFile))
+            {
+                var bdbytes = File.ReadAllBytes(aFile);
+                r = Roar.read(bdbytes, false);
+            }
+        }
+        public void Save()
+        {
+            Misc.WriteColor(ConsoleColor.Black, ConsoleColor.Green, $"CRITICAL: SAVING BITMAP DATABASE!!! WAIT JUST A SECOND PLEASE!!!");
+            var sizeNeeded = r.getSizeInBytes(false);
+            var buff = new byte[sizeNeeded];
+            r.write(buff, false);
+            File.WriteAllBytes(HashDBBitMap, buff);
+            Misc.WriteColor(ConsoleColor.Green, ConsoleColor.Black, $"Done.  Commited {sizeNeeded:N0} bytes to disk for bitmap.");
+        }
 
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
@@ -132,6 +159,7 @@ namespace inVtero.net
             {
                 if (disposing)
                 {
+
                     if (HDBBitMap != null)
                         HDBBitMap.Dispose();
 

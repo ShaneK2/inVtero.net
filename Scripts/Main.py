@@ -26,6 +26,9 @@ from CloudLeech import *
 from Capstone import *
 from PoolScan import *
 from Basic import *
+from List import *
+
+from sys import argv
 
 
 
@@ -45,17 +48,17 @@ MemList = [
 "c:\\temp\\Windows Development-6d08357c.vmem",
 "c:\\temp\\MEMORY.4g.DMP",
 "c:\\Users\\files\\VMs\\Windows 1511\\Windows 1511-1b05a6a0.vmem",
-"C:\\Users\\files\\VMs\\1703 Windows 10 x64\\1703 Windows 10 x64-ee2c6ea6.vmem",
+"C:\\Users\\files\\VMs\\Windows 10 x64-PRO-1703\\Windows 10 x64-PRO-1703-40599dd1.vmem",
 
 #"c:\\temp\memory.dmp"
 #"d:\\users\\files\\vms\\Windows Server 2016\\Windows Server 2016-02431799.vmem",
 #"d:\\users\\files\\vms\\RED-Windows 10 x64\\RED-Windows 10 x64-0f643564.vmem"
 ]
-i=1
+
 print "\nConfigured input files (for test() method); "
-for line in MemList:
-    print '{0} {1}'.format(i, line)
-    i+=1
+for line in range(0, MemList.Count):
+    print '{0} {1}'.format(line, MemList[line])
+
 
 
 

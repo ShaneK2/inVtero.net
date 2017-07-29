@@ -595,6 +595,34 @@ namespace Dia2Sharp
             } while (compileFetched == 1);
         }
 
+        public Tuple<String, ulong, ulong> FindSymByAddress(ulong Address, String PDBFile, ulong LoadAddr = 0)
+        {
+            Tuple<string, ulong, ulong> rv = null;
+            IDiaSession Session;
+            IDiaSymbol Sym;
+            IDiaEnumSymbolsByAddr pEnumAddr;
+
+            var foo = new DiaSource();
+            foo.loadDataFromPdb(PDBFile);
+            foo.openSession(out Session);
+            if (Session == null)
+                return rv;
+
+            Session.loadAddress = LoadAddr;
+
+            Session.getSymbolsByAddr(out pEnumAddr);
+            if (pEnumAddr == null)
+                return rv;
+
+            Sym = pEnumAddr.symbolByVA(Address);
+            if (Sym == null)
+                return rv;
+
+            rv = new Tuple<string, ulong, ulong>(Sym.name, Sym.virtualAddress, Sym.length);
+
+            return rv;
+        }
+
         public List<Tuple<String, ulong, ulong>> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
         {
             List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();

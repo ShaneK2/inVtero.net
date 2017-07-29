@@ -117,19 +117,18 @@ namespace inVtero.net.Hashing
             MinHashSize = minHashSize;
             HDB = new HashDB(MinHashSize, HDBName, RelocName, DBSize);
             Loader = new FileLoader(this, LoadBufferCount, NewInfoString);
-
-            Save();
         }
 
         public void Save()
         {
-
+            Misc.WriteColor(ConsoleColor.Black, ConsoleColor.Cyan, $"CRITICAL: SAVING METADATA DATABASE!!! WAIT JUST A SECOND!");
             // TODO: find a faster dup check 
-
+            HDB.Save();
 
             mData.SetAttributeValue(AttributeNames.xNextHashID, currHID);
             
             mData.Save(MDBName);
+            Misc.WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, $"Done. Commited {mData.Descendants().Count():N0} XML entries to disk.");
         }
     }
 

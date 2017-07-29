@@ -41,8 +41,8 @@ namespace inVteroUI
        
         public MemNavViewModel(Vtero v)
         {
-            vtero.KernelProc.InitSymbolsForVad();
             vtero = v;
+            vtero.KernelProc.InitSymbolsForVad();
             ProcList = vtero.Processes.ToList();
             RenderType = BlockType.Instructions64;
         }

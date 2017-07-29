@@ -42,21 +42,13 @@ namespace inVtero.net.ConsoleUtils
 
             // this instance is temporally used for loading state
             // i.e. don't set properties or fields here
-
-            var saveStateFile = $"{Filename}.inVtero.net";
-
-            if (File.Exists(saveStateFile))
+            if (!co.IgnoreSaveData)
             {
-                if (!co.IgnoreSaveData)
-                {
-                    vtero = vtero.CheckpointRestoreState(saveStateFile);
-                    if (vtero == null)
-                        vtero = new Vtero();
-                    else
-                        vtero.OverRidePhase = true;
-                }
+                vtero = vtero.CheckpointRestoreState(Filename);
+                if (vtero == null)
+                    vtero = new Vtero();
                 else
-                    File.Delete(saveStateFile);
+                    vtero.OverRidePhase = true;
             }
 
             if (vtero.Phase < 2)
@@ -175,11 +167,12 @@ namespace inVtero.net.ConsoleUtils
                 vtero.GroupAS();
             }
             // sync-save state so restarting is faster
-            if (!File.Exists(saveStateFile) && !co.IgnoreSaveData)
+            if (!co.IgnoreSaveData)
             {
                 if(Vtero.VerboseLevel > 0)
                     Write($"Saving checkpoint... ");
-                saveStateFile = vtero.CheckpointSaveState();
+
+                var saveStateFile = vtero.CheckpointSaveState();
                 WriteColor(ConsoleColor.White, saveStateFile);
             }
             Console.CursorVisible = true;

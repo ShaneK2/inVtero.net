@@ -30,8 +30,8 @@ namespace inVtero.net.Hashing
         public int MinBlockSize = 0;
         public long LevelCount = 0;
 
-        Func<HashLib.IHash> GetHP;
-        HashLib.IHash[] HPs;
+        //Func<HashLib.IHash> GetHP;
+        //HashLib.IHash[] HPs;
         public ConcurrentDictionary<int, List<HashRecord>> hashes;
 
 
@@ -42,7 +42,7 @@ namespace inVtero.net.Hashing
 
             // TESTING
             OnlySize = 64;
-            var LevelCount = 1;
+            //var LevelCount = 1;
             int RawSize = MemPage.Length;
             var TotalHashs = BlockCount(RawSize, minBlockSize);
 

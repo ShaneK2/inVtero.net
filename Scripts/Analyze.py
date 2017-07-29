@@ -27,6 +27,7 @@ from System.IO import Directory, File, FileInfo, Path
 from System import Environment, String, Console, ConsoleColor
 from System import Text
 from System.Diagnostics import Stopwatch
+from List import *
 
 print "\n\n\tCurrent directory [" + Directory.GetCurrentDirectory() + "]"
 
@@ -190,31 +191,18 @@ def WalkModules(proc, ModLinkHead, Verbose):
             return modlist
 
 
-def LoadAllUserSymbols(vtero):
-    psx = vtero.Processes.ToArray()
-    for px in psx:
-        px.MemAccess = vtero.MemAccess
-        px.ScanAndLoadModules("", False, False, True, False, True)
+def WalkList(proc, type, ptr, head, offsetOf, typeLen):
+    while ptr != head:
+        if ptr == None or ptr == 0:
+            ptr = head
+        yield proc.xStructInfo(type, ptr - offsetOf, typeLen)
 
 # Walk registry hives
 def hives(proc):
-    #CmpRegistryRootObject = proc.GetSymValueLong("CmpRegistryRootObject")
-    #CmpMasterHive = proc.GetSymValueLong("CmpMasterHive")
-    #KeyHive = proc.GetSymValueLong("_HHIVE", CmpMasterHive)
-    #KeyBody = proc.GetSymValueLong("_CM_KEY_BODY", CmpRegistryRootObject)
-    #KeyControlBlock = proc.GetSymValueLong("_CM_KEY_CONTROL_BLOCK", KeyBody.KeyControlBlock.Value)
-    #KeyCell = KeyControlBlock.KeyCell.Value
-    #KeyNode = _CM_KEY_NODE
-    _HIVE_HEAD_ADDR = proc.GetSymValueLong("CmpHiveListHead")
-    typedef = proc.xStructInfo("_CMHIVE")
-    hiveOffsetOf = typedef.HiveList.OffsetPos
-    _CMHIVE = proc.xStructInfo("_CMHIVE", _HIVE_HEAD_ADDR - hiveOffsetOf , typedef.Length)
-    while True:
-        if _CMHIVE.Hive.Signature.Value != 0xffbee0bee0 or _HIVE_HEAD_ADDR == _CMHIVE.HiveList.Value:
-            return
-        print "HiveRootPath: " + _CMHIVE.HiveRootPath.Value
-        print "FileUserName: " + _CMHIVE.FileUserName.Value
-        _CMHIVE = proc.xStructInfo("_CMHIVE", _CMHIVE.HiveList.Value - hiveOffsetOf, typedef.Length)
+    h = WalkList(p, "_CMHIVE", _HIVE_HEAD_ADDR, hiveOffsetOf)
+    for x in h:
+        print "HiveRootPath: " + x.Obj.HiveRootPath.Value
+        print "FileUserName: " + x.Obj.FileUserName.Value
 
 # YaraRules = "c:\\temp\\yara\\index.yar"
 # Do a parallel Yara Scan
@@ -265,6 +253,7 @@ def QuickSetup(MemoryDump, IgnoreSave = False):
     kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
     Console.ForegroundColor = ConsoleColor.Cyan
     print "Kernel build: " + kMinorVer.ToString()
+    logicalList = vtero.WalkProcList(vtero.KernelProc)
     return vtero
 
 #########################################################################

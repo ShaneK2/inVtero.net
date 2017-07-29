@@ -141,7 +141,7 @@ namespace inVtero.net
             MD = parent.MD;
             ID = parent.ID;
 
-            DumpedPFNBitmap = new UnsafeHelp(ID.ToString(), MaxLimit, true);
+            DumpedPFNBitmap = new UnsafeHelp($"{Process.GetCurrentProcess().Id}-{ID}", MaxLimit, true);
 
             StartOfMemory = parent.StartOfMemory;
             MemoryDump = parent.MemoryDump;

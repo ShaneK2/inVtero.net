@@ -228,21 +228,31 @@ namespace inVtero.net.Hashing
 
 
             CancellationToken token = source.Token;
-            var po = new ParallelOptions() { CancellationToken = token };
-
-            Parallel.Invoke((po), () =>
+            try
             {
-                GenerateSW = Stopwatch.StartNew();
-                RecursiveGenerate(Folder, po);
-                DoneDirScan = true;
-                WriteColor(ConsoleColor.Green, $"Finished FS load from {Folder} task time: {GenerateSW.Elapsed}");
-            }, 
-            () => {
-                FillHashBuff(po);
-                DoneHashLoad = true;
-            }, 
-            () => DumpBufToDisk(po)
-            );
+                var po = new ParallelOptions() { CancellationToken = token };
+
+                Parallel.Invoke((po), () =>
+                {
+                    GenerateSW = Stopwatch.StartNew();
+                    RecursiveGenerate(Folder, po);
+                    DoneDirScan = true;
+                    WriteColor(ConsoleColor.Green, $"Finished FS load from {Folder} task time: {GenerateSW.Elapsed}");
+                },
+                () =>
+                {
+                    FillHashBuff(po);
+                    DoneHashLoad = true;
+                },
+                () => DumpBufToDisk(po)
+                );
+            }
+            catch (AggregateException agg)
+            {
+                WriteColor(ConsoleColor.Yellow, $"AggregateException: {agg.ToString()} InnerException {agg.InnerException.ToString()}");
+                source.Cancel();
+            }
+
             WriteColor(ConsoleColor.White, $"Total task runtime: {GenerateSW.Elapsed}.  {LoadCount} folders/files were filtered out of import.");
         }
 
@@ -546,7 +556,7 @@ namespace inVtero.net.Hashing
                     fileStream.Read(readBuffer, 0, RelocSize);
 
                     using (FileStream stream = new FileStream(outFile,
-                            FileMode.CreateNew, FileAccess.Write, FileShare.None, (int)RelocSize, true))
+                            FileMode.CreateNew, FileAccess.Write, FileShare.Read, (int)RelocSize, true))
                         stream.Write(readBuffer, 0, (int)RelocSize);
                 }
             }

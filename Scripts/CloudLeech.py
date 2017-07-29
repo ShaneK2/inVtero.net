@@ -102,5 +102,6 @@ def UnLock(vtero, p):
 	writer.Close()
 	print "PATCH COMPLETED, NO MORE PASSWORD NEEDED TO LOGIN..."
 	Console.ForegroundColor = ConsoleColor.White
+    return
 
 

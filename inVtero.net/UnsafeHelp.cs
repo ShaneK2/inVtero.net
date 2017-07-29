@@ -49,7 +49,8 @@ namespace inVtero.net
         public UnsafeHelp(string BitmapFileName, long CountOfEntries = 0, bool InMemory = false)
         {
             var bitmapName = "UnsafeBitmap" + Path.GetFileNameWithoutExtension(BitmapFileName);
-            long ByteSize = CountOfEntries >> LONG_SHIFT;
+            long ByteSize = (CountOfEntries >> MagicNumbers.BIT_SHIFT)+sizeof(long);
+
             if (InMemory)
             {
                 try
