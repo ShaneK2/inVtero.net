@@ -56,6 +56,13 @@ namespace inVtero.net
         public long FileSize;
         public double GroupThreshold;
 
+        /// <summary>
+        /// SerializationTimeStamp allows us to figure out if were inspecting a memory dump that has changed.
+        /// If it's changed, we will need to re-run all phases
+        /// </summary>
+        public DateTime SerializationTimeStamp;
+        public DateTime InputTimeStamp;
+
         // reset this every time we load a crashdump
         public static ConcurrentDictionary<long, MemSection> ModuleCache;
 
@@ -208,7 +215,7 @@ namespace inVtero.net
         /// <summary>
         /// Part of initialization used to carve up / figure out which underlying memory space were looking at
         /// </summary>
-        [ProtoAfterDeserialization]
+       // [ProtoAfterDeserialization]
         void DeriveMemoryDescriptors()
         {
             AMemoryRunDetector Detected = null;
@@ -246,6 +253,9 @@ namespace inVtero.net
 
             MRD = Detected;
             MemAccess = Mem.InitMem(MemFile, Detected);
+
+            var info = new FileInfo(MemFile);
+            InputTimeStamp = info.CreationTime > info.LastWriteTime ? info.CreationTime : info.LastWriteTime;
         }
 
         public string CheckpointSaveState(string OverrideName = null, string DirSpec = null)
@@ -255,6 +265,9 @@ namespace inVtero.net
 
             var SerName = $"{Path.Combine(DirSpec, OverrideName == null ? MemFile : OverrideName)}.inVtero.net";
 
+            if(SerializationTimeStamp == DateTime.MinValue)
+                SerializationTimeStamp = DateTime.Now;
+
             using (var serOut = File.OpenWrite(SerName))
                 Serializer.Serialize<inVtero.net.Vtero>(serOut, this);
 
@@ -263,7 +276,6 @@ namespace inVtero.net
 
         public Vtero CheckpointRestoreState(string Filename)
         {
-
             var SaveFile = $"{Filename}.inVtero.net";
 
             if (!File.Exists(SaveFile))
@@ -273,7 +285,11 @@ namespace inVtero.net
             var finfo = new FileInfo(SaveFile);
 
             if (finfo.Length == 0 || finfo.CreationTime < memFileInfo.CreationTime)
+            {
+                WriteColor(ConsoleColor.Yellow, $"memory dump may be modified since our last inspection, throwing out save state");
+                File.Delete(SaveFile);
                 return null;
+            }
 
             Vtero ThisInstance = new Vtero();
 
@@ -281,7 +297,27 @@ namespace inVtero.net
             {
                 using (var SerData = File.OpenRead(SaveFile))
                     ThisInstance = Serializer.Deserialize<inVtero.net.Vtero>(SerData);
-            } catch (Exception ex)
+
+                // try hard in the case of a fs with no time updates, at least for VMWare we can detect forward progress in the VM by looking for a matching VMSS for device data
+                if (ThisInstance.MRD != null && !string.IsNullOrWhiteSpace(ThisInstance.MRD.vDeviceFile))
+                {
+                    var devTimeStamp = new FileInfo(ThisInstance.MRD.vDeviceFile);
+
+                    if (memFileInfo.LastWriteTime > ThisInstance.SerializationTimeStamp
+                        || memFileInfo.CreationTime > ThisInstance.SerializationTimeStamp
+                        || devTimeStamp.CreationTime > ThisInstance.SerializationTimeStamp
+                        || devTimeStamp.LastWriteTime > ThisInstance.SerializationTimeStamp
+                        )
+                    {
+                        WriteColor(ConsoleColor.Yellow, $"memory dump may be modified since our last inspection, throwing out save state");
+                        ThisInstance = null;
+                        File.Delete(SaveFile);
+                        return null;
+                    }
+                }
+                ThisInstance.SaveStateLoad = SaveFile;
+            }
+            catch (Exception ex)
             {
                 var backup = $"{SaveFile}.{new Random().Next().ToString()}.bak";
 
@@ -289,7 +325,6 @@ namespace inVtero.net
                 File.Move(SaveFile, backup);
                 ThisInstance = null;
             }
-            ThisInstance.SaveStateLoad = SaveFile;
             return ThisInstance;
         }
 
@@ -367,7 +402,7 @@ namespace inVtero.net
         }
 
         // These parallel function's almost always are I/O bound and slower 
-        public void HashAllProcs(MetaDB DB, bool DoBitmapScan = true)
+        public void HashAllProcs(MetaDB DB, bool DoBitmapScan = true, bool DoCloudScan = false)
         {
             ConcurrentBag<Tuple<long, string, string>[]> rv = new ConcurrentBag<Tuple<long, string, string>[]>();
             HashRecord[] hr;
@@ -378,6 +413,7 @@ namespace inVtero.net
 
             var mdb = DB;
             var fl = mdb.Loader;
+            var cl = mdb.cLoader;
 
             MemAccess.MapViewSize = 128 * 1024;
 
@@ -400,9 +436,12 @@ namespace inVtero.net
                     proc.CopySymbolsForVad(KernelProc);
                     proc.ID = KernelProc.ID;
 
-                    hr = proc.VADHash(CollectKernel, true, true, true, DoBitmapScan);
-                    if(!DoBitmapScan)
+                    hr = proc.VADHash(CollectKernel, true, true, true, DoBitmapScan, DoCloudScan);
+                    if (!DoBitmapScan && !DoCloudScan)
                         fl.HashLookup(proc.HashRecords);
+                    else if (DoCloudScan)
+                        //cl.QueryHashes(proc.HashRecords);
+                        cl.QueryREST(proc.HashRecords);
 
                     var rate = proc.HashRecordRate();
 
@@ -543,7 +582,6 @@ namespace inVtero.net
         /// <returns></returns>
         public dynamic[] WalkProcList(DetectedProc dp)
         {
-            bool GotData = false;
             // TODO: Build out symbol system / auto registration into DLR for DIA2
             // expected kernel hardcoded
 
@@ -586,9 +624,8 @@ namespace inVtero.net
                 // walk the offset back to the head of the _EPROCESS
                 // this needs to adjsut since we get the entire block here based to the page not offset 
                 var vAddress = flink - offset_of;
-                memRead = dp.GetVirtualLong((flink - offset_of), ref GotData);
-                if (!GotData)
-                    break;
+                // the tuple is offset/len, the first one is the _EPROCESS
+                memRead = dp.GetVirtualLongLen(vAddress, typeDefs.First().Value.Item2);
 
                 var EThrPtr = memRead[sym_ethr.Item1 / 8];
                 // memRead is a long array so we have to divide the length by 8
@@ -601,7 +638,7 @@ namespace inVtero.net
 
                 if (ProcessID != 4)
                 {
-                    // ImagePath here is a pointer to a struct, get ptr
+                    // ImagePath here is a pointer to a struct, get ptr (cheating) it's always :) next to the string buffer
                     // +0x10 in this unicode string object
                     var ImagePathPtr = memRead[sym_ImagePathPtr.Item1 / 8];
                     var ImagePathArr = dp.GetVirtualByte(ImagePathPtr + 0x10);
@@ -685,6 +722,10 @@ namespace inVtero.net
                 // if flink is > 0 we have a problem since it's in the expected "user" range 
                 // and we are walking the kernel sooooo... exit  TODO: Report error! ;)
             } while (PsHeadAddr != flink && flink < 0);
+
+            // assign important symbols
+            TokenInfo.InitFromKernel(KernelProc);
+
             return dp.LogicalProcessList.ToArray();
         }
 

@@ -35,6 +35,7 @@ using inVtero.net.Hashing;
 using System.Dynamic;
 using static inVtero.net.MagicNumbers;
 
+
 namespace inVtero.net
 {
 
@@ -180,14 +181,29 @@ namespace inVtero.net
             return value;
         }
 
-        public Tuple<String, ulong, ulong>[] MatchSymbols(string Match, string Module = "ntoskrnl")
+        public (string Name, ulong Address, ulong Length)[] MatchSymbols(string Match, string Module = "ntoskrnl")
         {
-            List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
-            foreach (var sec in Sections)
-                if (sec.Value.DebugDetails != null &&
-                    !string.IsNullOrWhiteSpace(sec.Value.DebugDetails.PDBFullPath) &&
-                    Path.GetFileNameWithoutExtension(sec.Value.DebugDetails.PDBFullPath).ToLower().Contains(Path.GetFileNameWithoutExtension(Module).ToLower()) || string.IsNullOrWhiteSpace(Module))
-                    rv.AddRange(sym.MatchSyms(Match, sec.Value.DebugDetails.PDBFullPath, sec.Value.VA.FullAddr));
+            List<(string, ulong, ulong)> rv = new List<(string, ulong, ulong)>();
+
+            var modToAdd = from mod in Sections.Values
+                           where mod.DebugDetails != null && !string.IsNullOrWhiteSpace(mod.DebugDetails.PDBFullPath) &&
+                           string.IsNullOrWhiteSpace(Module) ||
+                           Path.GetFileNameWithoutExtension(mod.DebugDetails.PDBFullPath).ToLower().Contains(Path.GetFileNameWithoutExtension(Module).ToLower())
+                           select mod;
+
+            foreach(var toAdd in modToAdd)
+                rv.AddRange(sym.MatchSyms(Match,toAdd.DebugDetails.PDBFullPath, toAdd.VA.FullAddr));
+
+
+
+            //foreach (var sec in Sections)
+            //    if (sec.Value.DebugDetails != null &&
+            //        !string.IsNullOrWhiteSpace(sec.Value.DebugDetails.PDBFullPath) &&
+            //        Path.GetFileNameWithoutExtension(sec.Value.DebugDetails.PDBFullPath).ToLower().Contains(Path.GetFileNameWithoutExtension(Module).ToLower()) || 
+            //        string.IsNullOrWhiteSpace(Module))
+            //        rv.AddRange(sym.MatchSyms(Match, sec.Value.DebugDetails.PDBFullPath, sec.Value.VA.FullAddr));
+
+
 
             return rv.ToArray();
         }
@@ -226,16 +242,16 @@ namespace inVtero.net
                 s = sec;
 
             var detailed = GetSymNameDetails((long) Address, s);
-            if (detailed != null)
-                return detailed.Item1;
+            if (detailed.Name != string.Empty)
+                return detailed.Name;
 
 
             return GetSymName((long)Address);
         }
 
-        public Tuple<string, ulong, ulong> GetSymNameDetails(long Address, MemSection enclosedBy = null)
+        public (string Name, ulong Address, ulong Length) GetSymNameDetails(long Address, MemSection enclosedBy = null)
         {
-            Tuple<string, ulong, ulong> rv = Tuple.Create<string, ulong, ulong>(string.Empty, 0, 0);
+            (string, ulong, ulong) rv = ValueTuple.Create(string.Empty, ulong.MinValue, ulong.MinValue);
             MemSection PDB = null;
 
             if (enclosedBy == null || enclosedBy.DebugDetails == null)
@@ -996,7 +1012,7 @@ namespace inVtero.net
 
         }
 
-        public HashRecord[] VADHash(bool KernelSpace = false, bool DoReReLocate = true, bool ExecOnly = true, bool SinglePFNDump = true, bool BitmapScan = true)
+        public HashRecord[] VADHash(bool KernelSpace = false, bool DoReReLocate = true, bool ExecOnly = true, bool SinglePFNDump = true, bool BitmapScan = true, bool CloudScan = false)
         {
             var hr = new ConcurrentStack<HashRecord>();
 
@@ -1087,7 +1103,12 @@ namespace inVtero.net
                     else
                         Name += $"+0x{SecOffset:x}";
 
-                    var hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null, 0, VA + SecOffset);
+                    HashRec[] hrecs = null;
+
+                    if(!CloudScan)
+                        hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null, 0, VA + SecOffset, HDB.MinBlockSize);
+                    else
+                        hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null, 0, VA + SecOffset, HDB.MinBlockSize, false, true);
 
                     if (BitmapScan)
                     {
@@ -1136,7 +1157,10 @@ namespace inVtero.net
         {
             byte[] block = null;
             string Name = string.Empty;
-            List<HashRecord> hr = new List<HashRecord>();
+            var hr = new List<HashRecord>();
+
+            if (!Directory.Exists(Folder))
+                Directory.CreateDirectory(Folder);
 
             PageTable.AddProcess(this, new Mem(MemAccess));
 
@@ -1558,8 +1582,11 @@ namespace inVtero.net
                 var TypeLength = (ulong) myDict["Length"];
 
                 if (Vtero.VerboseLevel > 1)
+                {
                     WriteColor(ConsoleColor.Black, ConsoleColor.Green,
                     $"Writing {NewValue} to Object {ObjectType} MemberType {SymType} address: [{Address:X}]");
+                    WxColor(ConsoleColor.White, ConsoleColor.Black, "");
+                }
 
                 using (var fsAccess = new FileStream(MemAccess.IOFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                 {
@@ -1859,7 +1886,7 @@ namespace inVtero.net
         [ProtoIgnore]
         public Mem MemAccess { get; set; }
         [ProtoIgnore]
-        public string ShortName { get { if (vmcs != null) return $"{vmcs.EPTP:X}-{CR3Value:X}"; return $"{CR3Value:X}"; } }
+        public string ShortName { get { if (vmcs != null) return $"{OSFileName}-eptp[{vmcs.EPTP:X}]-dtb[{CR3Value:X}]-pid[{ProcessID}]"; return $"{OSFileName}-dtb[{CR3Value:x}]-pid[{ProcessID:x}]"; } }
 
         public override string ToString() => $"Process PID [{ProcessID,10}] CR3 [{CR3Value,16:X12}] Path [{OSPath,50}]";    // Type [{PageTableType,12}] VMCS [{vmcs,16}]";
 

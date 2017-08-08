@@ -41,10 +41,11 @@ namespace inVtero.net
         public ReReDB ReRe;
 
         [ProtoIgnore]
-        Roar r;
+        RoarCLI r;
 
         [ProtoIgnore]
         UnsafeHelp HDBBitMap;
+        
 
         /// <summary>
         /// HashDB manager
@@ -81,10 +82,11 @@ namespace inVtero.net
             ReRe = new ReReDB(relocFolder);
 
             // arbitrarially big
-            BDBEntriesMask = (DBEntriesMask << 8) | 0xfff;
-            r = new Roar();
-            LoadBDB(HashDBBitMap);
-            //HDBBitMap = new UnsafeHelp(HashDBBitMap, (long)BDBEntriesMask+1);
+            BDBEntriesMask = (DBEntriesMask << 3) | 0xfff;
+            //r = new RoarCLI();
+            //LoadBDB(HashDBBitMap);
+
+            HDBBitMap = new UnsafeHelp(HashDBBitMap, (long)BDBEntriesMask+1);
         }
 
         /// <summary>
@@ -114,16 +116,16 @@ namespace inVtero.net
 
         public bool GetIdxBit(ulong bit)
         {
-            return r.contains((bit >> HASH_SHIFT) & BDBEntriesMask);
+            //return r.contains((bit >> HASH_SHIFT) & BDBEntriesMask);
 
-            //return HDBBitMap.GetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
+            return HDBBitMap.GetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
         }
 
         public void SetIdxBit(ulong bit)
         {
-            r.add((bit >> HASH_SHIFT) & BDBEntriesMask);
-
-            //HDBBitMap.SetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
+            //r.add((bit >> HASH_SHIFT) & BDBEntriesMask);
+            
+            HDBBitMap.SetBit((bit >> HASH_SHIFT) & BDBEntriesMask);
         }
         /*
         public void AddNullInput()
@@ -134,15 +136,20 @@ namespace inVtero.net
         */
         public void LoadBDB(string aFile)
         {
+            return;
             if (File.Exists(aFile))
             {
                 var bdbytes = File.ReadAllBytes(aFile);
-                r = Roar.read(bdbytes, false);
+                r = RoarCLI.read(bdbytes, false);
             }
         }
         public void Save()
         {
+            // file map does not need this
+            return;
+
             Misc.WriteColor(ConsoleColor.Black, ConsoleColor.Green, $"CRITICAL: SAVING BITMAP DATABASE!!! WAIT JUST A SECOND PLEASE!!!");
+
             var sizeNeeded = r.getSizeInBytes(false);
             var buff = new byte[sizeNeeded];
             r.write(buff, false);

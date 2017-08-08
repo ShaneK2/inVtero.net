@@ -173,7 +173,7 @@ namespace inVtero.net.ConsoleUtils
                     Write($"Saving checkpoint... ");
 
                 var saveStateFile = vtero.CheckpointSaveState();
-                WriteColor(ConsoleColor.White, saveStateFile);
+                WriteColor(ConsoleColor.White, $"save state is {saveStateFile}");
             }
             Console.CursorVisible = true;
             return vtero;

@@ -25,20 +25,29 @@ namespace inVtero.net.Hashing
         public string BDBName;
         public string RelocName;
 
+        string infoString;
+        public string InfoString
+        {
+            get { return infoString; }
+            set { infoString = value; Loader.InfoString = value; cLoader.InfoString = value; }
+        }
+
         public int MinHashSize;
         public int LoadBufferCount;
 
         public HashDB HDB { get; }
-        public FileLoader Loader;
+        public CloudDB CDB { get; }
 
-        string RootFolder;
+        public FileLoader Loader;
+        public CloudLoader cLoader;
+
         public XElement mData;
         public XElement mRecords;
 
         XElement infoStrings;
-
         XDocument xDoc;
-        
+
+        string RootFolder;
 
         int currHID;
         public int CurrHashID
@@ -56,7 +65,9 @@ namespace inVtero.net.Hashing
                            select each;
 
             if (DupCheck.Count() < 1)
-                infoStrings.Add(new XElement(ElementNames.xInfo, Info));
+                infoStrings.Add(new XElement(ElementNames.xInfo,
+                    new XAttribute(AttributeNames.xiID, Info.GetHashCode().ToString("X")), 
+                    Info));
         }
         public int AddFileInfo(string FilePath, string metaInfo)
         {
@@ -70,7 +81,7 @@ namespace inVtero.net.Hashing
             return rv;
         }
 
-        public MetaDB(string WorkingDir, long DBSize = 0, int minHashSize = 0, int loadBufferCount = 0, string NewInfoString = null)
+        public MetaDB(string WorkingDir, int minHashSize = 256, long DBSize = 0, int loadBufferCount = 50000000, string NewInfoString = null)
         {
             RootFolder = WorkingDir;
             if (!Directory.Exists(RootFolder))
@@ -113,10 +124,12 @@ namespace inVtero.net.Hashing
                 infoStrings = new XElement(ElementNames.xMetaInfoStrings);
                 mData.Add(infoStrings);
             }
-            
+            infoString = NewInfoString;
             MinHashSize = minHashSize;
             HDB = new HashDB(MinHashSize, HDBName, RelocName, DBSize);
-            Loader = new FileLoader(this, LoadBufferCount, NewInfoString);
+            Loader = new FileLoader(this, LoadBufferCount, infoString);
+            cLoader = new CloudLoader(Loader, MinHashSize);
+            cLoader.InfoString = infoString;
         }
 
         public void Save()
@@ -143,15 +156,14 @@ namespace inVtero.net.Hashing
 
         public const string sHashID = "HID";
         public static XName xHashID = sHashID;
-        public const string sInfo = "Info";
-        public static XName xInfo = sInfo;
+        public const string siID = "sID";
+        public static XName xiID = siID;
     }
 
     public static class ElementNames
     {
         public const string sRoot = "inVtero";
         public static XName xRoot = sRoot;
-
 
         public const string sMetaData = "MD";
         public static XName xMetaData = sMetaData;

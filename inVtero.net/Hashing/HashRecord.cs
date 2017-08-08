@@ -16,6 +16,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using static inVtero.net.Hashing.CloudDB;
 using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net.Hashing
@@ -29,6 +30,8 @@ namespace inVtero.net.Hashing
     /// </summary>
     public struct HashRec
     {
+        // TODO: port this back to reference type makes all the scatter/gathering so much easier
+        // at the cost of a higher generation tax
         public HashRec(byte[] Hash, byte blockLenFlag, int rID = 0)
         {
             RID = rID << 2;
@@ -38,15 +41,62 @@ namespace inVtero.net.Hashing
             CompressedShortHash = BitConverter.ToUInt32(Hash, 8);
             Index = BitConverter.ToUInt64(Hash, Hash.Length - 8) << HASH_SHIFT;
 
+            //Owner = null;
             Serialized = null;
+            FullHash = Hash;
+            Address = 0;
         }
 
+        public HashRec(byte[] Hash, uint blockLen, int rID = 0)
+        {
+            RID = rID;
+            CompressedShortHash = blockLen;
+            CompressedHash = 0;
+            Index = 0;
+
+            //Owner = null;
+            Serialized = null;
+            FullHash = Hash;
+            Address = 0;
+        }
+
+        public static HashRec Default
+        {
+            get
+            {
+                return new HashRec()
+                {
+                    CompressedShortHash = 0,
+                    RID = 0,
+                    CompressedHash = 0,
+                    Index = 0,
+                    Serialized = null,
+                    FullHash = null,
+                    //Owner = null,
+                    Address = 0
+                };
+            }
+        }
+
+        public long Address;
         public ulong Index;
         public int RID;
         public uint CompressedShortHash;
         public ulong CompressedHash;
-
+        public byte[] FullHash;
         public byte[] Serialized;
+
+        // only need this if were grouping across processes
+        //public HashRecord Owner;
+
+        public static byte[] ToByteArrNoRID(HashRec rec)
+        {
+            byte[] rv = new byte[12];
+            Array.Copy(BitConverter.GetBytes(rec.CompressedHash), 0, rv, 0, 8);
+            Array.Copy(BitConverter.GetBytes(rec.CompressedShortHash), 0, rv, 8, 4);
+            return rv;
+        }
+
         public static byte[] ToByteArr(HashRec rec)
         {
             byte[] rv = new byte[HASH_REC_BYTES];
@@ -80,6 +130,9 @@ namespace inVtero.net.Hashing
             rec.RID = BitConverter.ToInt32(arr, 12);
             rec.Serialized = null;
             rec.Index = 0;
+            rec.FullHash = arr;
+            //rec.Owner = null;
+            rec.Address = 0;
             return rec;
         }
 #if A32byteFormat
@@ -156,10 +209,7 @@ namespace inVtero.net.Hashing
         public bool Verified { get { return RID < 0; } set { if (value) RID |= int.MinValue; else RID = RID & int.MaxValue; } }
         public int Size { get { return RID & 0x3; } }
 
-        public override string ToString()
-        {
-            return Index.ToString("X");
-        }
+        public override string ToString() => Index.ToString("X");
 
     }
 
@@ -172,6 +222,7 @@ namespace inVtero.net.Hashing
         public List<long> SparseAddrs = new List<long>();
         public List<bool[]> InnerCheckList = new List<bool[]>();
         public List<HashRec[]> InnerList = new List<HashRec[]>();
+        public List<HashEntity[]> InnerCloudList = new List<HashEntity[]>();
         public List<byte[]> Data = new List<byte[]>();
 
         public int Validated;
@@ -180,10 +231,7 @@ namespace inVtero.net.Hashing
 
         public double PercentValid { get {  return Total > 0 ? Validated * 100.0 / Total : 0.0; } }
 
-        public override string ToString()
-        {
-            return $"Region: {OriginationInfo,70}\tAddr: {Address,20:X} Len: {Len,8:X} ({Validated,4}/{Total,4}) {PercentValid,12:N3}" ;
-        }
+        public override string ToString() => $"Region: {OriginationInfo,70}\tAddr: {Address,20:X} Len: {Len,8:X} ({Validated,4}/{Total,4}) {PercentValid,12:N3}" ;
 
 
         public IEnumerable<long> GetFailedOffsets(int MinSizeBlock)
@@ -212,6 +260,52 @@ namespace inVtero.net.Hashing
 
         public HashRecord() {
             Regions = new List<SparseRegion>();
+        }
+
+        // copy inner lists to a giant array
+        public HashRec[] GetAllRecs()
+        {
+            var rv = from r in Regions
+                     from s in r.InnerList
+                     from h in s
+                     select h;
+            return rv.ToArray();
+        }
+
+        // gather scatter blocks & assign back from results into appropiate region/address
+        public void AssignRecResults(IEnumerable<HashRec> results)
+        {
+            foreach(var h in results)
+            {
+                bool breakAll = false;
+                foreach (var region in Regions)
+                {
+                    for(int sa=0; sa < region.SparseAddrs.Count; sa++)
+                    {
+                        var addr = region.SparseAddrs[sa];
+                        if (h.Address >= addr && h.Address < addr + PAGE_SIZE)
+                        {
+                            for (int l = 0; l < region.InnerList[sa].Length; l++)
+                            {
+                                var innerHash = region.InnerList[sa][l];
+                                if (innerHash.Address == h.Address)
+                                {
+                                    if (h.Verified)
+                                    {
+                                        innerHash.Verified = true;
+                                        region.Validated++;
+                                    } 
+                                    region.Total++;
+                                    breakAll = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (breakAll) break;
+                    }
+                    if (breakAll) break;
+                }
+            }
         }
 
         public void AddBlock(string Info, long VA, HashRec[] hashes, int validated)

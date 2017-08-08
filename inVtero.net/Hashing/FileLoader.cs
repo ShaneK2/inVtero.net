@@ -30,6 +30,9 @@ using System.Diagnostics;
 using System.Buffers;
 using static inVtero.net.MagicNumbers;
 using Monitor.Core.Utilities;
+using Microsoft.WindowsAzure.Storage.Table;
+using static inVtero.net.Hashing.CloudDB;
+using static inVtero.net.CompareHelp;
 
 namespace inVtero.net.Hashing
 {
@@ -49,7 +52,7 @@ namespace inVtero.net.Hashing
 
         public List<string> LoadExceptions = new List<string>();
 
-        ConcurrentStack<Extract> LoadList = new ConcurrentStack<Extract>();
+        public ConcurrentStack<Extract> LoadList = new ConcurrentStack<Extract>();
 
         bool DoneDirScan = false;
         bool DoneHashLoad = false;
@@ -64,17 +67,17 @@ namespace inVtero.net.Hashing
         /// Specify here like "This was my VM image blah" or whatever you like
         /// 
         /// </summary>
-        public string MetaInfoString;
+        public string InfoString;
 
         Func<HashLib.IHash> GetHP;
         //ArrayPool<HashRec> aPool;
-        Stopwatch GenerateSW;
+        public Stopwatch GenerateSW;
 
         // just have 1 deep queue since at one it get's picked up right away, so we'll actually have 3 in the "air" 
         // at any time with just setting 1 here
         BlockingCollection<Tuple<int, HashRec[]>> ReadyQueue = new BlockingCollection<Tuple<int, HashRec[]>>(1);
 
-        
+
         public FileLoader(MetaDB mDB, int bufferCount = 0, string metaInfoString = null, Func < HashLib.IHash> getHP = null)
         {
             var sep = new char[] { ':' };
@@ -89,7 +92,7 @@ namespace inVtero.net.Hashing
             MDB = mDB;
             HDB = mDB.HDB;
 
-            MetaInfoString = metaInfoString;
+            InfoString = metaInfoString;
 
             DBFile = HDB.HashDBFile;
             SortMask = HDB.DBEntriesMask << HASH_SHIFT;
@@ -164,10 +167,10 @@ namespace inVtero.net.Hashing
                         var PageIndex = Index & DB_PAGE_MASK;
 
                         // Hash to populate the DB with
-                        var toRead = BitConverter.GetBytes(hashArr[i].CompressedHash);
+                        var toRead = HashRec.ToByteArrNoRID(hashArr[i]);
 
                         // do we already have this hash from disk? 
-                        firstIndex = buff.SearchBytes(toRead, (int) PageIndex, toRead.Length);
+                        firstIndex = buff.SearchBytes(toRead, (int) PageIndex, HASH_REC_BYTES);
                         if (firstIndex >= 0)
                             rv.Add(true);
                         else
@@ -217,15 +220,16 @@ namespace inVtero.net.Hashing
             return;
         }
         string InitialScanFolder;
-        CancellationTokenSource source;
-        public void LoadFromPath(string Folder)
-        {
-            InitialScanFolder = Folder;
+        public CancellationTokenSource source;
+        bool DoMetaCollection;
 
+        public void LoadFromPath(string Folder, bool doMetaCollection = true)
+        {
             source = new CancellationTokenSource();
+            InitialScanFolder = Folder;
+            DoMetaCollection = doMetaCollection;
 
             source.Token.Register(() => WriteColor(ConsoleColor.Red, $"Cancelation requested. {LoadExceptions.Count} file load exceptions occured."), true);
-
 
             CancellationToken token = source.Token;
             try
@@ -305,7 +309,7 @@ namespace inVtero.net.Hashing
                             // skip duplicates
                             if (i + 1 < Count
                                 && hashArr[i].Index == hashArr[i + 1].Index)
-                               //&& UnsafeHelp.UnsafeCompare(hashArr[i].HashData, hashArr[i + 1].HashData))
+                            //&& UnsafeHelp.UnsafeCompare(hashArr[i].HashData, hashArr[i + 1].HashData))
                             {
                                 i++;
                                 continue;
@@ -319,7 +323,7 @@ namespace inVtero.net.Hashing
                                 var PageIndex = (int)(Index & DB_PAGE_MASK);
 
                                 // Hash to populate the DB with
-                                var toWrite = BitConverter.GetBytes(hashArr[i].CompressedHash);
+                                var toWrite = HashRec.ToByteArrNoRID(hashArr[i]);
 
                                 // do we already have this hash from disk? 
                                 firstIndex = buff.SearchBytes(toWrite, PageIndex, HASH_REC_BYTES);
@@ -367,7 +371,7 @@ namespace inVtero.net.Hashing
                             // only write back 1 page if we can help it
                             fs.Write(buff, 0, DB_READ_SIZE);
                         }
-                        
+
                     } while (i < Count);
 
                     WriteColor(ConsoleColor.Cyan, $"DB entries: {i:N0} - per second {(i / sw.Elapsed.TotalSeconds):N0}");
@@ -385,9 +389,9 @@ namespace inVtero.net.Hashing
             int HashGenCnt = 0;
             int LoadedCnt = 0;
             HashRec[] hashX;
-                
+
             Stopwatch sw = Stopwatch.StartNew();
-           
+
             do
             {
                 Extract next = null;
@@ -399,7 +403,7 @@ namespace inVtero.net.Hashing
                 while (!DoneDirScan || !LoadList.IsEmpty)
                 {
                     LoadList.TryPop(out next);
-                    if(next == null && !DoneDirScan)
+                    if (next == null && !DoneDirScan)
                     {
                         if (po.CancellationToken.IsCancellationRequested) return;
                         Thread.Yield();
@@ -430,6 +434,12 @@ namespace inVtero.net.Hashing
                 #endregion
                 try
                 {
+                    if (CountForMaxBuff > BufferCount)
+                    {
+                        WriteColor(ConsoleColor.Red, $"BuferCount {BufferCount} too SMALL, try something a bit LARGER.  Min size this round was {CountForMaxBuff}.");
+                        source.Cancel();
+                        return;
+                    }
                     hashX = new HashRec[BufferCount];
                 }
                 catch (Exception ex)
@@ -441,62 +451,62 @@ namespace inVtero.net.Hashing
                 }
 
                 //WriteColor(ConsoleColor.White, $"Parallel partition from {StartingAvailable} to {CurrAvailableMax} starting.");
-                Parallel.ForEach(ReadyList, 
+                Parallel.ForEach(ReadyList,
                 (hashFile) =>
-                    //for (int i = StartingAvailable; i < CurrAvailableMax; i++)
+                //for (int i = StartingAvailable; i < CurrAvailableMax; i++)
+                {
+                    if (po.CancellationToken.IsCancellationRequested)
+                        return;
+
+                    Interlocked.Increment(ref LoadedCnt);
+                    foreach (var ms in hashFile.Sections)
                     {
-                        if (po.CancellationToken.IsCancellationRequested)
-                            return;
+                        // ONLY hash CODE/EXEC file sections & PEHeader
+                        if (!ms.IsCode && !ms.IsExec)
+                            continue;
 
-                        Interlocked.Increment(ref LoadedCnt);
-                        foreach (var ms in hashFile.Sections)
+                        if (ms.RawFileSize <= 0)
                         {
-                            // ONLY hash CODE/EXEC file sections & PEHeader
-                            if (!ms.IsCode && !ms.IsExec)
-                                continue;
-
-                            if (ms.RawFileSize <= 0)
-                            {
-                                LogEx(0, $"Compressed/malishous PE {hashFile.FileName} is too small.  Consider manual review of section [{ms.Name}] (e.g. UPX will overlap sections so we will hash it on next pass, TODO: UPX decoder).");
-                                continue;
-                            }
-
-                            //var tot = (int)FractHashTree.TotalHashesForSize(ms.RawFileSize, MinHashSize);
-
-                            //var myCnt = Interlocked.Add(ref HashGenCnt, tot);
-                            //var fht = new FractHashTree(hashFile.FileName, ms, MinHashSize, GetHP);
-                            //var dht = fht.DumpRecTree();
-                            //var len = dht.Count();
-                            //var myLim = Interlocked.Add(ref HashGenCnt, len);
-                            //dht.CopyTo(0, hashX, myLim - len, len);
-
-                            var ReadSize = ms.VirtualSize;
-                            var BufferSize = (int)((ReadSize + 0xfff) & ~0xfff);
-                            var memBuff = new byte[BufferSize];
-
-                            using (var fread = new FileStream(hashFile.FileName, FileMode.Open, FileAccess.Read, FileShare.Read, PAGE_SIZE))
-                            {
-                                fread.Seek(ms.RawFilePointer, SeekOrigin.Begin);
-                                fread.Read(memBuff, 0, (int)ReadSize);
-                            }
-
-                            var recs = FractHashTree.CreateRecsFromMemory(memBuff, MinHashSize, GetHP, hashFile.rID, 0, 64, false);
-                            if(HashGenCnt + recs.Length > hashX.Length)
-                            {
-                                LoadList.Push(hashFile);
-                                break;
-                            }
-
-                            var myLim = Interlocked.Add(ref HashGenCnt, recs.Length);
-                            recs.CopyTo(hashX, myLim - recs.Length);
-
-                            //FractHashTree.CreateRecsFromFile(hashFile.FileName, ms, MinHashSize, tot, hashX, myCnt - tot, GetHP);
-
-                            if ((LoadedCnt % 100) == 0 && sw.Elapsed.TotalSeconds > 0)
-                                WriteColor(ConsoleColor.Green, $"HashGen entries: {HashGenCnt:N0} - per second { ((TotalHashGenCount + HashGenCnt) / sw.Elapsed.TotalSeconds):N0}");
-                        //}
+                            LogEx(0, $"Compressed/malishous PE {hashFile.FileName} is too small.  Consider manual review of section [{ms.Name}] (e.g. UPX will overlap sections so we will hash it on next pass, TODO: UPX decoder).");
+                            continue;
                         }
-                    });
+
+                        //var tot = (int)FractHashTree.TotalHashesForSize(ms.RawFileSize, MinHashSize);
+
+                        //var myCnt = Interlocked.Add(ref HashGenCnt, tot);
+                        //var fht = new FractHashTree(hashFile.FileName, ms, MinHashSize, GetHP);
+                        //var dht = fht.DumpRecTree();
+                        //var len = dht.Count();
+                        //var myLim = Interlocked.Add(ref HashGenCnt, len);
+                        //dht.CopyTo(0, hashX, myLim - len, len);
+
+                        var ReadSize = ms.VirtualSize;
+                        var BufferSize = (int)((ReadSize + 0xfff) & ~0xfff);
+                        var memBuff = new byte[BufferSize];
+
+                        using (var fread = new FileStream(hashFile.FileName, FileMode.Open, FileAccess.Read, FileShare.Read, PAGE_SIZE))
+                        {
+                            fread.Seek(ms.RawFilePointer, SeekOrigin.Begin);
+                            fread.Read(memBuff, 0, (int)ReadSize);
+                        }
+
+                        var recs = FractHashTree.CreateRecsFromMemory(memBuff, MinHashSize, GetHP, hashFile.rID, 0, 0, false);
+                        if (HashGenCnt + recs.Length > hashX.Length)
+                        {
+                            LoadList.Push(hashFile);
+                            break;
+                        }
+
+                        var myLim = Interlocked.Add(ref HashGenCnt, recs.Length);
+                        recs.CopyTo(hashX, myLim - recs.Length);
+
+                        //FractHashTree.CreateRecsFromFile(hashFile.FileName, ms, MinHashSize, tot, hashX, myCnt - tot, GetHP);
+
+                        if ((LoadedCnt % 100) == 0 && sw.Elapsed.TotalSeconds > 0)
+                            WriteColor(ConsoleColor.Green, $"HashGen entries: {HashGenCnt:N0} - per second { ((TotalHashGenCount + HashGenCnt) / sw.Elapsed.TotalSeconds):N0}");
+                        //}
+                    }
+                });
                 if (po.CancellationToken.IsCancellationRequested) return;
 
                 TotalHashGenCount += HashGenCnt;
@@ -514,7 +524,6 @@ namespace inVtero.net.Hashing
             WriteColor(ConsoleColor.Green, $"Finished Files/Hashes {LoadedCnt:N0}/{TotalHashGenCount:N0}.  HashGen: {(TotalHashGenCount / sw.Elapsed.TotalSeconds):N0} per second.");
             return;
         }
-
         void LogEx(int Level, string message)
         {
             LoadExceptions.Add(message);
@@ -585,10 +594,14 @@ namespace inVtero.net.Hashing
                     rv = Extract.IsBlockaPE(block);
                     if (rv != null)
                     {
+                        int newID = 0;
                         // also populate the meta DB
-                        var newID = MDB.AddFileInfo(aPath, MetaInfoString);
-                        if (newID < 0)
-                            return null;
+                        if (DoMetaCollection)
+                        {
+                            newID = MDB.AddFileInfo(aPath, InfoString);
+                            if (newID < 0)
+                                return null;
+                        }
 
                         rv.rID = newID;
                         rv.FileName = aPath;
@@ -605,12 +618,11 @@ namespace inVtero.net.Hashing
             return rv;
         }
 
-        void RecursiveGenerate(string aPath, ParallelOptions po)
+        public void RecursiveGenerate(string aPath, ParallelOptions po)
         {
             var TmpList = new List<string>();
             var CheckedList = new List<string>();
             IEnumerable<string> files = null;
-
             try
             {
                 // First get the file list inclusive of our file extensions list
@@ -779,39 +791,6 @@ namespace inVtero.net.Hashing
             return written;
         }
 
-        #region Compare Stuff
-        public static IComparer<T> GetICompareer<T>(Comparison<T> comparer)
-        {
-            return new FunctorComparer<T>(comparer);
-        }
-
-        internal sealed class FunctorComparer<T> : IComparer<T>
-        {
-            // Fields
-            private Comparer<T> c;
-            private Comparison<T> comparison;
-
-            // Methods
-            public FunctorComparer(Comparison<T> comparison)
-            {
-                this.c = Comparer<T>.Default;
-                this.comparison = comparison;
-            }
-
-            public int Compare(T x, T y)
-            {
-                return this.comparison(x, y);
-            }
-        }
-        ulong SortMask = 0;
-        public int SortByDBSizeMask(HashRec hx, HashRec hy)
-        {
-
-            ulong xx = hx.Index & SortMask;
-            ulong yy = hy.Index & SortMask;
-
-            return xx == yy ? 0 : xx > yy ? 1 : -1;
-        }
 
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
@@ -851,7 +830,5 @@ namespace inVtero.net.Hashing
             // GC.SuppressFinalize(this);
         }
         #endregion
-        #endregion
-
     }
 }

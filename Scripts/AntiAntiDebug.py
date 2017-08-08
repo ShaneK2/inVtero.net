@@ -41,11 +41,11 @@ vtero = QuickSetup(MemoryDump)
 #_EPROC = proc.xStructInfo("_EPROCESS", psHead - ProcListOffsetOf)
 #print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] " + _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
 
-#xaddr = _EPROC.ActiveProcessLinks.Flink.Value - ProcListOffsetOf
-#_EPROC = proc.xStructInfo("_EPROCESS", xaddr)
-#print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] " + _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
+xaddr = _EPROC.ActiveProcessLinks.Flink.Value - ProcListOffsetOf
+_EPROC = proc.xStructInfo("_EPROCESS", xaddr)
+print "Process ID [" + _EPROC.UniqueProcessId.Value.ToString("X") + "] " + _EPROC.SeAuditProcessCreationInfo.ImageFileName.Name.Value
 
-Vtero.VerboseLevel = 2
+#Vtero.VerboseLevel = 2
 
 
             

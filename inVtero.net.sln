@@ -6,6 +6,9 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVtero.net", "inVtero.net\inVtero.net.csproj", "{BBA65FAD-57B1-4B78-B262-E542A88440D6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "quickdumps", "quickdumps\quickdumps.csproj", "{BAA7175A-C661-40F9-833B-DDDE1826A1F2}"
+	ProjectSection(ProjectDependencies) = postProject
+		{F2CD767A-D27B-44D6-A56E-363AB2DE0C51} = {F2CD767A-D27B-44D6-A56E-363AB2DE0C51}
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "3rdParty", "3rdParty", "{9482F2E8-FF68-4A4F-9126-EED6D12D26EB}"
 	ProjectSection(SolutionItems) = preProject
@@ -25,6 +28,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{9214
 	ProjectSection(SolutionItems) = preProject
 		Scripts\Analyze.py = Scripts\Analyze.py
 		Scripts\AntiAntiDebug.py = Scripts\AntiAntiDebug.py
+		Scripts\AzureLoad.py = Scripts\AzureLoad.py
 		Scripts\Basic.py = Scripts\Basic.py
 		Scripts\Capstone.py = Scripts\Capstone.py
 		Scripts\CloudLeech.py = Scripts\CloudLeech.py
@@ -40,6 +44,11 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dia2Sharp", "Dia2Sharp\Dia2Sharp.csproj", "{F2CD767A-D27B-44D6-A56E-363AB2DE0C51}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVteroUI", "inVteroUI\inVteroUI.csproj", "{93055C93-5A53-429B-AF8F-3DE7DB676395}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{42B25291-76EE-42A3-82FA-66A913CFA570}"
+	ProjectSection(SolutionItems) = preProject
+		Scripts\tests\bitmap.py = Scripts\tests\bitmap.py
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -102,6 +111,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{42B25291-76EE-42A3-82FA-66A913CFA570} = {92143A5B-B728-4B44-BA13-317A8A2F6184}
 	EndGlobalSection
 	GlobalSection(Performance) = preSolution
 		HasPerformanceSessions = true

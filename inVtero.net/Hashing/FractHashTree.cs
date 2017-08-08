@@ -34,17 +34,57 @@ namespace inVtero.net.Hashing
         //HashLib.IHash[] HPs;
         public ConcurrentDictionary<int, List<HashRecord>> hashes;
 
+        public static List<HashRec>[] CreateRecsFromMemoryPartion(byte[] MemPage, int BlockSize, Func<HashLib.IHash> getHP, int rID = 0)
+        {
+            var rv = new List<HashRec>[256];
 
-        public static HashRec[] CreateRecsFromMemory(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP, int rID = 0, long VA = 0, int OnlySize = 0, bool PreSerialize = false)
+            if (MemPage == null)
+                return rv;
+
+            // TESTING
+            int RawSize = MemPage.Length;
+            var TotalHashs = BlockCount(RawSize, BlockSize);
+            if (getHP == null)
+                getHP = new Func<HashLib.IHash>(() => { return HashLib.HashFactory.Crypto.CreateTiger2(); });
+
+            HashLib.IHash localHashProv;
+            var minBlockSize = BlockSize;
+            localHashProv = getHP();
+
+            localHashProv.Initialize();
+
+            for (int arri = 0; arri < TotalHashs; arri++)
+            {
+                localHashProv.TransformBytes(MemPage, arri * BlockSize, BlockSize);
+                var hashBytes = localHashProv.TransformFinal().GetBytes();
+
+                if (rv[hashBytes[0]] == null)
+                    rv[hashBytes[0]] = new List<HashRec>();
+
+                rv[hashBytes[0]].Add(new HashRec(hashBytes, (uint) BlockSize, rID));
+            }
+            return rv;
+        }
+
+        public static HashRec[] CreateRecsFromMemory(byte[] MemPage, int minBlockSize, Func<HashLib.IHash> getHP, int rID = 0, long VA = 0, int OnlySize = 0, bool PreSerialize = false, bool FullHashes = false)
         {
             if (MemPage == null)
                 return null;
 
-            // TESTING
-            OnlySize = 64;
             //var LevelCount = 1;
+
+
             int RawSize = MemPage.Length;
             var TotalHashs = BlockCount(RawSize, minBlockSize);
+
+            var sHash = new HashRec[TotalHashs];
+
+            if (OnlySize != 0)
+            {
+                minBlockSize = OnlySize;
+                TotalHashs = BlockCount(RawSize, minBlockSize);
+                sHash = new HashRec[TotalHashs];
+            }
 
             //var topCnt = BlockCount(RawSize, PAGE_SIZE);
             if (getHP == null)
@@ -56,17 +96,9 @@ namespace inVtero.net.Hashing
             */
             HashLib.IHash localHashProv;
 
-            var sHash = new HashRec[TotalHashs];
-
-            //if(OnlySize != 0)
-            //{
-                minBlockSize = OnlySize;
-                //sHash = new HashRec[TotalHashs];
-            //}
-
             // smallest to largest orginization 
-           // for (int i = 0; i < LevelCount; i++)
-                localHashProv = getHP();
+            // for (int i = 0; i < LevelCount; i++)
+            localHashProv = getHP();
 
             //for (byte lvl = 0; lvl < LevelCount; lvl++)
             //{
@@ -79,13 +111,19 @@ namespace inVtero.net.Hashing
 
                 for (int arri = 0; arri < TotalHashs; arri++)
                 {
-                    localHashProv.TransformBytes(MemPage, arri * OnlySize, OnlySize);
+                    localHashProv.TransformBytes(MemPage, arri * minBlockSize, minBlockSize);
                     var hashBytes = localHashProv.TransformFinal().GetBytes();
 
                     sHash[arri] = new HashRec(hashBytes, 0, rID);
 
+                    if (VA != 0)
+                        sHash[arri].Address = VA + (arri * minBlockSize);
+
+                    //if (!FullHashes)
+                    //    sHash[arri].FullHash = null;
+
                     // trying to reduce some load in the DB commit path
-                    if(PreSerialize)
+                    if (PreSerialize)
                         sHash[arri].Serialized = HashRec.ToByteArr(sHash[arri]);
                 }
             //}

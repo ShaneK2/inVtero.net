@@ -22,6 +22,7 @@ using static System.Console;
 using inVtero.net.Support;
 using inVtero.net.Specialties;
 using static inVtero.net.MagicNumbers;
+using inVtero.net.Hashing;
 
 namespace inVtero.net
 {
@@ -520,4 +521,50 @@ namespace inVtero.net
         WriteBack       = 6
     }
     #endregion
+
+    public class CompareHelp
+    {
+        public static IComparer<T> GetICompareer<T>(Comparison<T> comparer)
+        {
+            return new FunctorComparer<T>(comparer);
+        }
+
+        internal sealed class FunctorComparer<T> : IComparer<T>
+        {
+            // Fields
+            private Comparer<T> c;
+            private Comparison<T> comparison;
+
+            // Methods
+            public FunctorComparer(Comparison<T> comparison)
+            {
+                this.c = Comparer<T>.Default;
+                this.comparison = comparison;
+            }
+
+            public int Compare(T x, T y)
+            {
+                return this.comparison(x, y);
+            }
+        }
+        public static ulong SortMask = 0;
+        public static int SortByDBSizeMask(HashRec hx, HashRec hy)
+        {
+
+            ulong xx = hx.Index & SortMask;
+            ulong yy = hy.Index & SortMask;
+
+            return xx == yy ? 0 : xx > yy ? 1 : -1;
+        }
+        public static int SortByFull(HashRec hx, HashRec hy)
+        {
+            ulong hx2 = BitConverter.ToUInt64(hx.FullHash, 8);
+            ulong hx3 = BitConverter.ToUInt64(hx.FullHash, 16);
+
+            ulong hy2 = BitConverter.ToUInt64(hy.FullHash, 8);
+            ulong hy3 = BitConverter.ToUInt64(hy.FullHash, 16);
+
+            return (hx.CompressedHash.CompareTo(hy.CompressedHash) + hx2.CompareTo(hy2) + hx3.CompareTo(hy3));
+        }
+    }
 }

@@ -25,7 +25,7 @@ namespace inVtero.net.Hashing
                 //new XAttribute(xFullName, File.FullName),
                 string.IsNullOrWhiteSpace(File.Name) ? null : new XAttribute(xName, File.Name),
                 HashID != 0 ? null : new XAttribute(AttributeNames.xHashID, HashID),
-                string.IsNullOrWhiteSpace(Info) ? null : new XAttribute(AttributeNames.xInfo, Info.GetHashCode().ToString("X")),
+                string.IsNullOrWhiteSpace(Info) ? null : new XAttribute(AttributeNames.xiID, Info.GetHashCode().ToString("X")),
                 File.GetXElement(),
                 fVerInfo.GetXElement()
                 );

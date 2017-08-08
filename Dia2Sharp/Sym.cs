@@ -32,7 +32,7 @@ namespace Dia2Sharp
         const string defName = "Value";
         const string defAddr = "vAddress";
 
-        public Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
+        public Dictionary<string, (int Position, int Length)> StructInfo = new Dictionary<string, (int, int)>();
 
         public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_UNDNAME)
         {
@@ -519,12 +519,13 @@ namespace Dia2Sharp
         /// <param name="Member">Pcb.DirectoryTableBase</param>
         /// <returns>Tuple of Position & Length </returns>
 
-        public Tuple<int, int> StructMemberInfo(string PDBFile, string Struct, string Member)
+        public (int Position, int Length) StructMemberInfo(string PDBFile, string Struct, string Member)
         {
             IDiaSession Session;
             IDiaSymbol Master = null;
             IDiaEnumSymbols EnumSymbols = null;
             uint compileFetched = 0;
+            var rv = ValueTuple.Create(0, 0);
 
             var result = from symx in StructInfo
                          where symx.Key.EndsWith(Member)
@@ -537,7 +538,7 @@ namespace Dia2Sharp
             foo.loadDataFromPdb(PDBFile);
             foo.openSession(out Session);
             if (Session == null)
-                return null;
+                return rv;
 
             Session.findChildren(Session.globalScope, SymTagEnum.SymTagNull, Struct, 0, out EnumSymbols);
             do
@@ -550,7 +551,7 @@ namespace Dia2Sharp
                 WriteLine($"Dumping Type [{Master.name}] Len [{Master.length}]");
 #endif
                 if (!StructInfo.ContainsKey(Master.name))
-                    StructInfo.Add(Master.name, Tuple.Create<int, int>(0, (int)Master.length));
+                    StructInfo.Add(Master.name, (Position:0, Length:(int)Master.length));
 
                 DumpStructs(Master, Master.name, Struct, 0);
             } while (compileFetched == 1);
@@ -589,18 +590,18 @@ namespace Dia2Sharp
                 WriteLine($"Pos = [{Pos}] Name = [{currName}] Len [{sType.length}], Type [{typeName}]");
 #endif
                 if (!StructInfo.ContainsKey(currName))
-                    StructInfo.Add(currName, Tuple.Create<int, int>(Pos, (int)sType.length));
+                    StructInfo.Add(currName, (Pos, (int)sType.length));
                 DumpStructs(sType, currName, typeName, Pos);
 
             } while (compileFetched == 1);
         }
 
-        public Tuple<String, ulong, ulong> FindSymByAddress(ulong Address, String PDBFile, ulong LoadAddr = 0)
+        public (string Name, ulong Address, ulong Length) FindSymByAddress(ulong Address, String PDBFile, ulong LoadAddr = 0)
         {
-            Tuple<string, ulong, ulong> rv = null;
             IDiaSession Session;
             IDiaSymbol Sym;
             IDiaEnumSymbolsByAddr pEnumAddr;
+            var rv = ValueTuple.Create(string.Empty, ulong.MinValue, ulong.MinValue);
 
             var foo = new DiaSource();
             foo.loadDataFromPdb(PDBFile);
@@ -618,14 +619,12 @@ namespace Dia2Sharp
             if (Sym == null)
                 return rv;
 
-            rv = new Tuple<string, ulong, ulong>(Sym.name, Sym.virtualAddress, Sym.length);
-
-            return rv;
+            return (Name:Sym.name, Address:Sym.virtualAddress, Length: Sym.length);
         }
 
-        public List<Tuple<String, ulong, ulong>> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
+        public List<(string Name, ulong Address, ulong Length)> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
         {
-            List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
+            List<(string Name,ulong Address,ulong Length)> rv = new List<(string,ulong,ulong)>();
             IDiaSession Session;
             IDiaEnumSymbols EnumSymbols = null;
             IDiaSymbol Master = null;
@@ -655,7 +654,7 @@ namespace Dia2Sharp
 
                 var len = Master.length;
 
-                rv.Add(Tuple.Create<String, ulong, ulong>(Master.name, Master.virtualAddress, len));
+                rv.Add((Name:Master.name, Address:Master.virtualAddress, Length:len));
 #if DEBUGX
                 ForegroundColor = ConsoleColor.White;
                 WriteLine($"Name = [{Master.name}] VA = {Master.virtualAddress}");
