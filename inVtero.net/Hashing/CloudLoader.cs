@@ -18,8 +18,8 @@ using static inVtero.net.MagicNumbers;
 using System.Net;
 using System.Net.Sockets;
 using inVtero.net.Support;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+//using Newtonsoft.Json;
+//using Newtonsoft.Json.Linq;
 
 namespace inVtero.net.Hashing
 {
