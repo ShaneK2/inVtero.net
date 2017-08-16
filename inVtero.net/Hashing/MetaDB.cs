@@ -10,6 +10,7 @@ using System.Xml;
 using System.Xml.Serialization;
 using System.Collections.ObjectModel;
 using System.Threading;
+using Reloc;
 
 namespace inVtero.net.Hashing
 {
@@ -35,6 +36,8 @@ namespace inVtero.net.Hashing
         public int MinHashSize;
         public int LoadBufferCount;
 
+        public ReReDB ReRe;
+
         public HashDB HDB { get; }
         public CloudDB CDB { get; }
 
@@ -51,12 +54,7 @@ namespace inVtero.net.Hashing
 
         int currHID;
         public int CurrHashID
-        {
-            get
-            {
-                return Interlocked.Increment(ref currHID);
-            }
-        }
+        { get { return Interlocked.Increment(ref currHID); } }
 
         public void AddMetaInfoString(string Info)
         {
@@ -66,13 +64,13 @@ namespace inVtero.net.Hashing
 
             if (DupCheck.Count() < 1)
                 infoStrings.Add(new XElement(ElementNames.xInfo,
-                    new XAttribute(AttributeNames.xiID, Info.GetHashCode().ToString("X")), 
+                    new XAttribute(AttributeNames.xiID, Info.GetHashCode().ToString("X")),
                     Info));
         }
         public int AddFileInfo(string FilePath, string metaInfo)
         {
             var finfo = new FileInfo(FilePath);
-            
+
             var entry = MetaItem.GenMetaDataEntry(finfo, 0, metaInfo);
 
             var rv = CurrHashID;
@@ -126,10 +124,17 @@ namespace inVtero.net.Hashing
             }
             infoString = NewInfoString;
             MinHashSize = minHashSize;
+
+            ReRe = new ReReDB(RelocName);
+
             HDB = new HashDB(MinHashSize, HDBName, RelocName, DBSize);
+            HDB.ReRe = ReRe;
+
             Loader = new FileLoader(this, LoadBufferCount, infoString);
-            cLoader = new CloudLoader(Loader, MinHashSize);
+            cLoader = new CloudLoader(Loader, MinHashSize, RelocName);
             cLoader.InfoString = infoString;
+
+            ReRe.AzureCnx = cLoader;
         }
 
         public void Save()
@@ -139,7 +144,7 @@ namespace inVtero.net.Hashing
             HDB.Save();
 
             mData.SetAttributeValue(AttributeNames.xNextHashID, currHID);
-            
+
             mData.Save(MDBName);
             Misc.WriteColor(ConsoleColor.Cyan, ConsoleColor.Black, $"Done. Commited {mData.Descendants().Count():N0} XML entries to disk.");
         }
@@ -167,7 +172,7 @@ namespace inVtero.net.Hashing
 
         public const string sMetaData = "MD";
         public static XName xMetaData = sMetaData;
-            
+
         public const string sFilenfo = "FileInfo";
         public static XName xFileInfo = sFilenfo;
         public const string sVerInfo = "VerInfo";

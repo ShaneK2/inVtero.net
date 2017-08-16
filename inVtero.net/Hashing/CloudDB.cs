@@ -1,17 +1,50 @@
 ﻿using Microsoft.Azure;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
+using Microsoft.WindowsAzure;
+using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Blob;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.WindowsAzure.Storage.Shared.Protocol;
 
 namespace inVtero.net.Hashing
 {
     public class CloudDB
     {
+        public class RelocEntry : TableEntity
+        {
+            public RelocEntry() { }
+            public RelocEntry((string PK, string RK, ulong ImageBase, uint TimeStamp, byte[] Data) rec, string metaInfo = null)
+            {
+                PartitionKey = rec.PK;
+                RowKey = rec.RK;
+                TimeStamp = rec.TimeStamp;
+                ImageBase = rec.ImageBase;
+                relocData = rec.Data;
+                MetaInfo = metaInfo;
+            }
+
+            // not a property so should avoid Azure serializer 
+            public byte[] relocData;
+
+            public string RelocData
+            {
+                get { return Convert.ToBase64String(relocData); }
+                set { relocData = Convert.FromBase64String(value); }
+            }
+            public ulong ImageBase { get; set; }
+            public uint TimeStamp { get; set; }
+
+            public string MetaInfo { get; set; }
+        }
+
+
+
         public class HashEntity : TableEntity
         {
             public HashEntity() { }
@@ -90,6 +123,21 @@ namespace inVtero.net.Hashing
             return tableClient.GetTableReference(TableName);
         }
 
+        public static CloudBlobClient BlobClient()
+        {
+            CloudStorageAccount storageAccount = CloudStorageAccount.Parse(CloudConfigurationManager.GetSetting("StorageConnectionString"));
+
+            // Create service client for credentialed access to the Blob service.
+            CloudBlobClient blobClient = storageAccount.CreateCloudBlobClient();
+            return blobClient;
+        }
+
+        public static CloudBlobClient ReadOnlyBlobClient()
+        {
+            var endPoint = new Uri("https://invtero.blob.core.windows.net/?sv=2017-04-17&ss=b&srt=co&sp=rl&se=2020-08-13T02:22:11Z&st=2017-08-12T18:22:11Z&spr=https&sig=K7l987x0SwdvI7CmDdwXZmtrEcSESw8Z0H6zl5HOMDs%3D");
+            return new CloudBlobClient(endPoint);
+        }
+
         /// <summary>
         /// If you're going to create your own table's in Azure, Create Table 
         /// </summary>
@@ -98,6 +146,7 @@ namespace inVtero.net.Hashing
         public static CloudTable CreateTable(string tableName)
         {
             ServicePointManager.UseNagleAlgorithm = false;
+
             var storageAccount = CreateStorageAccountFromConnectionString(CloudConfigurationManager.GetSetting("StorageConnectionString"));
 
             // Create a table client for interacting with the table service
@@ -107,7 +156,7 @@ namespace inVtero.net.Hashing
             tableClient.DefaultRequestOptions.RequireEncryption = false;
             tableClient.DefaultRequestOptions.MaximumExecutionTime = new TimeSpan(0, 30, 0);
             tableClient.DefaultRequestOptions.ServerTimeout = new TimeSpan(0, 30, 0);
-            
+
             var tableServicePoint = ServicePointManager.FindServicePoint(storageAccount.TableEndpoint);
             tableServicePoint.UseNagleAlgorithm = false;
             tableServicePoint.ConnectionLimit = 1024;

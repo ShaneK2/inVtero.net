@@ -554,7 +554,7 @@ namespace inVtero.net
         long ssPos, caPos, foPos, fnPos, flagBitPos, flagsOffsetPos, flagsLength;
         long startingVPNPos, endingVPNPPos, startHighPos, endHighPos;
         long rightPos, leftPos;
-        int vadLength;
+        int vadLength; 
 
         public void InitSymbolsForVad()
         {

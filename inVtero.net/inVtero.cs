@@ -465,7 +465,7 @@ namespace inVtero.net
                                     {
                                         WriteColor(proc.ProcessID == 4 ? ConsoleColor.Yellow : ConsoleColor.Red, ConsoleColor.Black, $"{Environment.NewLine}{proc} Validated to {rate:N3}");
                                         if (Vtero.VerboseLevel > 0 && proc.HashRecords != null && proc.HashRecords.Length > 0)
-                                        {
+                                         {
                                             WriteColor(ConsoleColor.Yellow, ConsoleColor.Black, $"{re}");
                                             if (Vtero.VerboseLevel > 1)
                                             {

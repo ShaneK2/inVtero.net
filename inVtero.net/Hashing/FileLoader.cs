@@ -59,7 +59,7 @@ namespace inVtero.net.Hashing
 
         int MinHashSize;
         string DBFile;
-
+         
         // MANY!
         public int BufferCount = 1000 * 1000 * 10;
 

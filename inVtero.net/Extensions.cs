@@ -20,11 +20,55 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
+using System.Threading;
+using static inVtero.net.Misc;
 
 namespace inVtero.net
 {
     public static class Extensions
     {
+        public static Func<T, U> WithRetries<T, U>(this Func<T, U> func, int intervalInMilliseconds, int maxAttempts, string message)
+        {
+            U InnerFunc(T Arg)
+            {
+                // ensure at least one attempt is made
+                if (maxAttempts <= 0) maxAttempts = 1;
+                var success = false;
+                var attempts = 0;
+                var result = default(U);
+
+                while (!success && attempts < maxAttempts)
+                {
+                    attempts++;
+                    try
+                    {
+                        if (Vtero.VerboseLevel > 3)
+                            WriteColor(ConsoleColor.White, $"In WithRetries for {message}; attempt number {attempts} of {maxAttempts} maximum attempts.");
+                        result = func(Arg);
+                        success = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        var errMsg = $"Retry attempt {attempts} experienced the following exception: {ex.Message} | ";
+                        if (Vtero.VerboseLevel > 1)
+                            WriteColor(ConsoleColor.Yellow, errMsg);
+
+                        if (attempts >= maxAttempts)
+                        {
+                            errMsg += $"{message} Maximum retry count of {maxAttempts} with an interval of {intervalInMilliseconds} milliseconds was met. {ex.Message}";
+
+                            WriteColor(ConsoleColor.Red, errMsg);
+
+                            throw new Exception(errMsg);
+                        }
+                        Thread.Sleep(intervalInMilliseconds);
+                    }
+                }
+                return result;
+            }
+            return (inputArg) => InnerFunc(inputArg);
+        }
+
         public static IEnumerable<T> IntersectMany<T>(this IEnumerable<IEnumerable<T>> sets) where T : IComparable
         {
             var temp = new HashSet<T>(sets.ElementAt(0));

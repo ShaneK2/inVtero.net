@@ -79,8 +79,6 @@ namespace inVtero.net
 
             MinBlockSize = minBlockSize;
 
-            ReRe = new ReReDB(relocFolder);
-
             // arbitrarially big
             BDBEntriesMask = (DBEntriesMask << 3) | 0xfff;
             //r = new RoarCLI();

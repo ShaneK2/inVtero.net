@@ -36,7 +36,7 @@ namespace inVtero.net.Support
             }
         }
 
-
+         
         public static string POST(string paramz = null, string url = "https://invterocheck.azurewebsites.net/api/check/hash")
         {
             var request = (HttpWebRequest)WebRequest.Create(url);
@@ -52,22 +52,16 @@ namespace inVtero.net.Support
                 dataStream.Write(byteArray, 0, byteArray.Length);
             
             long length = 0;
-            try {
-                using (var response = (HttpWebResponse)request.GetResponse())
+            using (var response = (HttpWebResponse)request.GetResponse())
+            {
+                length = response.ContentLength;
+                using (var responseStream = response.GetResponseStream())
                 {
-                    length = response.ContentLength;
-                    using (var responseStream = response.GetResponseStream())
-                    {
-                        var reader = new StreamReader(responseStream, Encoding.UTF8);
-                        return reader.ReadToEnd();
-                    }
+                    var reader = new StreamReader(responseStream, Encoding.UTF8);
+                    return reader.ReadToEnd();
                 }
             }
-            catch (WebException ex)
-            {
-                WriteColor(ConsoleColor.Yellow, $"error with server post. {ex.ToString()}");
-            }
             return string.Empty;
-        }
+        } 
     }
 }

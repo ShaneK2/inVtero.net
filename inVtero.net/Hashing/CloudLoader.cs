@@ -18,8 +18,9 @@ using static inVtero.net.MagicNumbers;
 using System.Net;
 using System.Net.Sockets;
 using inVtero.net.Support;
-//using Newtonsoft.Json;
-//using Newtonsoft.Json.Linq;
+using System.Globalization;
+using Microsoft.WindowsAzure.Storage.Blob;
+using inVtero.net;
 
 namespace inVtero.net.Hashing
 {
@@ -40,6 +41,7 @@ namespace inVtero.net.Hashing
         long TotalUpdated = 0;
         FileLoader FL;
         CloudTable QueryTable;
+        string RelocDir;
 
         public CloudLoader()
         {
@@ -51,20 +53,145 @@ namespace inVtero.net.Hashing
             ThreadPool.SetMinThreads(256, 256);
         }
 
-        public CloudLoader(FileLoader fl, int BlockSize) :this()
+        public CloudLoader(FileLoader fl, int BlockSize, string Relocs) :this()
         {
             FL = fl;
             MinHashSize = BlockSize;
+            RelocDir = Relocs;
+        }
+
+        public (ulong ImageBase, byte[] RelocData) FindReloc(string FileName, uint TimeDateStamp, bool Is64)
+        {
+            IEnumerable<IListBlobItem> blobs = null;
+            bool KeepTrying = false;
+            int retryCount = 10;
+
+            (ulong ImageBase, byte[] RelocData) rv = (0, null);
+
+            var ContainerName = $"relocs{(Is64 ? 64 : 32)}/{FileName}";
+
+            // try to locate a matching blob
+            var blobcli = ReadOnlyBlobClient();
+
+            do { try {
+                blobs = blobcli.ListBlobs(ContainerName, true, BlobListingDetails.Metadata); 
+            }catch (SocketException se) {
+                    KeepTrying = true;
+                    retryCount--;
+                    if (retryCount <= 0)
+                        KeepTrying = false;
+            } } while (KeepTrying == true);
+
+            foreach(CloudBlob blob in blobs)
+            {
+                if(blob.Metadata["TimeStamp"] == TimeDateStamp.ToString("X"))
+                {
+                    if(Vtero.VerboseLevel > 0)
+                        WriteColor(ConsoleColor.Green, $"Found and using cloud based relocation data {FileName}-{TimeDateStamp:X}");
+                    else
+                        WriteColor(ConsoleColor.Yellow, $"No cloud relocations for {FileName}-{TimeDateStamp:X}");
+
+                    var OrigImageBaseStr = blob.Metadata["OrigImageBase"];
+                    rv.ImageBase = ulong.Parse(OrigImageBaseStr, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+
+                    var ms = new MemoryStream();
+                    blob.DownloadToStream(ms);
+
+                    rv.RelocData = ms.ToArray();
+                }
+            }
+            return rv;
+        }
+
+        /// <summary>
+        /// Store's local relocation fragments to cloud blobs and assigns meta data
+        /// </summary>
+        public void StoreRelocs()
+        {
+            int totalLen = 0;
+            int compleated = 0;
+
+            void BatchRelocUpload(string folder, string[] relocs, CloudBlobContainer RelocBlobs)
+            {
+                var batch = new List<(string PK, string RK, ulong ImageBase, uint TimeStamp, byte[] Data)>();
+
+                Parallel.For(0, relocs.Length, (r) =>
+                {
+                    bool KeepTrying = false;
+                    int retryCount = 10;
+
+                    // isolate the name and timestamp out of the format
+                    // name-maybe-multiple-das-0xbase-0xtimestamp.reloc
+                    var fname = Path.GetFileName(relocs[r]);
+                    var split = fname.Split('-');
+
+                    var OrigImageBaseStr = split[split.Length - 2];
+                    //var OrigImageBaseValue = ulong.Parse(OrigImageBaseStr, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+
+                    var TimeStampStr = split[split.Length - 1].Split('.')[0];
+                    //var TimeStampValue = uint.Parse(TimeStampStr, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+
+                    // we back up from the appended 2 values in the name since the name can (and often) contains our seporator '-'
+                    var OrigName = fname.Substring(0, fname.LastIndexOf('-', fname.LastIndexOf('-') - 1));
+
+                    var block = RelocBlobs.GetBlockBlobReference(fname);
+                    block.Properties.ContentType = "application/octet-stream";
+
+                    block.Metadata.Add("TimeStamp", TimeStampStr);
+                    block.Metadata.Add("OrigImageBase", OrigImageBaseStr);
+
+                    if(!string.IsNullOrWhiteSpace(FL.InfoString))
+                        block.Metadata.Add("MetaString", FL.InfoString);
+
+                    do { try {
+                        block.UploadFromFile(Path.Combine(folder, fname));
+                    } catch (SocketException se) {
+                            KeepTrying = true;
+                            retryCount--;
+                            if (retryCount <= 0)
+                                KeepTrying = false;
+                    } } while (KeepTrying == true);
+
+                    Interlocked.Increment(ref compleated);
+
+                    if (compleated > 0 && (compleated % 100) == 0)
+                        WriteColor($"{(compleated * 100.0 / totalLen):N3}% done.  last item from:[{fname}]");
+                });
+            }
+
+            var blobcli = BlobClient();
+
+            // hopefully less than a couplehundred thousand files per folder :)
+            Parallel.Invoke(() => {
+                var folder = Path.Combine(RelocDir, "32");
+                var relocs = Directory.GetFiles(folder, "*.reloc", SearchOption.AllDirectories);
+                Interlocked.Add(ref totalLen, relocs.Length);
+
+                var c32 = blobcli.GetContainerReference("relocs32");
+                c32.CreateIfNotExists();
+
+                BatchRelocUpload(folder, relocs, c32);
+
+            },() => {
+                var folder = Path.Combine(RelocDir, "64");
+                var relocs = Directory.GetFiles(folder, "*.reloc", SearchOption.AllDirectories);
+                Interlocked.Add(ref totalLen, relocs.Length);
+
+                var c64 = blobcli.GetContainerReference("relocs64");
+                c64.CreateIfNotExists();
+
+                BatchRelocUpload(folder, relocs, c64);
+            }
+
+            );
+
         }
 
         CloudTable GetTable(int BlockSize)
         {
             CloudTable table = null;
 
-            if (BlockSize == 4096)
-                table = CreateTable($"hash4k");
-            else 
-                table = CreateTable($"hash{BlockSize}");
+            table = CreateTable($"hash{BlockSize}");
 
             return table;
         }
@@ -84,7 +211,6 @@ namespace inVtero.net.Hashing
             QueryTable = GetTable(MinHashSize);
             InitialScanFolder = Folder;
             ReadyQueue = new BlockingCollection<List<HashRec>>();
-
 
             source = new CancellationTokenSource();
             FL.source = source;
@@ -148,6 +274,8 @@ namespace inVtero.net.Hashing
             int Count = hashArr.Length;
             var rv = new List<bool>(Count);
 
+            var target = new Func<string, string>((str) => { return WebAPI.POST(str); }).WithRetries(100, 10, $"POST request");
+
             //for (int i = 0; i < hashArr.Length; i++)
             //{
             Parallel.For(0, hashArr.Length, (i) =>
@@ -166,10 +294,13 @@ namespace inVtero.net.Hashing
                             sb.Append($"{(ch.Index >> HASH_SHIFT):x},");
                     }
 
-                    var results = WebAPI.POST(sb.ToString());
-                    //var jr = JObject.Parse(results);
-                    //var ValidArr = from v in jr["HashResults"]["Valid"]
-                    //select v.ToArray();
+
+                    var results = target(sb.ToString());
+
+                    // cut off the uknown stuff it's all bad 
+                    var Verified = results.Substring(0, results.IndexOf('}'));
+
+
                     for (int m = 0; m < hashRegion.InnerList.Count; m++)
                     {
                         var CheckHashes = hashArr[i].Regions[l].InnerList[m];
@@ -177,7 +308,7 @@ namespace inVtero.net.Hashing
                         var checkedArr = new bool[CheckHashes.Length];
                         for (int ch = 0; ch < CheckHashes.Length; ch++)
                         {
-                            if (results.Contains((CheckHashes[ch].Index >> HASH_SHIFT).ToString("x")))
+                            if (Verified.Contains((CheckHashes[ch].Index >> HASH_SHIFT).ToString("x")))
                                 checkedArr[ch] = true;
                         }
 
@@ -210,8 +341,6 @@ namespace inVtero.net.Hashing
             po.MaxDegreeOfParallelism = MaxBatchParallel;
 
             var name = $"hash{MinHashSize}";
-            if (MinHashSize == 4096)
-                name = $"hash4k";
 
             QueryTable = AccessTable(name);
 

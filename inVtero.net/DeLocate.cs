@@ -21,6 +21,7 @@ using System.IO;
 using static System.Console;
 using System.Globalization;
 using System.Collections.Concurrent;
+using inVtero.net.Hashing;
 
 namespace Reloc
 {
@@ -32,33 +33,62 @@ namespace Reloc
         public string Reloc32Dir;
         public string RelocFolder;
 
+        public CloudLoader AzureCnx;
+
         public DeLocate GetLocated(bool Is64, string NormalizedName, uint TimeStamp, ulong CurrVA)
         {
+            ulong OrigImageBase = 0;
+            byte[] reBytes = null;
+
             var RelocFolder = Is64 ? Reloc64Dir : Reloc32Dir;
             var RelocNameGlob = $"{NormalizedName}-*-{TimeStamp:X}.reloc";
 
             if (ReData.ContainsKey(RelocNameGlob))
             {
+                // network and FS failed here before
+                if (ReData[RelocNameGlob] == null)
+                    return null;
+
                 var cachedReRe = new DeLocate(ReData[RelocNameGlob]);
                 cachedReRe.Delta = CurrVA - cachedReRe.OrigImageBase;
                 return cachedReRe;
             }
 
+            // check loal FS if we have this entry
             var RelocFile = Directory.GetFiles(RelocFolder, RelocNameGlob).FirstOrDefault();
-            if (File.Exists(RelocFile))
+            if (!File.Exists(RelocFile))
+            {
+                // look in the cloud
+                var blobData = AzureCnx.FindReloc(NormalizedName, TimeStamp, Is64);
+                if (blobData.RelocData == null)
+                {
+                    // cache a NULL result so we don't retry too hard
+                    ReData.TryAdd(RelocNameGlob, null);
+                    return null;
+                }
+
+                reBytes = blobData.RelocData;
+                OrigImageBase = blobData.ImageBase;
+
+                // cache to disk to avoid network call next time
+                // network blobs are ALL IN CAPS
+                var FullName = $"{NormalizedName.ToUpper()}-{OrigImageBase:X}-{TimeStamp:X}.reloc";
+                File.WriteAllBytes(Path.Combine(RelocFolder, FullName), reBytes);
+            }
+            else
             {
                 // take image base from the file since it can be changed in the header
                 var split = RelocFile.Split('-');
-                var OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-
-                var deLoc = new DeLocate(OrigImageBase, DeLocate.ProcessRelocs(File.ReadAllBytes(RelocFile)));
-                ReData.TryAdd(RelocNameGlob, deLoc);
-
-                var newReRe = new DeLocate(deLoc);
-                newReRe.Delta = CurrVA - newReRe.OrigImageBase;
-                return newReRe;
+                OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+                reBytes = File.ReadAllBytes(RelocFile);
             }
-            return null;
+
+            var deLoc = new DeLocate(OrigImageBase, DeLocate.ProcessRelocs(reBytes));
+            ReData.TryAdd(RelocNameGlob, deLoc);
+
+            var newReRe = new DeLocate(deLoc);
+            newReRe.Delta = CurrVA - newReRe.OrigImageBase;
+            return newReRe;
         }
 
         public ReReDB(string BaseFolder)

@@ -23,23 +23,42 @@ using inVtero.net.Support;
 using inVtero.net.Specialties;
 using static inVtero.net.MagicNumbers;
 using inVtero.net.Hashing;
+using System.Runtime.InteropServices;
 
 namespace inVtero.net
 {
+    public static class MyMarshal
+    {
+        public static void SetField<T, U>(IntPtr ptr, string field, U Value)
+        {
+            // find member offset field on type T
+            var pValue = IntPtr.Add(ptr, Marshal.OffsetOf<T>(field).ToInt32());
+            // copy Value into Field
+            Marshal.StructureToPtr(Value, pValue, false);
+        }
+        public static U GetField<T, U>(IntPtr ptr, string field)
+        {
+            // find member offset field on type T
+            var pValue = IntPtr.Add(ptr, Marshal.OffsetOf<T>(field).ToInt32());
+
+            return (U)Marshal.PtrToStructure(pValue, typeof(U));
+        }
+    }
+
     public static class EnvLimits
     {
         public const int PageCacheMaxEntries = 100000;
         // more than 10Million page table entries in a single address space, somethings going on ?
-        public const long MAX_PageTableEntriesToScan = 10 * 1000000; 
+        public const long MAX_PageTableEntriesToScan = 10 * 1000000;
     }
- 
+
     public static class MagicNumbers
     {
         public const long HIGHEST_USER_ADDRESS = 0x7ffffffeffff;
-        public const int LARGE_PAGE_SIZE = 1024*1024*2;
+        public const int LARGE_PAGE_SIZE = 1024 * 1024 * 2;
         public const int PAGE_SIZE = 0x1000;
-        public const int DB_READ_SIZE = PAGE_SIZE*2; 
-        public const ulong DB_PAGE_MASK = 0xfffUL; 
+        public const int DB_READ_SIZE = PAGE_SIZE * 2;
+        public const ulong DB_PAGE_MASK = 0xfffUL;
         public const int PE_TYPICAL_HEADER_SIZE = 0x400;
         public const int KERNEL_PT_INDEX_START_USUALLY = 256;
         public const int PAGE_SHIFT = 12;
@@ -55,10 +74,10 @@ namespace inVtero.net
 
         // Self ptr's not relevant after Win10 + 2016 update.
         public static long Windows_SelfAsVA = 0xFFFF6FB7DBEDF68;
-        public static int Windows_SelfPtr          = 0x1ED;
-        public static int FreeBSD_RecursiveEntry   = 0x100;
-        public static int OpenBSD_RecursiveEntry   = 0xFF; // if this were Windows that would place the page table in the user range!  
-        public static int NetBSD_RecursiveEntry    = 0xFF; // stop copying OpenBSD ;)! hehe
+        public static int Windows_SelfPtr = 0x1ED;
+        public static int FreeBSD_RecursiveEntry = 0x100;
+        public static int OpenBSD_RecursiveEntry = 0xFF; // if this were Windows that would place the page table in the user range!  
+        public static int NetBSD_RecursiveEntry = 0xFF; // stop copying OpenBSD ;)! hehe
 
         public static long MinEPTPAddr = 0x32; // there is no rule about this but even if just not the zero page would cut the false positives down a lot
                                                // if you miss the EPTP reduce this to 0 or 1 ;)
@@ -78,16 +97,25 @@ namespace inVtero.net
 
         public static void WriteColor(string var)
         {
+            if (!Vtero.VerboseOutput && Vtero.VerboseLevel <= 0)
+                return;
+
             WriteLine(var);
         }
         public static void WriteColor(ConsoleColor ForeGround, string var)
         {
+            if (!Vtero.VerboseOutput && Vtero.VerboseLevel <= 0)
+                return;
+
             if (ForegroundColor != ForeGround)
                 ForegroundColor = ForeGround;
             WriteLine(var);
         }
         public static void WriteColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
         {
+            if (!Vtero.VerboseOutput && Vtero.VerboseLevel <= 0)
+                return;
+
             if (BackgroundColor != BackGround)
                 BackgroundColor = BackGround;
             if (ForegroundColor != ForeGround)
@@ -99,7 +127,7 @@ namespace inVtero.net
         static void LowerBoundOutput()
         {
             const int BarHeight = 5;
-            
+
             var MaxText = (WindowTop + WindowHeight - 1) - BarHeight;
 
             if (CursorTop >= MaxText)
@@ -107,16 +135,19 @@ namespace inVtero.net
                 BackgroundColor = ConsoleColor.Black;
                 var newlines = CursorTop % MaxText;
 
-                for (int i=0; i < newlines; i++)
+                for (int i = 0; i < newlines; i++)
                     WriteLine(" ".PadRight(WindowWidth));
 
-                CursorTop = MaxText-1;
+                CursorTop = MaxText - 1;
             }
             ProgressBarz.RenderConsoleProgress(ProgressBarz.Progress);
         }
 
         public static void WxColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
         {
+            if (!Vtero.VerboseOutput && Vtero.VerboseLevel <= 0)
+                return;
+
             if (BackgroundColor != BackGround)
                 BackgroundColor = BackGround;
             if (ForegroundColor != ForeGround)
@@ -127,6 +158,9 @@ namespace inVtero.net
 
         public static void WColor(ConsoleColor ForeGround, ConsoleColor BackGround, string var)
         {
+            if (!Vtero.VerboseOutput && Vtero.VerboseLevel <= 0)
+                return;
+
             if (BackgroundColor != BackGround)
                 BackgroundColor = BackGround;
             if (ForegroundColor != ForeGround)
@@ -216,7 +250,7 @@ namespace inVtero.net
 
         public static implicit operator HARDWARE_ADDRESS_ENTRY(long x) => new HARDWARE_ADDRESS_ENTRY(x);
         public static implicit operator SLAT_ENTRY(HARDWARE_ADDRESS_ENTRY x) => new SLAT_ENTRY(x);
-        public static implicit operator long (HARDWARE_ADDRESS_ENTRY x) => x.PTE;
+        public static implicit operator long(HARDWARE_ADDRESS_ENTRY x) => x.PTE;
 
         public static HARDWARE_ADDRESS_ENTRY operator +(HARDWARE_ADDRESS_ENTRY lh, long rh)
         {
@@ -265,18 +299,18 @@ namespace inVtero.net
         public bool CopyOnWrite { get { return (PTE & 0x200) != 0; } }
         public bool Unused { get { return (PTE & 0x400) != 0; } }
         public bool Write { get { return (PTE & 0x800) != 0; } }
-        public long PFN { get { return (PTE >> 12) & 0xFFFFFFFFFF; } } 
+        public long PFN { get { return (PTE >> 12) & 0xFFFFFFFFFF; } }
         public long SoftwareWsIndex { get { return (PTE >> 52) & 0x7ff; } }
-        public bool NoExecute { get { return ((ulong) PTE & 0x8000000000000000) != 0; } }
+        public bool NoExecute { get { return ((ulong)PTE & 0x8000000000000000) != 0; } }
         // NEXT is PFN << 12 since were adjusting back to phys address
-        public long NextTableAddress {  get { return PTE & 0xFFFFFFFFFF000; } } // 40 bit address + Offset 12 bits = 52 phys linear address
+        public long NextTableAddress { get { return PTE & 0xFFFFFFFFFF000; } } // 40 bit address + Offset 12 bits = 52 phys linear address
         // Full 48 bit size
         public long NextTable_PFN { get { return (PTE >> 12) & 0xFFFFFFFFFF; } }
         // 2MB entries, should be very typical
         public long twoMB_PFN { get { return (PTE & 0xFFFFFFE00000) >> 21; } }
         // after >> 30 == 3FFFF tot 1GB pages 
         public long GB_PFN { get { return (PTE & 0xFFFFC0000000) >> 30; } }
-        public long AddressOffset {  get { return PTE & 0xfff; } /*set { PTE = PTE &= ~0xfff; PTE |= value & 0xfff; } */ }
+        public long AddressOffset { get { return PTE & 0xfff; } /*set { PTE = PTE &= ~0xfff; PTE |= value & 0xfff; } */ }
     }
 
     public struct SLAT_ENTRY
@@ -298,7 +332,7 @@ namespace inVtero.net
         public long GB_PFN { get { return (SLATEntry & 0xFFFFC0000000) >> 30; } }
         // When this entry point's to another table, this is the phys address of that table
         public long SLAT_NextTable_PFN { get { return (SLATEntry >> 12) & 0xFFFFFFFFFF; } }
-        public bool SuppressVE { get { return ((ulong) SLATEntry & 0x8000000000000000) != 0; } }
+        public bool SuppressVE { get { return ((ulong)SLATEntry & 0x8000000000000000) != 0; } }
     }
     /// <summary>
     /// EPTP for SLAT configuration hypervisors
@@ -310,8 +344,8 @@ namespace inVtero.net
     {
         public long aEPTP;
         public EPTP(long eptp) { aEPTP = eptp; }
-        public EPT_MemType Type { get { return (EPT_MemType) (aEPTP & 0x7); } }
-        public int PageWalkLen { get { return (int) (aEPTP >> 3) & 0x7; } } // 1 less than the length
+        public EPT_MemType Type { get { return (EPT_MemType)(aEPTP & 0x7); } }
+        public int PageWalkLen { get { return (int)(aEPTP >> 3) & 0x7; } } // 1 less than the length
         public bool EPT_AccessDirtyFlagBehaviour { get { return (aEPTP & 0x40) != 0; } }
         public bool ReservedFlagsSet { get { return ((ulong)aEPTP & 0xFFFF000000000F80) != 0; } }
 
@@ -364,7 +398,7 @@ namespace inVtero.net
                 return false;
             return true;
         }
-        
+
         public static bool IsValidEntry(long SLATe)
         {
             if ((0xF000000000007 & (ulong)SLATe) != 0)
@@ -406,14 +440,18 @@ namespace inVtero.net
         long maxAddressablePageNumber;
 
         [ProtoIgnore]
-        public long MaxAddressablePageNumber { get {
+        public long MaxAddressablePageNumber
+        {
+            get
+            {
 
                 if (maxAddressablePageNumber != 0)
                     return maxAddressablePageNumber + (StartOfMemmory >> PAGE_SHIFT);
 
                 maxAddressablePageNumber = Run.Count > 0 ? Run[Run.Count - 1].BasePage + Run[Run.Count - 1].PageCount : NumberOfPages;
                 return maxAddressablePageNumber + (StartOfMemmory >> PAGE_SHIFT);
-            } }
+            }
+        }
         public List<MemoryRun> Run;
 
         public MemoryDescriptor()
@@ -442,7 +480,7 @@ namespace inVtero.net
         {
             var sb = new StringBuilder();
             sb.AppendLine($"Number of Runs: 0x{NumberOfRuns:X} \t Pages: 0x{NumberOfPages:X}");
-            for(int i=0; i < NumberOfRuns; i++)
+            for (int i = 0; i < NumberOfRuns; i++)
                 sb.AppendLine($"BasePage 0x{Run[i].BasePage:X} \t PageCount: 0x{Run[i].PageCount:X} ");
 
             return sb.ToString();
@@ -450,7 +488,7 @@ namespace inVtero.net
     }
     #endregion
     #region Top Level classes
-    
+
     #endregion
     #region Flags and Enum
     // 0 Is really what we expect
@@ -495,7 +533,7 @@ namespace inVtero.net
         HyperV = 0x10,
         LinuxS = 0x10000000,    // Jumping for Linux since this is now a state saving check
                                 // LinuxS is still a single pass
-        VALUE   = 0x20000000,   // Value Scan (i.e. scan for a dword or ulong)
+        VALUE = 0x20000000,   // Value Scan (i.e. scan for a dword or ulong)
         GENERIC = 0x40000000,   // Generic stateless
         ALL = int.MaxValue,
         VMCS = 0x8000000      // VMCS uses state also and also 2 pass
@@ -504,21 +542,21 @@ namespace inVtero.net
     [Flags]
     public enum VAScanType : uint
     {
-        UNDETERMINED    = 0,
-        PE_FAST         = 1
+        UNDETERMINED = 0,
+        PE_FAST = 1
     }
 
 
     [Flags]
     public enum EPT_MemType
     {
-        UnCached        = 0,
-        WriteCombine    = 1,
-        INVALID         = 2,
-        INVALID2        = 3,
-        WriteThrough    = 4,
-        WriteProtect    = 5,
-        WriteBack       = 6
+        UnCached = 0,
+        WriteCombine = 1,
+        INVALID = 2,
+        INVALID2 = 3,
+        WriteThrough = 4,
+        WriteProtect = 5,
+        WriteBack = 6
     }
     #endregion
 

@@ -21,7 +21,7 @@ using System.Text;
 using System.Threading.Tasks;
 using ProtoBuf;
 
-namespace inVtero.net.Specialties
+namespace inVtero.net.Specialties 
 {
     [
         ProtoContract(AsReferenceDefault = true, 
