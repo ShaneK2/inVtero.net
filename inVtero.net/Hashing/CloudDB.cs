@@ -1,4 +1,5 @@
-﻿using Microsoft.Azure;
+﻿#if !NETSTANDARD2_0
+using Microsoft.Azure;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 using Microsoft.WindowsAzure;
@@ -179,3 +180,4 @@ namespace inVtero.net.Hashing
         }
     }
 }
+#endif

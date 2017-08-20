@@ -32,9 +32,9 @@ namespace Reloc
         public string Reloc64Dir;
         public string Reloc32Dir;
         public string RelocFolder;
-
+#if !NETSTANDARD2_0
         public CloudLoader AzureCnx;
-
+#endif
         public DeLocate GetLocated(bool Is64, string NormalizedName, uint TimeStamp, ulong CurrVA)
         {
             ulong OrigImageBase = 0;
@@ -58,6 +58,7 @@ namespace Reloc
             var RelocFile = Directory.GetFiles(RelocFolder, RelocNameGlob).FirstOrDefault();
             if (!File.Exists(RelocFile))
             {
+#if !NETSTANDARD2_0
                 // look in the cloud
                 var blobData = AzureCnx.FindReloc(NormalizedName, TimeStamp, Is64);
                 if (blobData.RelocData == null)
@@ -74,6 +75,7 @@ namespace Reloc
                 // network blobs are ALL IN CAPS
                 var FullName = $"{NormalizedName.ToUpper()}-{OrigImageBase:X}-{TimeStamp:X}.reloc";
                 File.WriteAllBytes(Path.Combine(RelocFolder, FullName), reBytes);
+#endif
             }
             else
             {

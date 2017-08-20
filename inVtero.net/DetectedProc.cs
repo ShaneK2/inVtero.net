@@ -27,7 +27,9 @@ using Dia2Sharp;
 using System.Linq;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+#if !NETSTANDARD2_0
 using libyaraNET;
+#endif
 using inVtero.net.Support;
 using static HashLib.HashFactory.Crypto;
 using System.Globalization;
@@ -92,10 +94,13 @@ namespace inVtero.net
 
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
-
+        
+        #if !NETSTANDARD2_0
         [ProtoIgnore]
         public List<ScanResult> YaraOutput;
         public long YaraTotalScanned;
+        #endif
+
         [ProtoIgnore]
         public dynamic EProc;
 
@@ -409,6 +414,7 @@ namespace inVtero.net
             return KVS;
         }
 
+        #if !NETSTANDARD2_0
         public List<ScanResult> YaraScan(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
         {
             var rv = new List<ScanResult>();
@@ -482,6 +488,7 @@ namespace inVtero.net
             YaraOutput = rv;
             return YaraOutput;
         }
+        #endif
 
         // tid&buffer
         public List<Tuple<long, long[]>> KernelThreadStacks;
@@ -1466,7 +1473,7 @@ namespace inVtero.net
             return cv2;
         }
 
-        #region Memory Accessors 
+#region Memory Accessors 
 
         public bool WriteMemory<T>(long VA, T[] Data)
         {
@@ -1881,7 +1888,7 @@ namespace inVtero.net
 
             return rv;
         }
-        #endregion
+#endregion
 
         [ProtoIgnore]
         public Mem MemAccess { get; set; }

@@ -35,7 +35,11 @@ using static inVtero.net.Misc;
 // TODO: Use git issues ;)
 // TODO: Implement 5 level page table traversal (new intel spec)
 using System.Dynamic;
+
+#if !NETSTANDARD2_0
 using libyaraNET;
+#endif
+
 using inVtero.net.Hashing;
 using System.IO.MemoryMappedFiles;
 
@@ -164,7 +168,7 @@ namespace inVtero.net
 
             ID = Guid.NewGuid();
 
-#if DEBUGX 
+#if DEBUGX
             VerboseOutput = true;
             DiagOutput = false;
 #endif
@@ -413,7 +417,10 @@ namespace inVtero.net
 
             var mdb = DB;
             var fl = mdb.Loader;
+            
+            #if !NETSTANDARD2_0
             var cl = mdb.cLoader;
+            #endif
 
             MemAccess.MapViewSize = 128 * 1024;
 
@@ -439,9 +446,12 @@ namespace inVtero.net
                     hr = proc.VADHash(CollectKernel, true, true, true, DoBitmapScan, DoCloudScan);
                     if (!DoBitmapScan && !DoCloudScan)
                         fl.HashLookup(proc.HashRecords);
+                    
+                    #if !NETSTANDARD2_0
                     else if (DoCloudScan)
                         //cl.QueryHashes(proc.HashRecords);
                         cl.QueryREST(proc.HashRecords);
+                    #endif
 
                     var rate = proc.HashRecordRate();
 
@@ -489,7 +499,7 @@ namespace inVtero.net
             WriteColor(ConsoleColor.White, ConsoleColor.Black, $"{TotalTotal} total hash checks, {TotalValid} were verified as secure {TotalValid * 100.0d / TotalTotal:N3}%");
             return;
         }
-
+        #if !NETSTANDARD2_0
         public ScanResult[] YaraAll(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
         {
             ConcurrentBag<ScanResult> rv = new ConcurrentBag<ScanResult>(); 
@@ -511,6 +521,7 @@ namespace inVtero.net
 
             return rv.ToArray();
         }
+        #endif
 
 
         /// <summary>
@@ -1770,6 +1781,6 @@ DoubleBreak:
         {
             Dispose(true);
         }
-        #endregion
+#endregion
     }
 }

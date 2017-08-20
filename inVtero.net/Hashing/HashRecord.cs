@@ -16,7 +16,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+#if !NETSTANDARD2_0
 using static inVtero.net.Hashing.CloudDB;
+#endif
 using static inVtero.net.MagicNumbers;
 
 namespace inVtero.net.Hashing
@@ -222,7 +224,9 @@ namespace inVtero.net.Hashing
         public List<long> SparseAddrs = new List<long>();
         public List<bool[]> InnerCheckList = new List<bool[]>();
         public List<HashRec[]> InnerList = new List<HashRec[]>();
+#if !NETSTANDARD2_0
         public List<HashEntity[]> InnerCloudList = new List<HashEntity[]>();
+#endif
         public List<byte[]> Data = new List<byte[]>();
 
         public int Validated;

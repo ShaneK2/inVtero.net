@@ -1,4 +1,5 @@
-﻿using Microsoft.WindowsAzure.Storage.Table;
+﻿#if !NETSTANDARD2_0
+using Microsoft.WindowsAzure.Storage.Table;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -661,3 +662,4 @@ namespace inVtero.net.Hashing
         }
     }
 }
+#endif
