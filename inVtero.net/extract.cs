@@ -99,10 +99,10 @@ namespace Reloc
         public bool IsCLR;
         // maybe ordered list would emit better errors for people
         public List<MiniSection> Sections;
-#if inVtero
+
         [ProtoIgnore]
         public DeLocate ReReState;
-#endif
+
         int secOff;
 
         public override string ToString()

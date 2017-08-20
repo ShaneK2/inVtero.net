@@ -45,7 +45,7 @@ namespace Dia2Sharp
             Initalize(Handle, null);
         }
 
-        public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_UNDNAME)
+        public static bool Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_UNDNAME)
         {
             DebugHelp.SymSetOptions(Options);
 
@@ -58,101 +58,10 @@ namespace Dia2Sharp
             if (!symStatus)
                 Errors.Enqueue($"symbol status  {symStatus}:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
 
-            DebugHelp.SymSetOptions(DebugHelp.SymOptions.SYMOPT_DEBUG);
-            return new Sym();
-        }
+            DebugHelp.SymSetOptions(Options);
 
-        void CollectCompileDetails(IDiaSymbol detail, String ModName, String BlockName)
-        {
-            string Language = string.Empty, Platform = string.Empty;
-            var lang = detail.language;
-            var plat = detail.platform;
-
-            switch (lang)
-            {
-                case 0: Language = "C"; break;
-                case 1: Language = "C++"; break;
-                case 2: Language = "Linked DLL/Import"; break;
-                case 3: Language = "Fortran"; break;
-                case 4: Language = "MASM"; break;
-                case 5: Language = "Pascal"; break;
-                case 6: Language = "ILASM"; break;
-                case 7: Language = "MSIL"; break;
-                case 8: Language = "HLSL"; break;
-                case 9: Language = "Resource Data"; break;
-                case 10: Language = "PGO Data (performance guided opt)"; break;
-                case 11: Language = "Managed C#"; break;
-                default: Language = "Other / Not hookable"; break;
-            }
-
-            if (plat > 2 && plat < 8)
-                Platform = "x86";
-            if (plat == 0xD0)
-                Platform = "x64";
-            else
-                Platform = "Unsupported";
-
-            WriteLine($"Language: {Language} / {Platform}");
-        }
-
-        void FuncCollectSym(IDiaSymbol Detail, uint tag, String ModName, String BlockName)
-        {
-            IDiaEnumSymbols EnumSymbols = null;
-            IDiaSymbol Symbol = null;
-            List<string> Args = new List<string>();
-            uint childrenFetched = 0;
-
-            ForegroundColor = ConsoleColor.Green;
-
-            if (Detail == null || string.IsNullOrWhiteSpace(Detail.name))
-                return;
-
-            //WriteLine($"{Detail.undecoratedName} ({Detail.name}) Length: {Detail.length} RVA: {Detail.targetRelativeVirtualAddress} VA: {Detail.targetVirtualAddress}");
-
-            Detail.findChildren(SymTagEnum.SymTagNull, null, 0, out EnumSymbols);
-            do
-            {
-                //EnumSymbols.Next(1, out Symbol, out childrenFetched);
-                //if (Symbol == null || string.IsNullOrEmpty(Symbol.name))
-                //    continue;
-
-                Symbol = Detail;
-
-                if (Symbol.type != null)
-                    Args.Add(Symbol.type.name);
-                //else
-                //    WriteLine($"{Symbol.undecoratedName} ({Symbol.name}) @ {Symbol.virtualAddress:X} Length: {Symbol.length} ");
-
-            } while (childrenFetched == 1);
-        }
-
-        void ClassCollectSym(IDiaSymbol Detail)
-        {
-            IDiaEnumSymbols EnumSymbols = null;
-            IDiaSymbol Symbol = null;
-            List<string> Args = new List<string>();
-            uint childrenFetched = 0;
-
-            ForegroundColor = ConsoleColor.Yellow;
-
-            if (Detail == null || string.IsNullOrWhiteSpace(Detail.name))
-                return;
-
-            //WriteLine($"{Detail.undecoratedName} ({Detail.name}) Length: {Detail.length} RVA: {Detail.targetRelativeVirtualAddress} VA: {Detail.targetVirtualAddress}");
-
-            Detail.findChildren(SymTagEnum.SymTagNull, null, 0, out EnumSymbols);
-            do
-            {
-                EnumSymbols.Next(1, out Symbol, out childrenFetched);
-                if (Symbol == null || string.IsNullOrEmpty(Symbol.name))
-                    continue;
-
-                if (Symbol.type != null)
-                    Args.Add(Symbol.type.name);
-                //  else
-                //      WriteLine($"{Symbol.undecoratedName} ({Symbol.name}) @ {Symbol.virtualAddress:X} Length: {Symbol.length} ");
-
-            } while (childrenFetched == 1);
+            return symStatus;
+            
         }
 
         public static dynamic xStructInfo(
@@ -180,7 +89,7 @@ namespace Dia2Sharp
             Session.loadAddress = (ulong) vAddress;
 
             // 10 is regex
-            Session.globalScope.findChildren(SymTagEnum.SymTagNull, Struct, 10, out EnumSymbols);
+            Session.globalScope.findChildren((uint) DebugHelp.SymTagEnum.Null, Struct, 10, out EnumSymbols);
             do
             {
                 EnumSymbols.Next(1, out Master, out compileFetched);
@@ -240,11 +149,11 @@ namespace Dia2Sharp
             IDiaSymbol Sub = null;
             IDiaEnumSymbols Enum2 = null;
             IDiaSymbol TypeType;
-            SymTagEnum TypeTypeTag;
+            DebugHelp.SymTagEnum TypeTypeTag;
 
             uint compileFetched = 0;
 
-            Master.findChildren(SymTagEnum.SymTagNull, null, 10, out Enum2);
+            Master.findChildren((uint) DebugHelp.SymTagEnum.Null, null, 10, out Enum2);
             do
             {
                 if (Enum2 == null) break;
@@ -271,7 +180,7 @@ namespace Dia2Sharp
                 zym.TypeName = typeName;
                 zym.MemberName = currName;
 
-                zym.Tag = (SymTagEnum)Sub.symTag;
+                zym.Tag = (DebugHelp.SymTagEnum)Sub.symTag;
                 Length = sType.length;
                 zym.Length = Length;
 
@@ -284,7 +193,7 @@ namespace Dia2Sharp
                     zym.BitPosition = Sub.bitPosition;
                     zym.BitCount = Sub.length;
                 }
-                if (SymTagEnum.SymTagArrayType == (SymTagEnum)sType.symTag)
+                if (DebugHelp.SymTagEnum.ArrayType == (DebugHelp.SymTagEnum) sType.symTag)
                 {
                     TypeType = sType.type;
 
@@ -379,7 +288,7 @@ namespace Dia2Sharp
                             // were dealing with some sort of array or weird sized type not nativly supported (yet, e.g. GUID)
                             // if we start with a _ we are going to be descending recursivly into this type so don't extract it here
                             // this is really for basic type array's or things' were not otherwise able to recursivly extract
-                            if (!captured && (SymTagEnum.SymTagArrayType == (SymTagEnum)sType.symTag))
+                            if (!captured && (DebugHelp.SymTagEnum.ArrayType == (DebugHelp.SymTagEnum)sType.symTag))
                             {
                                 int BytesReadRoom = 0, len = 0;
                                 if (memberLen == 1 || memberLen > 8)
@@ -428,8 +337,8 @@ namespace Dia2Sharp
                 if (KeepRecur)
                 {
                     TypeType = sType.type;
-                    TypeTypeTag = (SymTagEnum)sType.symTag;
-                    if (TypeTypeTag == SymTagEnum.SymTagPointerType)
+                    TypeTypeTag = (DebugHelp.SymTagEnum)sType.symTag;
+                    if (TypeTypeTag == DebugHelp.SymTagEnum.PointerType)
                     {
                         zym.IsPtr = true;
                         if (TypeType != null && !string.IsNullOrWhiteSpace(TypeType.name))
@@ -457,8 +366,6 @@ namespace Dia2Sharp
                 ForegroundColor = ConsoleColor.Cyan;
                 WriteLine($"Pos = [{Pos:X}] Name = [{currName}] Len [{sType.length}], Type [{typeName}], ThisStruct [{master}]");
 #endif
-
-
                 // Length comes up a lot in struct's and conflicts with the ExpandoObject 
                 // so remap it specially
                 var AddedName = Sub.name;
@@ -480,55 +387,6 @@ namespace Dia2Sharp
 
 
             return null;
-        }
-
-        public dynamic GetStruct(String Name, long[] memRead = null)
-        {
-            var typeDefs = from typeDef in StructInfo
-                           where typeDef.Key.StartsWith(Name)
-                           select typeDef;
-
-            dynamic strukt = new ExpandoObject();
-            var IDstrukt = (IDictionary<string, object>)strukt;
-
-            // kludge 
-            var staticDict = new Dictionary<string, object>();
-            strukt.Dictionary = staticDict;
-
-            foreach (var def in typeDefs)
-            {
-                // custom types are not fitted this way
-                // we just recuse into basic types
-                if (def.Value.Item2 > 8)
-                    continue;
-
-                var defName = def.Key.Substring(Name.Length + 1); //.Replace('.', '_');
-
-                switch (def.Value.Item2)
-                {
-                    case 4:
-                        var ival = memRead == null ? 0 : (int)(memRead[def.Value.Item1 / 8] & 0xffffffffff);
-                        staticDict.Add(defName, ival);
-                        IDstrukt.Add(defName, ival);
-                        break;
-                    case 2:
-                        var sval = memRead == null ? 0 : (short)(memRead[def.Value.Item1 / 8] & 0xffffff);
-                        staticDict.Add(defName, sval);
-                        IDstrukt.Add(defName, sval);
-                        break;
-                    case 1:
-                        var bval = memRead == null ? 0 : (byte)(memRead[def.Value.Item1 / 8] & 0xff);
-                        staticDict.Add(defName, bval);
-                        IDstrukt.Add(defName, bval);
-                        break;
-                    default:
-                        var lval = memRead == null ? 0 : memRead[def.Value.Item1 / 8];
-                        staticDict.Add(defName, lval);
-                        IDstrukt.Add(defName, lval);
-                        break;
-                }
-            }
-            return strukt;
         }
 
         /// <summary>
@@ -561,7 +419,7 @@ namespace Dia2Sharp
             if (Session == null)
                 return null;
 
-            Session.findChildren(Session.globalScope, SymTagEnum.SymTagNull, Struct, 0, out EnumSymbols);
+            Session.findChildren(Session.globalScope,(uint) DebugHelp.SymTagEnum.Null, Struct, 0, out EnumSymbols);
             do
             {
                 EnumSymbols.Next(1, out Master, out compileFetched);
@@ -591,7 +449,7 @@ namespace Dia2Sharp
             IDiaEnumSymbols Enum2 = null;
             uint compileFetched = 0;
 
-            Master.findChildren(SymTagEnum.SymTagNull, null, 0, out Enum2);
+            Master.findChildren((uint) DebugHelp.SymTagEnum.Null, null, 0, out Enum2);
             do
             {
                 if (Enum2 == null)
@@ -621,7 +479,7 @@ namespace Dia2Sharp
         {
             Tuple<string, ulong, ulong> rv = null;
             IDiaSession Session;
-            IDiaSymbol Sym;
+            IDiaSymbol aSym;
             IDiaEnumSymbolsByAddr pEnumAddr;
 
             var foo = new DiaSource();
@@ -636,11 +494,11 @@ namespace Dia2Sharp
             if (pEnumAddr == null)
                 return rv;
 
-            Sym = pEnumAddr.symbolByVA(Address);
-            if (Sym == null)
+            aSym = pEnumAddr.symbolByVA(Address);
+            if (aSym == null)
                 return rv;
 
-            rv = new Tuple<string, ulong, ulong>(Sym.name, Sym.virtualAddress, Sym.length);
+            rv = new Tuple<string, ulong, ulong>(aSym.name, aSym.virtualAddress, aSym.length);
 
             return rv;
         }
@@ -659,7 +517,7 @@ namespace Dia2Sharp
             if (Session == null)
                 return rv;
             // 10 is regex
-            Session.globalScope.findChildren(SymTagEnum.SymTagNull, Match, 10, out EnumSymbols);
+            Session.globalScope.findChildren((uint) DebugHelp.SymTagEnum.Null, Match, 10, out EnumSymbols);
 
             if (Session == null)
                 return rv;

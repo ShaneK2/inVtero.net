@@ -139,17 +139,19 @@ namespace inVtero.net
         public void LoadBDB(string aFile)
         {
             return;
+#if FALSE
             if (File.Exists(aFile))
             {
                 var bdbytes = File.ReadAllBytes(aFile);
                 r = RoarCLI.read(bdbytes, false);
             }
+#endif
         }
         public void Save()
         {
             // file map does not need this
             return;
-
+#if FALSE
             Misc.WriteColor(ConsoleColor.Black, ConsoleColor.Green, $"CRITICAL: SAVING BITMAP DATABASE!!! WAIT JUST A SECOND PLEASE!!!");
 
             var sizeNeeded = r.getSizeInBytes(false);
@@ -157,6 +159,7 @@ namespace inVtero.net
             r.write(buff, false);
             File.WriteAllBytes(HashDBBitMap, buff);
             Misc.WriteColor(ConsoleColor.Green, ConsoleColor.Black, $"Done.  Commited {sizeNeeded:N0} bytes to disk for bitmap.");
+#endif
         }
 
 #region IDisposable Support

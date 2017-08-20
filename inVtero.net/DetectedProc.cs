@@ -66,10 +66,6 @@ namespace inVtero.net
 
         public Guid ID;
 
-        // symbol info provider
-        [ProtoIgnore]
-        public Sym sym;
-
         public ConcurrentDictionary<long, MemSection> Sections { get; private set; }
 
         /*
@@ -160,8 +156,7 @@ namespace inVtero.net
                 if ((Module == "ntkrnlmp" || Module == "ntoskrnl"))
                     KernelSection = pdb;
             }
-            if (sym == null)
-                CODEVIEW.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
+            CODEVIEW.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
 
             return Sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, 0, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
         }
@@ -313,12 +308,10 @@ namespace inVtero.net
 
                 // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                 // entirely by the handle ID really which is local to our GUID so....   
-                var local = CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address); 
-                if (local != null)
-                    sym = local;
+                CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address); 
 
                 if (Vtero.VerboseOutput)
-                    WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.DebugDetails.PDBFullPath}]");
+                    WriteColor(ConsoleColor.Green, $"symbol loaded from file [{ms.DebugDetails.PDBFullPath}]");
             }
 
         }
@@ -329,11 +322,9 @@ namespace inVtero.net
             {
                 if (OnlyMS == null || (OnlyMS != null && OnlyMS.VA.Address == ms.Key))
                 {
-                    var local = CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
-                    if (local != null)
-                        sym = local;
+                    CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
                     if (Vtero.VerboseOutput)
-                        WriteColor(ConsoleColor.Green, $"symbol loaded [{sym != null}] from file [{ms.Value.DebugDetails.PDBFullPath}]");
+                        WriteColor(ConsoleColor.Green, $"symbol loaded from file [{ms.Value.DebugDetails.PDBFullPath}]");
                 }
             }
         }
@@ -391,15 +382,13 @@ namespace inVtero.net
 
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
-                        var local = CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
-                        if (local != null)
-                            sym = local;
+                       CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
 
                         if (Vtero.VerboseOutput)
                         {
-                            WriteColor((sym != null) ? ConsoleColor.Green : ConsoleColor.Yellow, $" symbol loaded = [{sym != null}] PDB [{ms.DebugDetails.PDBFullPath}] @ {range.VA.Address:X}, {ms.Name}");
+                            WriteColor($" symbol loaded = PDB [{ms.DebugDetails.PDBFullPath}] @ {range.VA.Address:X}, {ms.Name}");
                             if (Vtero.VerboseLevel > 1)
-                                WriteColor((sym != null) ? ConsoleColor.Green : ConsoleColor.Yellow, $"headers: { artifact} ");
+                                WriteColor($"headers: { artifact} ");
                         }
 
                         if (!string.IsNullOrWhiteSpace(OnlyModule))

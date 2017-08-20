@@ -132,7 +132,7 @@ namespace Dia2Sharp
 
     public class CODEVIEW
     {
-        public static Sym TryLoadSymbols(long Handle, CODEVIEW_HEADER cv_data, long BaseVA, bool Verbose = false)
+        public static bool TryLoadSymbols(long Handle, CODEVIEW_HEADER cv_data, long BaseVA, bool Verbose = false)
         {
             ulong KernRange = 0xffff000000000000;
 
@@ -150,17 +150,17 @@ namespace Dia2Sharp
         /// <param name="BaseVA"></param>
         /// <param name="SymPath"></param>
         /// <returns></returns>
-            public static Sym TryLoadSymbols(long Handle, CODEVIEW_HEADER cv_data, ulong BaseVA, bool Verbose = false)
+        public static bool TryLoadSymbols(long Handle, CODEVIEW_HEADER cv_data, ulong BaseVA, bool Verbose = false)
         {
+            var symStatus = false;
             if (string.IsNullOrWhiteSpace(cv_data.PdbName))
-                return null;
+                return symStatus;
 
             var sym = Sym.Initalize(Handle, null, DebugHelp.SymOptions.SYMOPT_UNDNAME);
 
-            if (sym == null && Verbose)
+            if (!sym && Verbose)
                 Sym.Errors.Enqueue($"Can not initialize symbols for ${Handle}, error:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
 
-            var symStatus = false;
 
             StringBuilder sbx = new StringBuilder(1024);
             StringBuilder sbName = new StringBuilder(cv_data.PdbName.Substring(0, cv_data.PdbName.IndexOf(".pdb")+4));
@@ -186,8 +186,6 @@ namespace Dia2Sharp
                 pinnedArray.Free();
                 if (!symStatus && Verbose)
                     Sym.Errors.Enqueue($" Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
-
-                sym = null;
             }
             if (symStatus)
             {
@@ -198,7 +196,7 @@ namespace Dia2Sharp
                 cv_data.PDBFullPath = sbx.ToString();
             }
 
-            return sym;
+            return symStatus;
         }
     }
 }

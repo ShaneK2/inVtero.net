@@ -126,7 +126,6 @@ namespace inVtero.net
                 null,
                 0,
                 MemoryMappedFileAccess.Read,
-                null,
                 HandleInheritability.None,
                 false);
 

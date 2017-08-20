@@ -710,7 +710,6 @@ namespace inVtero.net
                         mapName,
                         0,
                         MemoryMappedFileAccess.Read,
-                        null,
                         HandleInheritability.Inheritable,
                         false))
                     {
@@ -821,7 +820,7 @@ namespace inVtero.net
                 var mapName = Path.GetFileNameWithoutExtension(File) + From.ToString("X16");
                 using (var mmap =
                     MemoryMappedFile.CreateFromFile(fs, mapName, 0, MemoryMappedFileAccess.Read,
-                    null, HandleInheritability.Inheritable, false))
+                    HandleInheritability.Inheritable, false))
                 {
                     using (var reader = mmap.CreateViewAccessor(From, Count * 4, MemoryMappedFileAccess.Read))
                     {
