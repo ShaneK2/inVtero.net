@@ -15,7 +15,9 @@
 
 using System;
 using System.Collections.Generic;
+#if !NETSTANDARD2_0
 using dia;
+#endif
 using static System.Console;
 using System.Diagnostics;
 using System.ComponentModel;

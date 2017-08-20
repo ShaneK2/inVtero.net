@@ -28,8 +28,6 @@ namespace Dia2Sharp
 
             var dl = new SymDownloader();
 
-
-
             var request = WebRequest.Create(uri) as HttpWebRequest;
             request.UserAgent = UserAgent;
             request.Headers[HttpRequestHeader.AcceptEncoding] = "gzip, deflate";
