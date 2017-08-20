@@ -4,4 +4,19 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Dia2Sharp\CODEVIEW_HEADER.cs" Link="CODEVIEW_HEADER.cs" />
+    <Compile Include="..\..\Dia2Sharp\DebugHelp.cs" Link="DebugHelp.cs" />
+    <Compile Include="..\..\Dia2Sharp\Reflectors.cs" Link="Reflectors.cs" />
+    <Compile Include="..\..\Dia2Sharp\Sym.cs" Link="Sym.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="protobuf-net" Version="2.3.2" />
+  </ItemGroup>
+
 </Project>
