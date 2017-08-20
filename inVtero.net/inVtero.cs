@@ -604,17 +604,17 @@ namespace inVtero.net
             //var rv = SymForKernel.xStructInfo(pdbFile, "_EPROCESS");
             // figure out OFFSET_OF the process LIST_ENTRY
             // MemberInfo returned is Byte Position, Length
-            var aplinks = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "ActiveProcessLinks.Flink");
+            var aplinks = Sym.StructMemberInfo(pdbFile, "_EPROCESS", "ActiveProcessLinks.Flink");
             var offset_of = aplinks.Item1;
-            var sym_dtb = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "Pcb.DirectoryTableBase");
-            var sym_ImagePathPtr = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "SeAuditProcessCreationInfo.ImageFileName");
-            var sym_procID = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "UniqueProcessId");
-            var sym_vadRoot = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", ".VadRoot");
-            var sym_ethr = SymForKernel.StructMemberInfo(pdbFile, "_EPROCESS", "_EPROCESS.ThreadListHead");
+            var sym_dtb = Sym.StructMemberInfo(pdbFile, "_EPROCESS", "Pcb.DirectoryTableBase");
+            var sym_ImagePathPtr = Sym.StructMemberInfo(pdbFile, "_EPROCESS", "SeAuditProcessCreationInfo.ImageFileName");
+            var sym_procID = Sym.StructMemberInfo(pdbFile, "_EPROCESS", "UniqueProcessId");
+            var sym_vadRoot = Sym.StructMemberInfo(pdbFile, "_EPROCESS", ".VadRoot");
+            var sym_ethr = Sym.StructMemberInfo(pdbFile, "_EPROCESS", "_EPROCESS.ThreadListHead");
             // adjust the first link through 
             //var flink = dp.GetLongValue(PsHeadAddr);
 
-            var typeDefs = from typeDef in SymForKernel.StructInfo
+            var typeDefs = from typeDef in Sym.StructInfo
                             where typeDef.Key.StartsWith("_EPROCESS")
                             select typeDef;
 
@@ -796,68 +796,6 @@ namespace inVtero.net
             dp.SymbolStore.Add(AddrName, symInfo.Address);
 
             return symInfo.Address;
-        }
-
-        /// <summary>
-        /// We use sympath environment variable
-        /// </summary>
-        /// <param name="cv_data"></param>
-        /// <param name="BaseVA"></param>
-        /// <param name="SymPath"></param>
-        /// <returns></returns>
-        public static Sym TryLoadSymbols(long Handle, CODEVIEW_HEADER cv_data, long BaseVA)
-        {
-            if (cv_data == null)
-                return null;
-
-            ulong KernRange = 0xffff000000000000;
-
-            // sign extend BaseVA for kernel ranges
-            if ((BaseVA & 0xf00000000000) != 0)
-                BaseVA |= (long)KernRange;
-
-            var sym = Sym.Initalize(Handle, null, DebugHelp.SymOptions.SYMOPT_UNDNAME);
-
-            if(sym == null)
-                WriteLine($"Can not initialize symbols for ${Handle}, error:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
-
-            var symStatus = true;
-
-            StringBuilder sbx = new StringBuilder(1024);
-            
-            int three = 0;
-            var flags = DebugHelp.SSRVOPT_GUIDPTR;
-            symStatus = DebugHelp.SymFindFileInPathW(Handle, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
-            // try twice, just in case
-            if (!symStatus)
-                symStatus = DebugHelp.SymFindFileInPathW(Handle, null, cv_data.PdbName, ref cv_data.aGuid, cv_data.Age, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
-
-            if (!symStatus)
-            {
-                WriteColor(ConsoleColor.Yellow, $" Symbol locate returned {symStatus}: {new Win32Exception(Marshal.GetLastWin32Error()).Message }, attempting less precise request.");
-
-                flags = DebugHelp.SSRVOPT_DWORDPTR;
-                var refBytes = BitConverter.GetBytes(cv_data.TimeDateStamp);
-                GCHandle pinnedArray = GCHandle.Alloc(refBytes, GCHandleType.Pinned);
-                IntPtr pointer = pinnedArray.AddrOfPinnedObject();
-
-                symStatus = DebugHelp.SymFindFileInPath(Handle, null, cv_data.PdbName, pointer, cv_data.VSize, three, flags, sbx, IntPtr.Zero, IntPtr.Zero);
-                pinnedArray.Free();
-                if (!symStatus)
-                    WriteColor(ConsoleColor.Red, $" Find Symbols returned value: {symStatus}:[{sbx.ToString()}]");
-
-                sym = null;
-            }
-            if (symStatus)
-            {
-                var symLoaded = DebugHelp.SymLoadModuleEx(Handle, IntPtr.Zero, sbx.ToString(), null, BaseVA, cv_data.VSize, IntPtr.Zero, 0);
-                if (symLoaded == 0)
-                    WriteColor(ConsoleColor.Red, $"Symbols file located @ {sbx.ToString()} yet load Failed: [{new Win32Exception(Marshal.GetLastWin32Error()).Message }]");
-
-                cv_data.PDBFullPath = sbx.ToString();
-            }
-
-            return sym;
         }
 
         public long DumpProc(string Folder, DetectedProc Proc, bool IncludeData = false, bool KernelSpace = true)

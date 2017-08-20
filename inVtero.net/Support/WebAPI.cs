@@ -61,7 +61,6 @@ namespace inVtero.net.Support
                     return reader.ReadToEnd();
                 }
             }
-            return string.Empty;
         } 
     }
 }

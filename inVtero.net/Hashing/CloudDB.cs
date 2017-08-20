@@ -1,8 +1,6 @@
 ﻿using Microsoft.Azure;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
-using Microsoft.WindowsAzure;
-using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
 using System;
 using System.Collections.Generic;
@@ -134,7 +132,7 @@ namespace inVtero.net.Hashing
 
         public static CloudBlobClient ReadOnlyBlobClient()
         {
-            var endPoint = new Uri("https://invtero.blob.core.windows.net/?sv=2017-04-17&ss=b&srt=co&sp=rl&se=2020-08-13T02:22:11Z&st=2017-08-12T18:22:11Z&spr=https&sig=K7l987x0SwdvI7CmDdwXZmtrEcSESw8Z0H6zl5HOMDs%3D");
+            var endPoint = new Uri("https://invtero.blob.core.windows.net/");
             return new CloudBlobClient(endPoint);
         }
 

@@ -15,7 +15,7 @@
 
 using System;
 using System.Collections.Generic;
-using Dia2Lib;
+using dia;
 using static System.Console;
 using System.Diagnostics;
 using System.ComponentModel;
@@ -23,29 +23,38 @@ using System.Runtime.InteropServices;
 using System.Linq;
 using System.Dynamic;
 using System.Text;
+using System.Collections.Concurrent;
 
 namespace Dia2Sharp
 {
     public class Sym
     {
+        public static ConcurrentQueue<string> Errors = new ConcurrentQueue<string>();
+
         // These are added to the type's as meta data to allow things like memory editing
         const string defName = "Value";
         const string defAddr = "vAddress";
 
-        public Dictionary<string, (int Position, int Length)> StructInfo = new Dictionary<string, (int, int)>();
+        public static Dictionary<string, Tuple<int, int>> StructInfo = new Dictionary<string, Tuple<int, int>>();
+
+        public static long Handle = Process.GetCurrentProcess().GetHashCode();
+        static Sym()
+        {
+            Initalize(Handle, null);
+        }
 
         public static Sym Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_UNDNAME)
         {
             DebugHelp.SymSetOptions(Options);
 
-            if(string.IsNullOrWhiteSpace(SymPath))
+            if (string.IsNullOrWhiteSpace(SymPath))
                 SymPath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH");
-                if (string.IsNullOrWhiteSpace(SymPath))
-                    SymPath = "SRV*http://msdl.microsoft.com/download/symbols";
+            if (string.IsNullOrWhiteSpace(SymPath))
+                SymPath = "SRV*http://msdl.microsoft.com/download/symbols";
 
             bool symStatus = DebugHelp.SymInitialize(Handle, SymPath, false);
             if (!symStatus)
-                WriteLine($"symbol status  {symStatus}:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
+                Errors.Enqueue($"symbol status  {symStatus}:  {new Win32Exception(Marshal.GetLastWin32Error()).Message }");
 
             DebugHelp.SymSetOptions(DebugHelp.SymOptions.SYMOPT_DEBUG);
             return new Sym();
@@ -144,12 +153,12 @@ namespace Dia2Sharp
             } while (childrenFetched == 1);
         }
 
-        public dynamic xStructInfo(
-            string PDBFile, 
-            string Struct, 
+        public static dynamic xStructInfo(
+            string PDBFile,
+            string Struct,
             long vAddress = 0,
-            long[] memRead = null, 
-            Func<long, int, byte[]> GetMem = null, 
+            long[] memRead = null,
+            Func<long, int, byte[]> GetMem = null,
             Func<long, int, long[]> GetMemLong = null,
             PropertyChangedEventHandler ExpandoChanged = null
             )
@@ -165,6 +174,9 @@ namespace Dia2Sharp
             foo.openSession(out Session);
             if (Session == null)
                 return null;
+
+            Session.loadAddress = (ulong) vAddress;
+
             // 10 is regex
             Session.globalScope.findChildren(SymTagEnum.SymTagNull, Struct, 10, out EnumSymbols);
             do
@@ -184,7 +196,7 @@ namespace Dia2Sharp
                 //StructInfo.Add(Master.name, Info); // Tuple.Create<int, int>(0, (int)Master.length));
                 xDumpStructs(Info, Master, Master.name, 0, vAddress, memRead, GetMem, GetMemLong, ExpandoChanged);
 
-                if(ExpandoChanged != null)
+                if (ExpandoChanged != null)
                     ((INotifyPropertyChanged)Info).PropertyChanged +=
                         new PropertyChangedEventHandler(ExpandoChanged);
 
@@ -204,23 +216,23 @@ namespace Dia2Sharp
         /// <param name="CurrOffset"></param>
         /// <param name="memRead"></param>
         /// <returns></returns>
-        dynamic xDumpStructs(
-            dynamic Info, 
-            IDiaSymbol Master, 
-            string preName, 
-            int CurrOffset, 
+        public static dynamic xDumpStructs(
+            dynamic Info,
+            IDiaSymbol Master,
+            string preName,
+            int CurrOffset,
             long vAddress = 0,
-            long[] memRead = null, 
-            Func<long, int, byte[]> GetMem = null, 
+            long[] memRead = null,
+            Func<long, int, byte[]> GetMem = null,
             Func<long, int, long[]> GetMemLong = null,
             PropertyChangedEventHandler ExpandoChanged = null
             )
         {
             var IInfo = (IDictionary<string, object>)Info;
-            var InfoDict= new Dictionary<string, object>();
+            var InfoDict = new Dictionary<string, object>();
             Info.Dictionary = InfoDict;
             long lvalue = 0;
-            ulong Length = 0, memberLen=0;
+            ulong Length = 0, memberLen = 0;
             string memberName = string.Empty;
 
             IDiaSymbol Sub = null;
@@ -262,8 +274,8 @@ namespace Dia2Sharp
                 zym.Length = Length;
 
                 zym.OffsetPos = Pos;
-                zym.vAddress = vAddress;
-                
+                zym.vAddress = vAddress + Pos;
+
                 // bitfield
                 if (Sub.locationType == 6)
                 {
@@ -289,7 +301,7 @@ namespace Dia2Sharp
                     lvalue = memRead == null ? 0 : memRead[Pos / 8];
 
                     // TODO: Handles/OBJECT_FOO/_ETC...
-                    
+
                     if (String.Equals("_UNICODE_STRING", typeName) && GetMem != null)
                     {
                         // since we deref'd this struct manually don't follow 
@@ -301,7 +313,7 @@ namespace Dia2Sharp
                         if (StringAddr != 0)
                         {
                             var strLen = (short)lvalue & 0xffff;
-                            
+
                             var strByteArr = GetMem(StringAddr, strLen + 2);
 
                             strVal = Encoding.Unicode.GetString(strByteArr, 0, strLen);
@@ -365,10 +377,11 @@ namespace Dia2Sharp
                             // were dealing with some sort of array or weird sized type not nativly supported (yet, e.g. GUID)
                             // if we start with a _ we are going to be descending recursivly into this type so don't extract it here
                             // this is really for basic type array's or things' were not otherwise able to recursivly extract
-                            if(!captured && (SymTagEnum.SymTagArrayType == (SymTagEnum)sType.symTag))
+                            if (!captured && (SymTagEnum.SymTagArrayType == (SymTagEnum)sType.symTag))
                             {
                                 int BytesReadRoom = 0, len = 0;
-                                if (memberLen == 1 || memberLen > 8) {
+                                if (memberLen == 1 || memberLen > 8)
+                                {
                                     byte[] barr = new byte[sType.length];
                                     BytesReadRoom = (memRead.Length * 8) - Pos;
                                     len = BytesReadRoom > barr.Length ? barr.Length : BytesReadRoom;
@@ -376,16 +389,20 @@ namespace Dia2Sharp
 
                                     Izym.Add(defName, barr);
                                     staticDict.Add(currName, barr);
-                                } else if (memberLen == 4) {
-                                    int arrLen = (int) Length / (int) memberLen;
+                                }
+                                else if (memberLen == 4)
+                                {
+                                    int arrLen = (int)Length / (int)memberLen;
                                     int[] iarr = new int[arrLen];
                                     BytesReadRoom = (memRead.Length * 8) - Pos;
-                                    len = BytesReadRoom > (int) Length ? (int) Length : BytesReadRoom;
+                                    len = BytesReadRoom > (int)Length ? (int)Length : BytesReadRoom;
                                     Buffer.BlockCopy(memRead, Pos, iarr, 0, len);
 
                                     Izym.Add(defName, iarr);
                                     staticDict.Add(currName, iarr);
-                                } else {
+                                }
+                                else
+                                {
                                     int arrLen = (int)Length / (int)memberLen;
                                     long[] larr = new long[arrLen];
                                     BytesReadRoom = (memRead.Length * 8) - Pos;
@@ -409,7 +426,7 @@ namespace Dia2Sharp
                 if (KeepRecur)
                 {
                     TypeType = sType.type;
-                    TypeTypeTag = (SymTagEnum) sType.symTag;
+                    TypeTypeTag = (SymTagEnum)sType.symTag;
                     if (TypeTypeTag == SymTagEnum.SymTagPointerType)
                     {
                         zym.IsPtr = true;
@@ -420,16 +437,19 @@ namespace Dia2Sharp
                             // only recuse non-recursive ptr types
                             if (TypeType.name.Equals("_OBJECT_NAME_INFORMATION"))
                             {
+                                long[] deRefArr = null;
                                 // do second deref here
                                 // the location to read is our offset pos data
-                                var deRefArr = GetMemLong(lvalue, 0x20);
-
-                                xDumpStructs(zym, TypeType, currName, 0, vAddress, deRefArr, GetMem, GetMemLong, ExpandoChanged);
+                                if (GetMemLong != null)
+                                {
+                                    deRefArr = GetMemLong(lvalue, 0x20);
+                                }
+                                xDumpStructs(zym, TypeType, currName, 0, vAddress + Pos, deRefArr, GetMem, GetMemLong, ExpandoChanged);
                             }
                         }
                     }
                     else
-                        xDumpStructs(zym, sType, currName, Pos, vAddress, memRead, GetMem, GetMemLong, ExpandoChanged);
+                        xDumpStructs(zym, sType, currName, Pos, vAddress + Pos, memRead, GetMem, GetMemLong, ExpandoChanged);
                 }
 #if DEBUGX
                 ForegroundColor = ConsoleColor.Cyan;
@@ -481,7 +501,7 @@ namespace Dia2Sharp
                     continue;
 
                 var defName = def.Key.Substring(Name.Length + 1); //.Replace('.', '_');
-                
+
                 switch (def.Value.Item2)
                 {
                     case 4:
@@ -519,13 +539,12 @@ namespace Dia2Sharp
         /// <param name="Member">Pcb.DirectoryTableBase</param>
         /// <returns>Tuple of Position & Length </returns>
 
-        public (int Position, int Length) StructMemberInfo(string PDBFile, string Struct, string Member)
+        public static Tuple<int, int> StructMemberInfo(string PDBFile, string Struct, string Member)
         {
             IDiaSession Session;
             IDiaSymbol Master = null;
             IDiaEnumSymbols EnumSymbols = null;
             uint compileFetched = 0;
-            var rv = ValueTuple.Create(0, 0);
 
             var result = from symx in StructInfo
                          where symx.Key.EndsWith(Member)
@@ -538,7 +557,7 @@ namespace Dia2Sharp
             foo.loadDataFromPdb(PDBFile);
             foo.openSession(out Session);
             if (Session == null)
-                return rv;
+                return null;
 
             Session.findChildren(Session.globalScope, SymTagEnum.SymTagNull, Struct, 0, out EnumSymbols);
             do
@@ -551,7 +570,7 @@ namespace Dia2Sharp
                 WriteLine($"Dumping Type [{Master.name}] Len [{Master.length}]");
 #endif
                 if (!StructInfo.ContainsKey(Master.name))
-                    StructInfo.Add(Master.name, (Position:0, Length:(int)Master.length));
+                    StructInfo.Add(Master.name, Tuple.Create<int, int>(0, (int)Master.length));
 
                 DumpStructs(Master, Master.name, Struct, 0);
             } while (compileFetched == 1);
@@ -564,7 +583,7 @@ namespace Dia2Sharp
         }
 
 
-        void DumpStructs(IDiaSymbol Master, string preName, string Search, int CurrOffset)
+        static void DumpStructs(IDiaSymbol Master, string preName, string Search, int CurrOffset)
         {
             IDiaSymbol Sub = null;
             IDiaEnumSymbols Enum2 = null;
@@ -590,18 +609,18 @@ namespace Dia2Sharp
                 WriteLine($"Pos = [{Pos}] Name = [{currName}] Len [{sType.length}], Type [{typeName}]");
 #endif
                 if (!StructInfo.ContainsKey(currName))
-                    StructInfo.Add(currName, (Pos, (int)sType.length));
+                    StructInfo.Add(currName, Tuple.Create<int, int>(Pos, (int)sType.length));
                 DumpStructs(sType, currName, typeName, Pos);
 
             } while (compileFetched == 1);
         }
 
-        public (string Name, ulong Address, ulong Length) FindSymByAddress(ulong Address, String PDBFile, ulong LoadAddr = 0)
+        public static Tuple<String, ulong, ulong> FindSymByAddress(ulong Address, String PDBFile, ulong LoadAddr = 0)
         {
+            Tuple<string, ulong, ulong> rv = null;
             IDiaSession Session;
             IDiaSymbol Sym;
             IDiaEnumSymbolsByAddr pEnumAddr;
-            var rv = ValueTuple.Create(string.Empty, ulong.MinValue, ulong.MinValue);
 
             var foo = new DiaSource();
             foo.loadDataFromPdb(PDBFile);
@@ -619,12 +638,14 @@ namespace Dia2Sharp
             if (Sym == null)
                 return rv;
 
-            return (Name:Sym.name, Address:Sym.virtualAddress, Length: Sym.length);
+            rv = new Tuple<string, ulong, ulong>(Sym.name, Sym.virtualAddress, Sym.length);
+
+            return rv;
         }
 
-        public List<(string Name, ulong Address, ulong Length)> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
+        public static List<Tuple<String, ulong, ulong>> MatchSyms(String Match, String PDBFile, ulong LoadAddr = 0)
         {
-            List<(string Name,ulong Address,ulong Length)> rv = new List<(string,ulong,ulong)>();
+            List<Tuple<String, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
             IDiaSession Session;
             IDiaEnumSymbols EnumSymbols = null;
             IDiaSymbol Master = null;
@@ -654,7 +675,7 @@ namespace Dia2Sharp
 
                 var len = Master.length;
 
-                rv.Add((Name:Master.name, Address:Master.virtualAddress, Length:len));
+                rv.Add(Tuple.Create<String, ulong, ulong>(Master.name, Master.virtualAddress, len));
 #if DEBUGX
                 ForegroundColor = ConsoleColor.White;
                 WriteLine($"Name = [{Master.name}] VA = {Master.virtualAddress}");

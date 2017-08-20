@@ -99,9 +99,10 @@ namespace Reloc
         public bool IsCLR;
         // maybe ordered list would emit better errors for people
         public List<MiniSection> Sections;
+#if inVtero
         [ProtoIgnore]
         public DeLocate ReReState;
-
+#endif
         int secOff;
 
         public override string ToString()
@@ -318,6 +319,48 @@ namespace Reloc
             }
 
             return extracted_struct;
+        }
+
+
+        public static string ExtractRelocData(Extract e, string RelocBase)
+        {
+            if (e.RelocSize == 0)
+                return string.Empty;
+
+            var relocDir = e.Is64 ? Path.Combine(RelocBase, "64") : Path.Combine(RelocBase, "32");
+            var sb = $"{Path.GetFileName(e.FileName)}-{e.ImageBase.ToString("X")}-{e.TimeStamp.ToString("X")}.reloc";
+            var outFile = Path.Combine(relocDir, sb);
+
+            if (File.Exists(outFile))
+                return outFile;
+
+            byte[] readBuffer;
+
+            using (var fileStream = File.OpenRead(e.FileName))
+            {
+                int RelocPos = 0, RelocSize = 0;
+                for (int i = 0; i < e.Sections.Count(); i++)
+                {
+                    if (e.Sections[i].Name == ".reloc")
+                    {
+                        RelocPos = (int)e.Sections[i].RawFilePointer;
+                        RelocSize = (int)e.Sections[i].RawFileSize;
+                        break;
+                    }
+                }
+                if (RelocSize != 0)
+                {
+                    readBuffer = new byte[RelocSize];
+                    fileStream.Position = RelocPos;
+
+                    fileStream.Read(readBuffer, 0, RelocSize);
+
+                    using (FileStream stream = new FileStream(outFile,
+                            FileMode.CreateNew, FileAccess.Write, FileShare.Read, (int)RelocSize, true))
+                        stream.Write(readBuffer, 0, (int)RelocSize);
+                }
+            }
+            return outFile;
         }
 
 
