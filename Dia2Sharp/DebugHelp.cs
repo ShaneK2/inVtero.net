@@ -9,10 +9,33 @@ namespace Dia2Sharp
 {
     public unsafe class DebugHelp
     {
-        public const int SSRVOPT_DWORD = 0x0002;
-        public const int SSRVOPT_DWORDPTR = 0x004;
-        public const int SSRVOPT_GUIDPTR = 0x0008;
-       
+        public const uint SSRVOPT_DWORD = 0x0002;
+        public const uint SSRVOPT_DWORDPTR = 0x004;
+        public const uint SSRVOPT_GUIDPTR = 0x0008;
+
+        [Flags]
+        public enum UnDname : uint
+        {
+            COMPLETE                 = 0x0000,  // Enable full undecoration
+            NO_LEADING_UNDERSCORES   = 0x0001,  // Remove leading underscores from MS extended keywords
+            NO_MS_KEYWORDS           = 0x0002,  // Disable expansion of MS extended keywords
+            NO_FUNCTION_RETURNS      = 0x0004,  // Disable expansion of return type for primary declaration
+            NO_ALLOCATION_MODEL      = 0x0008,  // Disable expansion of the declaration model
+            NO_ALLOCATION_LANGUAGE   = 0x0010,  // Disable expansion of the declaration language specifier
+            NO_MS_THISTYPE           = 0x0020,  // NYI Disable expansion of MS keywords on the 'this' type for primary declaration
+            NO_CV_THISTYPE           = 0x0040,  // NYI Disable expansion of CV modifiers on the 'this' type for primary declaration
+            NO_THISTYPE              = 0x0060,  // Disable all modifiers on the 'this' type
+            NO_ACCESS_SPECIFIERS     = 0x0080,  // Disable expansion of access specifiers for members
+            NO_THROW_SIGNATURES      = 0x0100,  // Disable expansion of 'throw-signatures' for functions and pointers to functions
+            NO_MEMBER_TYPE           = 0x0200,  // Disable expansion of 'static' or 'virtual'ness of members
+            NO_RETURN_UDT_MODEL      = 0x0400,  // Disable expansion of MS model for UDT returns
+            DECODE_32_BIT            = 0x0800,  // Undecorate 32-bit decorated names
+            NAME_ONLY                = 0x1000,  // Crack only the name for primary declaration;
+                        //  return just [scope::]name.  Does expand template params
+            NO_ARGUMENTS             = 0x2000,  // Don't undecorate arguments to function
+            NO_SPECIAL_SYMS          = 0x4000,  // Don't undecorate special names = v-table, vcall, vector xxx, metatype, etc,
+
+        };
 
         [Flags]
         public enum SymFlag : uint
@@ -30,6 +53,15 @@ namespace Dia2Sharp
             VIRTUAL = 0x00001000,
             THUNK = 0x00002000,
             TLSREL = 0x00004000,
+            SLOT = 0x00008000,
+            ILREL = 0x00010000,
+            METADATA = 0x00020000,
+            CLR_TOKEN = 0x00040000,
+            NULL = 0x00080000,
+            FUNC_NO_RETURN = 0x00100000,
+            SYNTHETIC_ZEROBASE = 0x00200000,
+            PUBLIC_CODE = 0x00400000,
+            RESET = 0x80000000
         }
 
         [Flags]
@@ -65,7 +97,19 @@ namespace Dia2Sharp
             Thunk,
             CustomType,
             ManagedType,
-            Dimension
+            Dimension,
+            CallSite,
+            InlineSite,
+            BaseInterface,
+            VectorType,
+            MatrixType,
+            HLSLType,
+            Caller,
+            Callee,
+            Export,
+            HeapAllocationSite,
+            CoffGroup,
+            Max
         };
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
         public struct SYMBOL_INFO
@@ -109,63 +153,70 @@ namespace Dia2Sharp
         }
 
         [Flags]
-        public enum SymOptions : uint
+        public enum SymOptions : UInt32
         {
-            SYMOPT_ALLOW_ABSOLUTE_SYMBOLS = 0x00000800,
-            SYMOPT_ALLOW_ZERO_ADDRESS = 0x01000000,
-            SYMOPT_AUTO_PUBLICS = 0x00010000,
-            SYMOPT_CASE_INSENSITIVE = 0x00000001,
-            SYMOPT_DEBUG = 0x80000000,
-            SYMOPT_DEFERRED_LOADS = 0x00000004,
+            SYMOPT_CASE_INSENSITIVE          = 0x00000001,
+            SYMOPT_UNDNAME                   = 0x00000002,
+            SYMOPT_DEFERRED_LOADS            = 0x00000004,
+            SYMOPT_NO_CPP                    = 0x00000008,
+            SYMOPT_LOAD_LINES                = 0x00000010,
+            SYMOPT_OMAP_FIND_NEAREST         = 0x00000020,
+            SYMOPT_LOAD_ANYTHING             = 0x00000040,
+            SYMOPT_IGNORE_CVREC              = 0x00000080,
+            SYMOPT_NO_UNQUALIFIED_LOADS      = 0x00000100,
+            SYMOPT_FAIL_CRITICAL_ERRORS      = 0x00000200,
+            SYMOPT_EXACT_SYMBOLS             = 0x00000400,
+            SYMOPT_ALLOW_ABSOLUTE_SYMBOLS    = 0x00000800,
+            SYMOPT_IGNORE_NT_SYMPATH         = 0x00001000,
+            SYMOPT_INCLUDE_32BIT_MODULES     = 0x00002000,
+            SYMOPT_PUBLICS_ONLY              = 0x00004000,
+            SYMOPT_NO_PUBLICS                = 0x00008000,
+            SYMOPT_AUTO_PUBLICS              = 0x00010000,
+            SYMOPT_NO_IMAGE_SEARCH           = 0x00020000,
+            SYMOPT_SECURE                    = 0x00040000,
+            SYMOPT_NO_PROMPTS                = 0x00080000,
+            SYMOPT_OVERWRITE                 = 0x00100000,
+            SYMOPT_IGNORE_IMAGEDIR           = 0x00200000,
+            SYMOPT_FLAT_DIRECTORY            = 0x00400000,
+            SYMOPT_FAVOR_COMPRESSED          = 0x00800000,
+            SYMOPT_ALLOW_ZERO_ADDRESS        = 0x01000000,
             SYMOPT_DISABLE_SYMSRV_AUTODETECT = 0x02000000,
-            SYMOPT_EXACT_SYMBOLS = 0x00000400,
-            SYMOPT_FAIL_CRITICAL_ERRORS = 0x00000200,
-            SYMOPT_FAVOR_COMPRESSED = 0x00800000,
-            SYMOPT_FLAT_DIRECTORY = 0x00400000,
-            SYMOPT_IGNORE_CVREC = 0x00000080,
-            SYMOPT_IGNORE_IMAGEDIR = 0x00200000,
-            SYMOPT_IGNORE_NT_SYMPATH = 0x00001000,
-            SYMOPT_INCLUDE_32BIT_MODULES = 0x00002000,
-            SYMOPT_LOAD_ANYTHING = 0x00000040,
-            SYMOPT_LOAD_LINES = 0x00000010,
-            SYMOPT_NO_CPP = 0x00000008,
-            SYMOPT_NO_IMAGE_SEARCH = 0x00020000,
-            SYMOPT_NO_PROMPTS = 0x00080000,
-            SYMOPT_NO_PUBLICS = 0x00008000,
-            SYMOPT_NO_UNQUALIFIED_LOADS = 0x00000100,
-            SYMOPT_OVERWRITE = 0x00100000,
-            SYMOPT_PUBLICS_ONLY = 0x00004000,
-            SYMOPT_SECURE = 0x00040000,
-            SYMOPT_UNDNAME = 0x00000002,
+            SYMOPT_READONLY_CACHE            = 0x04000000,
+            SYMOPT_SYMPATH_LAST              = 0x08000000,
+            SYMOPT_DISABLE_FAST_SYMBOLS      = 0x10000000,
+            SYMOPT_DISABLE_SYMSRV_TIMEOUT    = 0x20000000,
+            SYMOPT_DISABLE_SRVSTAR_ON_STARTUP = 0x40000000,
+            SYMOPT_DEBUG                     = 0x80000000
         };
 
         [DllImport("dbghelp.dll", CharSet = CharSet.Unicode)]
-        public static extern bool SymInitialize(long hProcess, [MarshalAs(UnmanagedType.LPWStr)] string UserSearchPath, bool fInvadeProcess);
-
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool SymFindFileInPath(
+        public static extern bool SymInitialize(long hProcess, [MarshalAs(UnmanagedType.LPWStr), In] string UserSearchPath, bool fInvadeProcess);
+
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SymFindFileInPathW(
             long hProcess,
             string SearchPath,
-            [MarshalAs(UnmanagedType.LPWStr), In]  string FileName,
+            [MarshalAs(UnmanagedType.LPWStr), In]  StringBuilder FileName,
             IntPtr TimeDate,
-            Int32 two,
-            Int32 three,
-            Int32 flags,
+            UInt32 two,
+            UInt32 three,
+            UInt32 flags,
             [In, Out] StringBuilder filePath,
             IntPtr callback,
             IntPtr context);
 
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymFindFileInPathW(
             long hProcess,
             string searchPath,
-            [MarshalAs(UnmanagedType.LPWStr), In] string fileName,
+            [MarshalAs(UnmanagedType.LPWStr), In] StringBuilder fileName,
             ref Guid id,
-            int two,
-            int three,
-            int flags,
+            UInt32 two,
+            UInt32 three,
+            UInt32 flags,
             [In, Out] StringBuilder filepath,
             IntPtr findCallback,
             IntPtr context
@@ -184,14 +235,14 @@ namespace Dia2Sharp
 
         }
 
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymFromName(
             long hProcess,
-            [MarshalAs(UnmanagedType.LPTStr)] string SymName,
+            [MarshalAs(UnmanagedType.LPWStr)] string SymName,
             ref SYMBOL_INFO pSymInfo);
 
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymSrvGetFileIndexesW(
             string filePath,
@@ -200,15 +251,15 @@ namespace Dia2Sharp
             ref int val2,
             int flags);
 
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymInitializeW(IntPtr hProcess, string UserSearchPath, [MarshalAs(UnmanagedType.Bool)] bool fInvadeProcess);
 
-        [DllImport("dbghelp.dll", SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymCleanup(IntPtr hProcess);
 
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern ulong SymLoadModuleExW(
             long hProcess,
             IntPtr hFile,
@@ -220,13 +271,13 @@ namespace Dia2Sharp
             uint Flags
          );
 
-        [DllImport("dbghelp.dll", SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymUnloadModule64(
             long hProcess,
             ulong BaseOfDll);
 
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymGetLineFromAddrW64(
             long hProcess,
@@ -235,7 +286,7 @@ namespace Dia2Sharp
             ref IntPtr Line
         );
 
-        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SymFromAddrW(
             long hProcess,
@@ -244,13 +295,17 @@ namespace Dia2Sharp
             ref SYMBOL_INFO Symbol
         );
         [DllImport("dbghelp.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        public static extern ulong SymLoadModuleEx(long hProcess, IntPtr hFile, string ImageName, string ModuleName, long BaseOfDll, int DllSize, IntPtr Data, int Flags);
+        public static extern ulong SymLoadModuleEx(long hProcess, IntPtr hFile, string ImageName, string ModuleName, ulong BaseOfDll, uint DllSize, IntPtr Data, uint Flags);
 
 
-        [DllImport("dbghelp.dll", SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", SetLastError = true)]
         public static extern SymOptions SymGetOptions();
 
-        [DllImport("dbghelp.dll", SetLastError = true), SuppressUnmanagedCodeSecurityAttribute]
+        [DllImport("dbghelp.dll", SetLastError = true)]
         public static extern SymOptions SymSetOptions(SymOptions SymOptions);
+
+        [DllImport("dbghelp.dll", SetLastError = true, CallingConvention = CallingConvention.Winapi, CharSet = CharSet.Unicode)]
+        public static extern bool SymGetSymbolFile([In, Optional]long hProcess, [In, Optional]string SymPath,
+            [In] string ImageFile, [In] uint Type, [Out] StringBuilder SymbolFile, [In] UIntPtr cSymbolFile, [Out] StringBuilder DbgFile, [In] UIntPtr cDbgFile);
     }
 }

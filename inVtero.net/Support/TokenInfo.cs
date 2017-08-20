@@ -29,7 +29,7 @@ namespace inVtero.net.Support
             {
                 var addr = (long)priv.Item2;
                 var val = p.GetByteValue(addr);
-                var nfo = new Privilege() { Name = priv.Name, Address = (long)priv.Address, Value = val};
+                var nfo = new Privilege() { Name = priv.Item1, Address = (long)priv.Item2, Value = val};
                 PrivilegeSet.Add(nfo);
             }
         }

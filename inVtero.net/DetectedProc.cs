@@ -136,7 +136,7 @@ namespace inVtero.net
             if (Address != 0)
                 memRead = GetVirtualLongLen(Address, minLen);
 
-            var rv = sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, Address, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
+            var rv = Sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, Address, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
             rv.SelfAddr = Address;
 
             return rv;
@@ -161,9 +161,9 @@ namespace inVtero.net
                     KernelSection = pdb;
             }
             if (sym == null)
-                sym = Vtero.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
+                CODEVIEW.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
 
-            return sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, 0, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
+            return Sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, 0, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
         }
 
         /// <summary>
@@ -186,9 +186,11 @@ namespace inVtero.net
             return value;
         }
 
-        public (string Name, ulong Address, ulong Length)[] MatchSymbols(string Match, string Module = "ntoskrnl")
+        //public (string Name, ulong Address, ulong Length)[] MatchSymbols(string Match, string Module = "ntoskrnl")
+        public Tuple<string,ulong,ulong>[] MatchSymbols(string Match, string Module = "ntoskrnl")
         {
-            List<(string, ulong, ulong)> rv = new List<(string, ulong, ulong)>();
+            //List<(string, ulong, ulong)> rv = new List<(string, ulong, ulong)>();
+            List<Tuple<string, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
 
             var modToAdd = from mod in Sections.Values
                            where mod.DebugDetails != null && !string.IsNullOrWhiteSpace(mod.DebugDetails.PDBFullPath) &&
@@ -197,7 +199,7 @@ namespace inVtero.net
                            select mod;
 
             foreach(var toAdd in modToAdd)
-                rv.AddRange(sym.MatchSyms(Match,toAdd.DebugDetails.PDBFullPath, toAdd.VA.FullAddr));
+                rv.AddRange(Sym.MatchSyms(Match,toAdd.DebugDetails.PDBFullPath, toAdd.VA.FullAddr));
 
 
 
@@ -247,16 +249,18 @@ namespace inVtero.net
                 s = sec;
 
             var detailed = GetSymNameDetails((long) Address, s);
-            if (detailed.Name != string.Empty)
-                return detailed.Name;
+            if (detailed.Item1 != string.Empty)
+                return detailed.Item1;
 
 
             return GetSymName((long)Address);
         }
 
-        public (string Name, ulong Address, ulong Length) GetSymNameDetails(long Address, MemSection enclosedBy = null)
+        //public (string Name, ulong Address, ulong Length) GetSymNameDetails(long Address, MemSection enclosedBy = null)
+        public Tuple<string, ulong, ulong> GetSymNameDetails(long Address, MemSection enclosedBy = null)
         {
-            (string, ulong, ulong) rv = ValueTuple.Create(string.Empty, ulong.MinValue, ulong.MinValue);
+            //(string, ulong, ulong) rv = ValueTuple.Create(string.Empty, ulong.MinValue, ulong.MinValue);
+            Tuple<string, ulong, ulong> rv = Tuple.Create<string, ulong, ulong>(string.Empty, 0,0);
             MemSection PDB = null;
 
             if (enclosedBy == null || enclosedBy.DebugDetails == null)
@@ -267,7 +271,7 @@ namespace inVtero.net
             if (PDB == null || PDB.DebugDetails == null || string.IsNullOrWhiteSpace(PDB.DebugDetails.PDBFullPath))
                 return rv;
 
-            rv = sym.FindSymByAddress((ulong) Address, PDB.DebugDetails.PDBFullPath, (ulong) PDB.VadAddr);
+            rv = Sym.FindSymByAddress((ulong) Address, PDB.DebugDetails.PDBFullPath, (ulong) PDB.VadAddr);
 
             return rv;
         }
@@ -309,7 +313,7 @@ namespace inVtero.net
 
                 // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                 // entirely by the handle ID really which is local to our GUID so....   
-                var local = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                var local = CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address); 
                 if (local != null)
                     sym = local;
 
@@ -325,7 +329,7 @@ namespace inVtero.net
             {
                 if (OnlyMS == null || (OnlyMS != null && OnlyMS.VA.Address == ms.Key))
                 {
-                    var local = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
+                    var local = CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.Value.DebugDetails, ms.Value.VA.Address);
                     if (local != null)
                         sym = local;
                     if (Vtero.VerboseOutput)
@@ -387,7 +391,7 @@ namespace inVtero.net
 
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
                         // entirely by the handle ID really which is local to our GUID so....   
-                        var local = Vtero.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
+                        var local = CODEVIEW.TryLoadSymbols(ID.GetHashCode(), ms.DebugDetails, ms.VA.Address);
                         if (local != null)
                             sym = local;
 
@@ -1441,7 +1445,7 @@ namespace inVtero.net
             if (TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
             {
                 WriteColor(ConsoleColor.Yellow, "Unable to lock on to CV data.");
-                return null;
+                return CODEVIEW_HEADER.Init();
             }
 
             SizeData = BitConverter.ToUInt32(block, 16);
@@ -1460,7 +1464,7 @@ namespace inVtero.net
 
             // char* at end
             var str2 = Encoding.Default.GetString(b2, 24, 32).Trim();
-            var cv2 = new CODEVIEW_HEADER { VSize = (int)Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes2, Age = age2, aGuid = gid2, Sig = s2, PdbName = str2 };
+            var cv2 = new CODEVIEW_HEADER { VSize = Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes2, Age = age2, aGuid = gid2, Sig = s2, PdbName = str2 };
             if (str2.Contains(".") && str2.Contains(".pdb"))
                 sec.Name = str2.Substring(0, str2.IndexOf(".pdb") + 4).ToLower();
             else
@@ -1985,21 +1989,6 @@ namespace inVtero.net
                 ((IDisposable)dp).Dispose();
             dp = null;
         }
-    }
-
-    [ProtoContract(AsReferenceDefault = true, ImplicitFields = ImplicitFields.AllPublic)]
-    public class CODEVIEW_HEADER
-    {
-        public int VSize;
-        public byte[] byteGuid;
-        public uint Sig;
-        public Guid aGuid;
-        public int Age;
-        public string PdbName;
-        public uint TimeDateStamp;
-
-        // This field is determined through a call to SymFindFileInPath/Ex from the above info 
-        public string PDBFullPath;
     }
 
 }

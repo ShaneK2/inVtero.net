@@ -21,8 +21,9 @@ using System.IO;
 using static System.Console;
 using System.Globalization;
 using System.Collections.Concurrent;
+#if inVtero
 using inVtero.net.Hashing;
-
+#endif
 namespace Reloc
 {
     public class ReReDB
@@ -32,6 +33,7 @@ namespace Reloc
         public string Reloc64Dir;
         public string Reloc32Dir;
         public string RelocFolder;
+
 #if !NETSTANDARD2_0
         public CloudLoader AzureCnx;
 #endif
@@ -56,8 +58,10 @@ namespace Reloc
 
             // check loal FS if we have this entry
             var RelocFile = Directory.GetFiles(RelocFolder, RelocNameGlob).FirstOrDefault();
+            #if inVtero
             if (!File.Exists(RelocFile))
             {
+
 #if !NETSTANDARD2_0
                 // look in the cloud
                 var blobData = AzureCnx.FindReloc(NormalizedName, TimeStamp, Is64);
@@ -79,11 +83,13 @@ namespace Reloc
             }
             else
             {
+
                 // take image base from the file since it can be changed in the header
                 var split = RelocFile.Split('-');
                 OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
                 reBytes = File.ReadAllBytes(RelocFile);
-            }
+              }
+
 
             var deLoc = new DeLocate(OrigImageBase, DeLocate.ProcessRelocs(reBytes));
             ReData.TryAdd(RelocNameGlob, deLoc);

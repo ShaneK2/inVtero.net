@@ -602,6 +602,8 @@ namespace inVtero.net
         private bool disposedValue = false; // To detect redundant calls
         protected virtual void Dispose(bool disposing)
         {
+            // Mem is a very shared construct looking to find where a consumer is causing dispose before were ready
+#if FALSE
             if (!disposedValue)
             {
                 // release / clear up streams
@@ -623,6 +625,7 @@ namespace inVtero.net
                 // no unmanaged resources e.g. AllocHGlobal etc...
                 disposedValue = true;
             }
+#endif
         }
         /// <summary>
         /// Finalizer override not really needed
