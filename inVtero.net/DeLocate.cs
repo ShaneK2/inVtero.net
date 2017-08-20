@@ -21,7 +21,7 @@ using System.IO;
 using static System.Console;
 using System.Globalization;
 using System.Collections.Concurrent;
-#if inVtero
+#if !NETSTANDARD2_0
 using inVtero.net.Hashing;
 #endif
 namespace Reloc
@@ -58,7 +58,7 @@ namespace Reloc
 
             // check loal FS if we have this entry
             var RelocFile = Directory.GetFiles(RelocFolder, RelocNameGlob).FirstOrDefault();
-            #if inVtero
+
             if (!File.Exists(RelocFile))
             {
 
