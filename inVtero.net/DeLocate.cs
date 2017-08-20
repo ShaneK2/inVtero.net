@@ -33,7 +33,8 @@ namespace Reloc
         public string Reloc64Dir;
         public string Reloc32Dir;
         public string RelocFolder;
-#if inVtero
+
+#if !NETSTANDARD2_0
         public CloudLoader AzureCnx;
 #endif
         public DeLocate GetLocated(bool Is64, string NormalizedName, uint TimeStamp, ulong CurrVA)
@@ -61,6 +62,7 @@ namespace Reloc
             if (!File.Exists(RelocFile))
             {
 
+#if !NETSTANDARD2_0
                 // look in the cloud
                 var blobData = AzureCnx.FindReloc(NormalizedName, TimeStamp, Is64);
                 if (blobData.RelocData == null)
@@ -77,17 +79,17 @@ namespace Reloc
                 // network blobs are ALL IN CAPS
                 var FullName = $"{NormalizedName.ToUpper()}-{OrigImageBase:X}-{TimeStamp:X}.reloc";
                 File.WriteAllBytes(Path.Combine(RelocFolder, FullName), reBytes);
+#endif
             }
             else
             {
-#endif
+
                 // take image base from the file since it can be changed in the header
                 var split = RelocFile.Split('-');
                 OrigImageBase = ulong.Parse(split[split.Length - 2], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
                 reBytes = File.ReadAllBytes(RelocFile);
-#if inVtero
               }
-#endif
+
 
             var deLoc = new DeLocate(OrigImageBase, DeLocate.ProcessRelocs(reBytes));
             ReData.TryAdd(RelocNameGlob, deLoc);

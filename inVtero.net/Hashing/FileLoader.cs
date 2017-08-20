@@ -30,8 +30,10 @@ using System.Diagnostics;
 using System.Buffers;
 using static inVtero.net.MagicNumbers;
 using Monitor.Core.Utilities;
+#if !NETSTANDARD2_0
 using Microsoft.WindowsAzure.Storage.Table;
 using static inVtero.net.Hashing.CloudDB;
+#endif
 using static inVtero.net.CompareHelp;
 
 namespace inVtero.net.Hashing
@@ -395,7 +397,7 @@ namespace inVtero.net.Hashing
             do
             {
                 Extract next = null;
-                #region Partition
+#region Partition
                 // prescan enough entries to not overspill the specified hash buffer count
                 long CountForMaxBuff = 0;
                 ConcurrentStack<Extract> ReadyList = new ConcurrentStack<Extract>();
@@ -431,7 +433,7 @@ namespace inVtero.net.Hashing
                     }
                 }
 
-                #endregion
+#endregion
                 try
                 {
                     if (CountForMaxBuff > BufferCount)
@@ -792,7 +794,7 @@ namespace inVtero.net.Hashing
         }
 
 
-        #region IDisposable Support
+#region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
 
         protected virtual void Dispose(bool disposing)
@@ -829,6 +831,6 @@ namespace inVtero.net.Hashing
             // TODO: uncomment the following line if the finalizer is overridden above.
             // GC.SuppressFinalize(this);
         }
-        #endregion
+#endregion
     }
 }

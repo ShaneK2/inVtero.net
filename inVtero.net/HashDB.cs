@@ -24,7 +24,9 @@ using System.IO.MemoryMappedFiles;
 using System.Threading;
 using Reloc;
 using static inVtero.net.MagicNumbers;
+#if !NETSTANDARD2_0
 using RoaringCLI;
+#endif
 
 namespace inVtero.net
 {
@@ -40,8 +42,10 @@ namespace inVtero.net
         public ulong BDBEntriesMask;
         public ReReDB ReRe;
 
+#if !NETSTANDARD2_0
         [ProtoIgnore]
         RoarCLI r;
+#endif
 
         [ProtoIgnore]
         UnsafeHelp HDBBitMap;
@@ -155,7 +159,7 @@ namespace inVtero.net
             Misc.WriteColor(ConsoleColor.Green, ConsoleColor.Black, $"Done.  Commited {sizeNeeded:N0} bytes to disk for bitmap.");
         }
 
-        #region IDisposable Support
+#region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
 
         protected virtual void Dispose(bool disposing)
@@ -178,6 +182,6 @@ namespace inVtero.net
         {
             Dispose(true);
         }
-        #endregion
+#endregion
     }
 }

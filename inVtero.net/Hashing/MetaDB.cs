@@ -30,7 +30,11 @@ namespace inVtero.net.Hashing
         public string InfoString
         {
             get { return infoString; }
-            set { infoString = value; Loader.InfoString = value; cLoader.InfoString = value; }
+            set { infoString = value; Loader.InfoString = value;
+#if !NETSTANDARD2_0
+                cLoader.InfoString = value;
+#endif
+            }
         }
 
         public int MinHashSize;
@@ -39,11 +43,13 @@ namespace inVtero.net.Hashing
         public ReReDB ReRe;
 
         public HashDB HDB { get; }
+
+#if !NETSTANDARD2_0
         public CloudDB CDB { get; }
+        public CloudLoader cLoader;
+#endif
 
         public FileLoader Loader;
-        public CloudLoader cLoader;
-
         public XElement mData;
         public XElement mRecords;
 
@@ -131,10 +137,12 @@ namespace inVtero.net.Hashing
             HDB.ReRe = ReRe;
 
             Loader = new FileLoader(this, LoadBufferCount, infoString);
+
+#if !NETSTANDARD2_0
             cLoader = new CloudLoader(Loader, MinHashSize, RelocName);
             cLoader.InfoString = infoString;
-
             ReRe.AzureCnx = cLoader;
+#endif
         }
 
         public void Save()

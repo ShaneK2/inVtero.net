@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\inVtero.net\ConfigOptions.cs" Link="ConfigOptions.cs" />
+    <Compile Include="..\..\inVtero.net\DeLocate.cs" Link="DeLocate.cs" />
+    <Compile Include="..\..\inVtero.net\DetectedProc.cs" Link="DetectedProc.cs" />
+    <Compile Include="..\..\inVtero.net\Extensions.cs" Link="Extensions.cs" />
+    <Compile Include="..\..\inVtero.net\extract.cs" Link="extract.cs" />
+    <Compile Include="..\..\inVtero.net\HashDB.cs" Link="HashDB.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\CloudDB.cs" Link="Hashing\CloudDB.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\CloudLoader.cs" Link="Hashing\CloudLoader.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\FileLoader.cs" Link="Hashing\FileLoader.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\FractHashTree.cs" Link="Hashing\FractHashTree.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\Hasher.cs" Link="Hashing\Hasher.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\HashRecord.cs" Link="Hashing\HashRecord.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\MetaDB.cs" Link="Hashing\MetaDB.cs" />
+    <Compile Include="..\..\inVtero.net\Hashing\MetaItem.cs" Link="Hashing\MetaItem.cs" />
+    <Compile Include="..\..\inVtero.net\inVtero.cs" Link="inVtero.cs" />
+    <Compile Include="..\..\inVtero.net\Mem.cs" Link="Mem.cs" />
+    <Compile Include="..\..\inVtero.net\MemSection.cs" Link="MemSection.cs" />
+    <Compile Include="..\..\inVtero.net\PageTable.cs" Link="PageTable.cs" />
+    <Compile Include="..\..\inVtero.net\PFN.cs" Link="PFN.cs" />
+    <Compile Include="..\..\inVtero.net\PhysicalMemoryStream.cs" Link="PhysicalMemoryStream.cs" />
+    <Compile Include="..\..\inVtero.net\Scanner.cs" Link="Scanner.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\AMemoryRunDetector.cs" Link="Specialties\AMemoryRunDetector.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\BasicRunDetector.cs" Link="Specialties\BasicRunDetector.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\CrashDump.cs" Link="Specialties\CrashDump.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\IMemAwareChecking.cs" Link="Specialties\IMemAwareChecking.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\Parallel_sort.cs" Link="Specialties\Parallel_sort.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\ProgressBar.cs" Link="Specialties\ProgressBar.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\VMWare.cs" Link="Specialties\VMWare.cs" />
+    <Compile Include="..\..\inVtero.net\Specialties\XEN.cs" Link="Specialties\XEN.cs" />
+    <Compile Include="..\..\inVtero.net\Support.cs" Link="Support.cs" />
+    <Compile Include="..\..\inVtero.net\Support\Capstone.cs" Link="Support\Capstone.cs" />
+    <Compile Include="..\..\inVtero.net\Support\DataMon.cs" Link="Support\DataMon.cs" />
+    <Compile Include="..\..\inVtero.net\Support\Heaps.cs" Link="Support\Heaps.cs" />
+    <Compile Include="..\..\inVtero.net\Support\JunctionPoint.cs" Link="Support\JunctionPoint.cs" />
+    <Compile Include="..\..\inVtero.net\Support\Keystone.cs" Link="Support\Keystone.cs" />
+    <Compile Include="..\..\inVtero.net\Support\Strings.cs" Link="Support\Strings.cs" />
+    <Compile Include="..\..\inVtero.net\Support\TokenInfo.cs" Link="Support\TokenInfo.cs" />
+    <Compile Include="..\..\inVtero.net\Support\WebAPI.cs" Link="Support\WebAPI.cs" />
+    <Compile Include="..\..\inVtero.net\UnsafeHelp.cs" Link="UnsafeHelp.cs" />
+    <Compile Include="..\..\inVtero.net\VirtualScanner.cs" Link="VirtualScanner.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Hashing\" />
+    <Folder Include="Support\" />
+    <Folder Include="Specialties\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CoreCompat.ELFSharp" Version="1.0.5" />
+    <PackageReference Include="NetStandardHashLib" Version="1.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
+    <PackageReference Include="protobuf-net" Version="2.3.2" />
+    <PackageReference Include="System.Buffers" Version="4.4.0" />
+  </ItemGroup>
+
+</Project>
