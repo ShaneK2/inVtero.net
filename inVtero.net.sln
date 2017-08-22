@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26430.16
+VisualStudioVersion = 15.0.26730.8
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVtero.net", "inVtero.net\inVtero.net.csproj", "{BBA65FAD-57B1-4B78-B262-E542A88440D6}"
 EndProject
@@ -33,6 +33,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{9214
 		Scripts\Capstone.py = Scripts\Capstone.py
 		Scripts\CloudLeech.py = Scripts\CloudLeech.py
 		Scripts\DBLoad.py = Scripts\DBLoad.py
+		dt.sh = dt.sh
 		Scripts\Dump.py = Scripts\Dump.py
 		Scripts\List.py = Scripts\List.py
 		Scripts\Main.py = Scripts\Main.py
@@ -114,6 +115,9 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{42B25291-76EE-42A3-82FA-66A913CFA570} = {92143A5B-B728-4B44-BA13-317A8A2F6184}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {29457A18-7B5B-4E47-8F30-E38C4B133732}
 	EndGlobalSection
 	GlobalSection(Performance) = preSolution
 		HasPerformanceSessions = true

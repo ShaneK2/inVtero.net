@@ -3,12 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Management.Automation;
 using inVtero.net;
 using inVtero.net.Hashing;
 using System.IO;
 
-#if FALSE
-using System.Management.Automation;
 
 namespace inVtero.net.PS
 {
@@ -147,5 +146,3 @@ namespace inVtero.net.PS
         }
     }
 }
-
-#endif
