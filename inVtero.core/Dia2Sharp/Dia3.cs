@@ -7,6 +7,12 @@ namespace Dia2Sharp
 {
     public class DiaSource
     {
+        CODEVIEW_HEADER CV;
+        public DiaSource(CODEVIEW_HEADER cv)
+        {
+            CV = cv;
+        }
+
         public void loadDataFromPdb(string pdbPath)
         {
 
@@ -145,7 +151,7 @@ namespace Dia2Sharp
 
         public DiaSource OpenSource()
         {
-            var rv = new DiaSource();
+            var rv = new DiaSource(CV);
 
             return rv;
         }

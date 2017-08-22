@@ -3,6 +3,9 @@
 # ktwo@ktwo.ca
 #
 # Format a JSON web request for any binary
+#
+# v.2 moved typedef parameter as part of query string to support wildcards etc..
+#
 # PDBGUID: (F4 12 A8 DD 28 AC 69 42 AB 80 73 D8 42 38 01 A4)
 # becomes {DDA812F4-AC28-4269-AB80-73D8423801A4}
 #  
@@ -118,7 +121,7 @@ if [[ $BASEVA -ne 0 ]]; then
 fi
 
 function gettypedef() {
-    JSON2PDB="https://pdb2json.azurewebsites.net/api/typedef/$1?guid=$FINALGUID&age=$PDBAGE&PDB=$PDBFILENAME$EXTRA_URL_PARAMS"
+    JSON2PDB="https://pdb2json.azurewebsites.net/api/typedef/x?type=$1&guid=$FINALGUID&age=$PDBAGE&PDB=$PDBFILENAME$EXTRA_URL_PARAMS"
     if (( "$verbose" != 0 )); then
         echo "calling server with $CURL $EXTRA_ARGS $JSON2PDB"
     fi
