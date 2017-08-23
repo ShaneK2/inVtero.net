@@ -23,23 +23,25 @@ XSCAN=""
 RERE=""
 typedef=""
 
+set -o noglob
+
 function show_help() {
     echo "$0 is called with an input file -i [[FILE_TO_PARSE]] and one of [[-t | -A | -X | -r]]"
     echo "-i input_PE_FILE (required)"
-    echo "-t _TYPEDUMP (_EPROCESS or _POOL_HEADER etc...)"
+    echo "-t _TYPEDUMP (_EPROCESS or _POOL_HEADER or use wildcard matching * just * for everything)"
     echo "-X Name_*_WildCard"
     echo "-A 0xADDRESS"
     echo "-r (returns relocation data)"
     echo "-h (this help)" 
     echo "-b [[base_va]] (optional)"
     echo "-f output_file (optional)"
-    echo "detected arguments were verbose=[[$verbose]], output_file=[['$output_file']]"
+    echo "detected arguments were; INPUT=[$input_file] (file must exist) verbose=[[$verbose]], output_file=[['$output_file']]"
     echo "ADDRESS=[[$ADDRESS]] XSCAN=[[$XSCAN]] RERE=[[$RERE]]"
     echo "typedef=[[$typedef]] Leftovers: $@"
     exit
 }
 
-while getopts "i:t:h?vf:b:A:X:rb:" opt; do
+while getopts "f:i:t:h?vo:b:A:X:rb:" opt; do
     case "$opt" in
     h|\?)
         show_help
@@ -47,19 +49,20 @@ while getopts "i:t:h?vf:b:A:X:rb:" opt; do
         ;;
     v)  verbose=1
         ;;
-    i)  input_file=$OPTARG
+    i|f) 
+		input_file=$OPTARG
         ;;
-    f)  output_file=$OPTARG
+    o)  output_file=$OPTARG
         ;;
-    t)  typedef=$OPTARG
+    t)  typedef="$OPTARG"
         ;;
-    A)  ADDRESS=$OPTARG
+    A)  ADDRESS="$OPTARG"
         ;;
-    X)  XSCAN=$OPTARG
+    X)  XSCAN="$OPTARG"
         ;;
     r)  RERE=1
         ;;
-    b)  BASEVA=$OPTARG
+    b)  BASEVA="$OPTARG"
     esac
 done
 
