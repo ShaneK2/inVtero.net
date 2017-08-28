@@ -61,7 +61,7 @@ Write-Host "Running Test-Snapshot cmdlet..."
 Measure-Command {
 try
 {
-	Test-Snapshot -VF $InVteroDir -HashSize 256 -InputFile $InputSnapshot -CBit 1 -M GENERIC
+	Test-Snapshot -VF $InVteroDir -HashSize 256 -InputFile $InputSnapshot -M GENERIC
 } catch {
     Write-Error $_.Exception.ToString()
 	Read-Host
