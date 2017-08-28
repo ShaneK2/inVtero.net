@@ -33,9 +33,13 @@ namespace inVtero.net.Support
 
                 dp.MemAccess.GetPageForPhysAddr(entry.PTE, ref block, ref GotData);
 
-                if (!GotData 
+                if (!GotData
+#if !NETSTANDARD2_0
+
                     || UnsafeHelp.IsZeroPage(block) == 0
-                    || UnsafeHelp.IsFFFPage(block) == 0)
+                    || UnsafeHelp.IsFFFPage(block) == 0
+#endif
+                    )
                     continue;
 
                 if (MatchAscii)

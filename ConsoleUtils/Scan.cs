@@ -66,12 +66,12 @@ namespace inVtero.net.ConsoleUtils
                 }
             }
 
+            vtero.MemAccess = Mem.InitMem(co.FileName, vtero.MRD);
             if (!vtero.OverRidePhase)
             {
-                Mem.InitMem(co.FileName, vtero.MRD);
+#if TESTING
                 //ProgressBarz.BaseMessage = new ConsoleString("First pass, looking for processes");
                 ForegroundColor = ConsoleColor.Cyan;
-#if TESTING
             Timer = Stopwatch.StartNew();
 
                 if ((Version & PTType.VALUE) == PTType.VALUE)
@@ -123,7 +123,7 @@ namespace inVtero.net.ConsoleUtils
             }
             // basic perf checking
             //QuickOptions.Timer = Stopwatch.StartNew();
-                
+
             var procCount = vtero.ProcDetectScan(co.VersionsToEnable);
 
             // second pass

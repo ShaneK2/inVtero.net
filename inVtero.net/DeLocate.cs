@@ -21,9 +21,10 @@ using System.IO;
 using static System.Console;
 using System.Globalization;
 using System.Collections.Concurrent;
-#if !NETSTANDARD2_0
 using inVtero.net.Hashing;
-#endif
+using inVtero.net.Support;
+using Newtonsoft.Json;
+
 namespace Reloc
 {
     public class ReReDB
@@ -34,16 +35,15 @@ namespace Reloc
         public string Reloc32Dir;
         public string RelocFolder;
 
-#if !NETSTANDARD2_0
         public CloudLoader AzureCnx;
-#endif
-        public DeLocate GetLocated(bool Is64, string NormalizedName, uint TimeStamp, ulong CurrVA)
+
+        public DeLocate GetLocated(bool Is64, string NormalizedName, uint TimeStamp, ulong CurrVA, uint VSize = 0)
         {
             ulong OrigImageBase = 0;
             byte[] reBytes = null;
 
             var RelocFolder = Is64 ? Reloc64Dir : Reloc32Dir;
-            var RelocNameGlob = $"{NormalizedName}-*-{TimeStamp:X}.reloc";
+            var RelocNameGlob = $"{NormalizedName.ToUpper()}-*-{TimeStamp:X}.reloc";
 
             if (ReData.ContainsKey(RelocNameGlob))
             {
@@ -56,30 +56,46 @@ namespace Reloc
                 return cachedReRe;
             }
 
+            if (inVtero.net.Vtero.VerboseLevel > 2) WriteLine($"Checking for relocations in {RelocFolder} with {RelocNameGlob}");
+
             // check loal FS if we have this entry
             var RelocFile = Directory.GetFiles(RelocFolder, RelocNameGlob).FirstOrDefault();
 
+            if (inVtero.net.Vtero.VerboseLevel > 2) WriteLine($"Found relocation data {RelocFile}");
+
             if (!File.Exists(RelocFile))
             {
+                if (inVtero.net.Vtero.VerboseLevel > 1) WriteLine($"No relocations locally, checking server");
 
-#if !NETSTANDARD2_0
-                // look in the cloud
-                var blobData = AzureCnx.FindReloc(NormalizedName, TimeStamp, Is64);
-                if (blobData.RelocData == null)
+                // try JSON server
+                // "https://pdb2json.azurewebsites.net/api/Relocs/x"
+                // 
+                var rs = JsonConvert.DeserializeObject<RelocSection>(WebAPI.GET($"?name={NormalizedName}&timedate={TimeStamp:X}&vsize={VSize:X}", "http://localhost:7071/api/Relocs/s"));
+                if (rs != null && rs.TimeStamp != 0)
                 {
-                    // cache a NULL result so we don't retry too hard
-                    ReData.TryAdd(RelocNameGlob, null);
-                    return null;
+                    if (inVtero.net.Vtero.VerboseLevel > 1) WriteLine($"Relocation data found on PDB2JSON server");
+                    OrigImageBase = rs.OriginalBase;
+                    reBytes = rs.RawRelocBuffer;
                 }
-
-                reBytes = blobData.RelocData;
-                OrigImageBase = blobData.ImageBase;
-
+                // try Azure/Other cloud servers 
+                if (OrigImageBase == 0)
+                {
+                    // check Azure
+                    var blobData = AzureCnx.FindReloc(NormalizedName, TimeStamp, Is64);
+                    if (blobData.RelocData == null)
+                    {
+                        // cache a NULL result so we don't retry too hard
+                        ReData.TryAdd(RelocNameGlob, null);
+                        return null;
+                    }
+                    if (inVtero.net.Vtero.VerboseLevel > 1) WriteLine($"Relocation data found on Azure server");
+                    reBytes = blobData.RelocData;
+                    OrigImageBase = blobData.ImageBase;
+                }
                 // cache to disk to avoid network call next time
                 // network blobs are ALL IN CAPS
                 var FullName = $"{NormalizedName.ToUpper()}-{OrigImageBase:X}-{TimeStamp:X}.reloc";
                 File.WriteAllBytes(Path.Combine(RelocFolder, FullName), reBytes);
-#endif
             }
             else
             {
@@ -90,6 +106,8 @@ namespace Reloc
                 reBytes = File.ReadAllBytes(RelocFile);
               }
 
+            if (reBytes == null || reBytes.Length < 1)
+                return null;
 
             var deLoc = new DeLocate(OrigImageBase, DeLocate.ProcessRelocs(reBytes));
             ReData.TryAdd(RelocNameGlob, deLoc);
@@ -115,7 +133,23 @@ namespace Reloc
         }
     }
 
+    public class RelocSection
+    {
+        public bool Is64;
 
+        public string Name;
+        public uint TimeStamp;
+        public uint VirtualSize;
+        public int OrigBaseOffset;
+        public ulong OriginalBase;
+
+        public List<Reloc> Processed;
+
+        public string FullPath;
+        public byte[] RawRelocBuffer;
+        public int RelocSecOffset;
+        public int RelocLength;
+    }
 
     public class Reloc
     {
@@ -135,11 +169,10 @@ namespace Reloc
     /// </summary>
     public class DeLocate
     {
-
         public DeLocate(ulong imageBase, List<Reloc> relocData)
         {
             OrigImageBase = imageBase;
-            RelocData = relocData;
+            RelocData = new RelocSection() { Processed = relocData };
         }
         public DeLocate(DeLocate other)
         {
@@ -249,7 +282,7 @@ namespace Reloc
 
         public ulong Delta;
         public ulong OrigImageBase { get; }
-        public List<Reloc> RelocData { get; }
+        public RelocSection RelocData;
 
         ulong OverHang;
         bool CarryOne;

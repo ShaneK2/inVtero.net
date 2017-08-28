@@ -142,7 +142,8 @@ namespace Reloc
                 WriteLine($"Can not find scan folder {Source} to import PE files from");
                 return null;
             }
-            else {
+            else
+            {
 
                 WriteLine($"Scanning folder {Source} and saving relocs into {Dest}.");
 
@@ -205,16 +206,16 @@ namespace Reloc
         {
             Extract extracted_struct = new Extract();
 
-            if (block[blockOffset] != 0x4d || block[blockOffset+1] != 0x5a)
+            if (block[blockOffset] != 0x4d || block[blockOffset + 1] != 0x5a)
                 return null;
 
-            var headerOffset = BitConverter.ToInt32(block, blockOffset+0x3C);
+            var headerOffset = BitConverter.ToInt32(block, blockOffset + 0x3C);
 
             // bad probably
             if (headerOffset > 3000)
                 return null;
 
-            if (BitConverter.ToInt32(block, blockOffset+headerOffset) != 0x00004550)
+            if (BitConverter.ToInt32(block, blockOffset + headerOffset) != 0x00004550)
                 return null;
 
             var pos = blockOffset + headerOffset + 6;
@@ -322,23 +323,51 @@ namespace Reloc
         }
 
 
-        public static string ExtractRelocData(Extract e, string RelocBase)
+        public static RelocSection ExtractRelocData(Extract e, string RelocBase, byte[] buff = null, bool NoWrite = false)
         {
             if (e.RelocSize == 0)
-                return string.Empty;
+                return null;
 
-            var relocDir = e.Is64 ? Path.Combine(RelocBase, "64") : Path.Combine(RelocBase, "32");
-            var sb = $"{Path.GetFileName(e.FileName)}-{e.ImageBase.ToString("X")}-{e.TimeStamp.ToString("X")}.reloc";
-            var outFile = Path.Combine(relocDir, sb);
+            RelocSection rv = new RelocSection();
 
-            if (File.Exists(outFile))
-                return outFile;
+            int RelocPos = 0, RelocSize = 0;
 
+            rv.FullPath = e.FileName;
+            rv.Name = Path.GetFileName(e.FileName);
+
+            rv.Is64 = e.Is64;
+            rv.VirtualSize = e.SizeOfImage;
+            rv.TimeStamp = e.TimeStamp;
+            rv.OriginalBase = e.ImageBase;
+            rv.OrigBaseOffset = (int)e.ImageBaseOffset;
+
+            for (int i = 0; i < e.Sections.Count(); i++) { 
+                if (e.Sections[i].Name == ".reloc") {
+                    RelocPos = (int) e.Sections[i].RawFilePointer;
+                    RelocSize = (int) e.Sections[i].RawFileSize;
+                    break;
+                }
+            }
+            rv.RelocSecOffset = RelocPos;
+            rv.RelocLength =  RelocSize;
+
+            rv.RawRelocBuffer = new ArraySegment<byte>(buff, RelocPos, RelocSize).ToArray();
+            return rv;
+
+            // we can use this DB of files for a solid white list 
+            #region keep whole files
+
+            //var relocDir = e.Is64 ? Path.Combine(RelocBase, "64") : Path.Combine(RelocBase, "32");
+            //var sb = $"{Path.GetFileName(e.FileName)}-{e.ImageBase.ToString("X")}-{e.TimeStamp.ToString("X")}.reloc";
+            //var outFile = Path.Combine(relocDir, sb);
+            /*
+            if (buff != null && buff.Length >= RelocPos + RelocSize)
+            {
+                rv.RawRelocBuffer = new ArraySegment<byte>(buff, RelocPos, RelocSize).ToArray();
+            }
             byte[] readBuffer;
-
             using (var fileStream = File.OpenRead(e.FileName))
             {
-                int RelocPos = 0, RelocSize = 0;
                 for (int i = 0; i < e.Sections.Count(); i++)
                 {
                     if (e.Sections[i].Name == ".reloc")
@@ -352,15 +381,18 @@ namespace Reloc
                 {
                     readBuffer = new byte[RelocSize];
                     fileStream.Position = RelocPos;
-
                     fileStream.Read(readBuffer, 0, RelocSize);
 
-                    using (FileStream stream = new FileStream(outFile,
-                            FileMode.CreateNew, FileAccess.Write, FileShare.Read, (int)RelocSize, true))
-                        stream.Write(readBuffer, 0, (int)RelocSize);
+                    if (!NoWrite && !File.Exists(rv.FullPath))
+                    {
+                        using (FileStream stream = new FileStream(outFile,
+                                FileMode.CreateNew, FileAccess.Write, FileShare.Read, RelocSize, true))
+                            stream.Write(readBuffer, 0, RelocSize);
+                    }
                 }
             }
-            return outFile;
+            return rv;*/
+            #endregion
         }
 
 
@@ -412,7 +444,7 @@ namespace Reloc
                 SizeOfImage = binReader.ReadUInt32();
                 SizeOfHeaders = binReader.ReadUInt32();
                 var CurrEnd = SizeOfHeaders;
-                
+
                 /// implicit section for header
                 Sections.Add(new MiniSection { VirtualSize = 0x1000, RawFileSize = CurrEnd, RawFilePointer = 0, VirtualAddress = 0, Name = ".PEHeader", Characteristics = 0x20000000 });
 

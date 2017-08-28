@@ -8,7 +8,7 @@ using inVtero.net.Hashing;
 using System.IO;
 using System.Globalization;
 
-#if FALSE
+#if FALSE || NETSTANDARD2_0
 using System.Management.Automation;
 
 namespace inVtero.net.PS
@@ -66,7 +66,7 @@ namespace inVtero.net.PS
 
                     if (!ulong.TryParse(parse, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out parsed))
                         if (!ulong.TryParse(parse, out parsed))
-                            throw new ValidationMetadataException($"Argument {arguments} must be an number value and a power of 2.  You can specify hex values or regular.");
+                            throw new ApplicationException($"Argument {arguments} must be an number value and a power of 2.  You can specify hex values or regular.");
                 }
             }
         }

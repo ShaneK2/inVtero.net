@@ -225,6 +225,8 @@ namespace inVtero.net.Hashing
         public CancellationTokenSource source;
         bool DoMetaCollection;
 
+        public Action<int, int, string, string> ProgressDelegate = null;
+
         public void LoadFromPath(string Folder, bool doMetaCollection = true)
         {
             source = new CancellationTokenSource();

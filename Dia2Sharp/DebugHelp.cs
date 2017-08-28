@@ -123,7 +123,7 @@ namespace Dia2Sharp
             public ulong ModBase;
             public SymFlag Flags;
             public ulong Value;
-            public long Address;
+            public ulong Address;
             public uint Register;
             public uint Scope;
             public SymTagEnum Tag;

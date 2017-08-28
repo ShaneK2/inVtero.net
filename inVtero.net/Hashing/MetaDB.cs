@@ -44,10 +44,12 @@ namespace inVtero.net.Hashing
 
         public HashDB HDB { get; }
 
+        // CloudDB is not ported yet it's the management of the Azure services anyhow.. not really critical just yet ;)
 #if !NETSTANDARD2_0
         public CloudDB CDB { get; }
-        public CloudLoader cLoader;
 #endif
+
+        public CloudLoader cLoader;
 
         public FileLoader Loader;
         public XElement mData;
@@ -138,11 +140,9 @@ namespace inVtero.net.Hashing
 
             Loader = new FileLoader(this, LoadBufferCount, infoString);
 
-#if !NETSTANDARD2_0
             cLoader = new CloudLoader(Loader, MinHashSize, RelocName);
             cLoader.InfoString = infoString;
             ReRe.AzureCnx = cLoader;
-#endif
         }
 
         public void Save()

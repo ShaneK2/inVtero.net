@@ -1,34 +1,76 @@
 #
-# inVtero.ps1
-# This or quickdumps config
-$config_path = ".\invtero.net\bin\x64\Debug\inVtero.net.dll.config"
-[System.AppDomain]::CurrentDomain.SetData("APP_CONFIG_FILE", $config_path)
+# Starting to build out PS scripting 
+# This script is meant for general demo/test of functionality
+#
+if($IsCoreCLR)
+{
+	$config_path = "inVteroCore.dll.config"
+	[System.AppDomain]::CurrentDomain.SetData("APP_CONFIG_FILE", $config_path)
+	$ModuleName = "inVteroCore.dll"
+} else {
+	$config_path = "inVtero.net.dll.config"
+	[System.AppDomain]::CurrentDomain.SetData("APP_CONFIG_FILE", $config_path)
+	$ModuleName = "inVtero.net.dll"
+}
 
-#$env:PSModulePath + ";."
-#Save the current value in the $p variable.
+if($IsCoreCLR)
+{
+	if($IsLinux) {
+		$InVteroDir = "/data/"
+		$InputSnapshot = "/data/test/Windows 10 x64-PRO-1703-40599dd1.vmem"
+		#$InputSnapshot = "/data/test/MSEdge - Win10_preview-e70efcb2.vmem"
+	} 
+	elseif($IsWindows) {
+		$vm = "Windows 10 x64-PRO-1703\Windows 10 x64-PRO-1703-40599dd1.vmem";
+		#$vm = "MSEdge.Win10.RS2.VMWare\MSEdge - Win10_preview\MSEdge - Win10_preview-e70efcb2.vmem";
+		$InVteroDir = "C:\temp\inVtero.net"
+		$InputSnapshot = "C:\Users\files\VMs\" + $vm
+	}
+	elseif($IsOsX)
+	{
+		Write-Warning "Not tested yet! (however it may work ;)?"
+		Write-Warning "Manually configure settings please."
+	} else {
+		Write-Error "Unknown state."
+		return;
+	}
+}
+
+if($args[0] -and (Test-Path $args[0] -PathType Leaf)) { $InputSnapshot = $args[0] }
+
+
+#scan for module matching our environment
+$moduleItem = Get-ChildItem -Filter $ModuleName -Recurse -ErrorAction SilentlyContinue -Force
 $p = [Environment]::GetEnvironmentVariable("PSModulePath")
-
-#Add the new path to the $p variable. Begin with a semi-colon separator.
-$p += ";.\inVtero.net\bin\x64\Debug\"
-
-#Add the paths in $p to the PSModulePath value.
+$p += ";.;" + $moduleItem.DirectoryName
 [Environment]::SetEnvironmentVariable("PSModulePath",$p)
 
-Import-Module .\invtero.net\bin\x64\Debug\inVtero.net.dll
+Import-Module -Force $moduleItem.FullName
+$Module = Get-Module $moduleItem.BaseName
 
-$Module = Get-Module InVtero.net
+# setup GLobal flags
+[inVtero.net.Vtero]::VerboseLevel = 1
+[inVtero.net.Vtero]::VerboseOutput = true;
+[inVtero.net.Vtero]::DiagOutput = false;
+[inVtero.net.Vtero]::DisableProgressBar = true;
 
-Read-Host -Prompt "Waiting for debugger."
+#Add-InVteroDB -VF C:\temp\psIV -HS 256 -BufferCount 100000000 -I C:\Windows\System32\drivers
+# stopwatch for perf testing
 
+Write-Host "Running Test-Snapshot cmdlet..."
+Measure-Command {
 try
 {
-	Add-InVteroDB -VF C:\temp\psIV -HS 256 -BufferCount 100000000 -I C:\Windows\System32\drivers
-}
-catch
-{
+	Test-Snapshot -VF $InVteroDir -HashSize 256 -InputFile $InputSnapshot -CBit 1 -M GENERIC
+} catch {
     Write-Error $_.Exception.ToString()
-    Read-Host -Prompt "The above error occurred. Press Enter to exit."
-}
+	Read-Host
+}} | Write-Host "total seconds: " |select TotalSeconds  | ft -hidetableheaders | 
 
-Remove-Module $Module.Name
-Remove-Item $Module.ModuleBase -Force
+Write-Host "Test-Snapshot runtime "
+
+
+
+
+#Remove-Module $Module.Name
+#Remove-Item $Module.ModuleBase -Force

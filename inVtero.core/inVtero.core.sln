@@ -8,6 +8,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "inVteroCore", "inVteroCore\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Dia2Sharp", "Dia2Sharp\Dia2Sharp.csproj", "{3ED2E7C0-41F2-4D31-A1A3-507D40CA48AD}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{37B75418-F2B0-4E2D-845C-026A885FB9DF}"
+	ProjectSection(SolutionItems) = preProject
+		..\inVteroPS\inVtero.ps1 = ..\inVteroPS\inVtero.ps1
+		..\inVteroPS\inVteroPS.psd1 = ..\inVteroPS\inVteroPS.psd1
+		..\inVteroPS\inVteroPS.psm1 = ..\inVteroPS\inVteroPS.psm1
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

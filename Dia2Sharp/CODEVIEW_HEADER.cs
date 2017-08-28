@@ -114,6 +114,8 @@ namespace Dia2Sharp
             return rv;
         }
 
+        public override string ToString() => $"{PdbName}-{aGuid:N}-{TimeDateStamp:x}-{Age:X1}-{BaseVA:X}-{VSize:X}";
+
         public uint Age;
         public uint Sig;
         public uint TimeDateStamp;
@@ -152,6 +154,11 @@ namespace Dia2Sharp
         /// <returns></returns>
         public static bool TryLoadSymbols(long Handle, CODEVIEW_HEADER cv_data, ulong BaseVA, bool Verbose = false)
         {
+#if NETSTANDARD2_0
+            cv_data.PDBFullPath = $"NET_BINDING-{cv_data}";
+            return true;
+#else
+
             var symStatus = false;
             if (string.IsNullOrWhiteSpace(cv_data.PdbName))
                 return symStatus;
@@ -197,6 +204,7 @@ namespace Dia2Sharp
             }
 
             return symStatus;
+#endif
         }
     }
 }

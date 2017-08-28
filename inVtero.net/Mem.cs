@@ -140,7 +140,7 @@ namespace inVtero.net
             MD = parent.MD;
             ID = parent.ID;
 
-            DumpedPFNBitmap = new UnsafeHelp($"{Process.GetCurrentProcess().Id}-{ID}", MaxLimit, true);
+            DumpedPFNBitmap = parent.DumpedPFNBitmap.Clone();
 
             StartOfMemory = parent.StartOfMemory;
             MemoryDump = parent.MemoryDump;
@@ -199,7 +199,7 @@ namespace inVtero.net
             }
 
             thiz.ID = new Guid();
-            thiz.DumpedPFNBitmap = new UnsafeHelp(thiz.ID.ToString(), thiz.MaxLimit, true);
+            thiz.DumpedPFNBitmap = new UnsafeHelp(thiz.ID.ToString(), thiz.MaxLimit, false);
 
             thiz.SetupStreams();
 
@@ -602,7 +602,6 @@ namespace inVtero.net
         protected virtual void Dispose(bool disposing)
         {
             // Mem is a very shared construct looking to find where a consumer is causing dispose before were ready
-#if FALSE
             if (!disposedValue)
             {
                 // release / clear up streams
@@ -624,7 +623,6 @@ namespace inVtero.net
                 // no unmanaged resources e.g. AllocHGlobal etc...
                 disposedValue = true;
             }
-#endif
         }
         /// <summary>
         /// Finalizer override not really needed

@@ -47,6 +47,9 @@ namespace Dia2Sharp
 
         public static bool Initalize(long Handle, String SymPath, DebugHelp.SymOptions Options = DebugHelp.SymOptions.SYMOPT_UNDNAME)
         {
+#if NETSTANDARD2_0
+            return true;
+#else
             DebugHelp.SymSetOptions(Options);
 
             if (string.IsNullOrWhiteSpace(SymPath))
@@ -61,9 +64,228 @@ namespace Dia2Sharp
             DebugHelp.SymSetOptions(Options);
 
             return symStatus;
-            
+#endif
         }
 
+#if NETSTANDARD2_0
+        public static dynamic xCoreStructInfo(
+            CODEVIEW_HEADER CV,
+            string Struct,
+            long vAddress = 0,
+            long[] memRead = null,
+            Func<long, int, byte[]> GetMem = null,
+            Func<long, int, long[]> GetMemLong = null,
+            PropertyChangedEventHandler ExpandoChanged = null
+            )
+        {
+            var Info = SymAPI.GetType(Struct, CV) as dynamic;
+            if (vAddress != 0)
+                Info.vAddress = vAddress;
+
+            xCoreDumpStructs(Info, Struct, 0, vAddress, memRead, GetMem, GetMemLong, ExpandoChanged);
+
+            if (ExpandoChanged != null)
+                ((INotifyPropertyChanged)Info).PropertyChanged +=
+                    new PropertyChangedEventHandler(ExpandoChanged);
+
+
+            return Info;
+        }
+
+        public static void xCoreDumpStructs(
+            dynamic Info,
+            string preName,
+            int CurrOffset,
+            long vAddress = 0,
+            long[] memRead = null,
+            Func<long, int, byte[]> GetMem = null,
+            Func<long, int, long[]> GetMemLong = null,
+            PropertyChangedEventHandler ExpandoChanged = null
+            )
+        {
+            var IInfo = (IDictionary<string, object>)Info;
+            long lvalue = 0;
+            int Length = 0, memberLen = 0;
+            string memberName = string.Empty;
+
+            // The "Dictionary" entries are the entries that origonate from the symbol and not our attributed extra info
+            // any static info is already consistant (length, offset, bit*, mostly update volatile info & address if rebased)
+            foreach (var subName in (IInfo["Dictionary"] as IDictionary<string, object>).Keys)
+            {
+                bool captured = false;
+
+                // get the dynamic and depth-first load it
+                var zym = IInfo[subName] as dynamic;
+                var Izym = (IDictionary<string, object>)zym;
+
+                var Pos = (int)zym.OffsetPos;
+                Length = (int)zym.Length;
+
+                bool KeepRecur = true;
+
+                // update vAddress since we're likely relocated
+                zym.vAddress = vAddress + Pos;
+
+                if (memRead != null)
+                {
+                    lvalue = memRead == null ? 0 : memRead[Pos / 8];
+
+                    if (String.Equals("_UNICODE_STRING", zym.TypeName as String) && GetMem != null)
+                    {
+                        // since we deref'd this struct manually don't follow 
+                        KeepRecur = false;
+                        string strVal = "";
+                        var DataOffset = (Pos + 8) / 8;
+                        // get address from our offset
+                        var StringAddr = memRead[DataOffset];
+                        if (StringAddr != 0)
+                        {
+                            var strLen = (short)lvalue & 0xffff;
+
+                            var strByteArr = GetMem(StringAddr, strLen + 2);
+
+                            strVal = Encoding.Unicode.GetString(strByteArr, 0, strLen);
+                        }
+                        // update new address for double deref
+                        zym.vAddress = StringAddr;
+                        Izym.Add(defName, strVal);
+                    }
+                    else
+                    {
+                        // bittable types
+                        if (Izym.ContainsKey("BitPosition"))
+                        {
+                            var mask = 1U;
+                            var BitsLen = (int)zym.BitCount;
+                            var BitsPos = (int)zym.BitPosition;
+                            zym.BitCount = BitsLen;
+
+                            var subOff = Pos - CurrOffset;
+
+                            for (int x = (int)BitsLen - 1; x > 0; x--)
+                            {
+                                mask = mask << 1;
+                                mask |= 1;
+                            }
+                            var new_mask = mask << BitsPos << (subOff * 8);
+
+                            lvalue &= new_mask;
+
+                            // move lvalue to bitposition 0 
+                            // saves having todo this every time we evaluate Value
+                            lvalue = lvalue >> BitsPos >> (subOff * 8);
+                            captured = true;
+                        }
+                        else
+                        {
+                            var shift = (Pos % 8 * 8);
+                            switch (Length)
+                            {
+                                case 8:
+                                    captured = true;
+                                    break;
+                                case 4:
+                                    lvalue = (lvalue >> shift) & 0xffffffff;
+                                    captured = true;
+                                    break;
+                                case 2:
+                                    lvalue = (lvalue >> shift) & 0xffff;
+                                    captured = true;
+                                    break;
+                                case 1:
+                                    lvalue = (lvalue >> shift) & 0xff;
+                                    captured = true;
+                                    break;
+                                default:
+                                    break;
+                            }
+                            // were dealing with some sort of array or weird sized type not nativly supported (yet, e.g. GUID)
+                            // if we start with a _ we are going to be descending recursivly into this type so don't extract it here
+                            // this is really for basic type array's or things' were not otherwise able to recursivly extract
+                            if (!captured && (Izym.ContainsKey("ArrayCount")))
+                            {
+                                memberLen = (int)zym.ArrayMemberLen;
+
+                                int BytesReadRoom = 0, len = 0;
+                                if (memberLen == 1 || memberLen > 8)
+                                {
+                                    byte[] barr = new byte[Length];
+                                    BytesReadRoom = (memRead.Length * 8) - Pos;
+                                    len = BytesReadRoom > barr.Length ? barr.Length : BytesReadRoom;
+                                    Buffer.BlockCopy(memRead, Pos, barr, 0, len);
+
+                                    Izym.Add(defName, barr);
+                                }
+                                else if (memberLen == 4)
+                                {
+                                    int arrLen = Length / memberLen;
+                                    int[] iarr = new int[arrLen];
+                                    BytesReadRoom = (memRead.Length * 8) - Pos;
+                                    len = BytesReadRoom > Length ? Length : BytesReadRoom;
+                                    Buffer.BlockCopy(memRead, Pos, iarr, 0, len);
+
+                                    Izym.Add(defName, iarr);
+                                }
+                                else
+                                {
+                                    int arrLen = Length / memberLen;
+                                    long[] larr = new long[arrLen];
+                                    BytesReadRoom = (memRead.Length * 8) - Pos;
+                                    len = BytesReadRoom > Length ? Length : BytesReadRoom;
+                                    Buffer.BlockCopy(memRead, Pos, larr, 0, len);
+
+                                    Izym.Add(defName, larr);
+                                }
+                            }
+                        }
+                        // assign value if we captured it but have not saved it
+                        if (captured)
+                            Izym.Add(defName, lvalue);
+                    }
+                }
+                // This is a pointer really, so type.type... of course!
+                if (KeepRecur)
+                {
+                    if (Izym.ContainsKey("IsPtr"))
+                    {
+                        // only recuse non-recursive ptr types
+                        if (Izym.ContainsKey("PtrTypeName") && Izym["PtrTypeName"].Equals("_OBJECT_NAME_INFORMATION"))
+                        {
+
+                            long[] deRefArr = null;
+                            // do second deref here
+                            // the location to read is our offset pos data
+                            if (GetMemLong != null)
+                                deRefArr = GetMemLong(lvalue, 0x20);
+
+                            xCoreDumpStructs(zym, $"{preName}.{subName}", 0, vAddress + Pos, deRefArr, GetMem, GetMemLong, ExpandoChanged);
+                        }
+                    }
+                    else
+                        xCoreDumpStructs(zym, $"{preName}.{subName}", Pos, lvalue, memRead, GetMem, GetMemLong, ExpandoChanged);
+                }
+
+
+                // Length comes up a lot in struct's and conflicts with the ExpandoObject 
+                // so remap it specially
+                var AddedName = subName;
+                if (AddedName.ToLower().Equals("value"))
+                    AddedName = "ValueMember";
+                if (AddedName.ToLower().Equals("length"))
+                    AddedName = "LengthMember";
+                if (IInfo.ContainsKey(AddedName))
+                    continue;
+
+                IInfo.Add(AddedName, zym);
+
+                if (ExpandoChanged != null)
+                    ((INotifyPropertyChanged)zym).PropertyChanged += ExpandoChanged;
+            }
+        }
+
+#endif
+
+#if !NETSTANDARD2_0
         public static dynamic xStructInfo(
             string PDBFile,
             string Struct,
@@ -86,10 +308,13 @@ namespace Dia2Sharp
             if (Session == null)
                 return null;
 
-            Session.loadAddress = (ulong) vAddress;
+            Session.loadAddress = (ulong)vAddress;
 
             // 10 is regex
-            Session.globalScope.findChildren((uint) DebugHelp.SymTagEnum.Null, Struct, 10, out EnumSymbols);
+            Session.globalScope.findChildren(
+                SymTagEnum.SymTagUDT
+                ,
+                Struct, 10, out EnumSymbols);
             do
             {
                 EnumSymbols.Next(1, out Master, out compileFetched);
@@ -113,9 +338,10 @@ namespace Dia2Sharp
 
             } while (compileFetched == 1);
 
-
             return Info;
         }
+
+#endif
 
         /// <summary>
         /// Method for native type reflection into DLR
@@ -206,6 +432,8 @@ namespace Dia2Sharp
                 }
 
                 bool KeepRecur = true;
+
+
                 if (memRead != null)
                 {
                     bool captured = false;
@@ -399,8 +627,9 @@ namespace Dia2Sharp
         /// <param name="Member">Pcb.DirectoryTableBase</param>
         /// <returns>Tuple of Position & Length </returns>
 
-        public static Tuple<int, int> StructMemberInfo(string PDBFile, string Struct, string Member)
+        public static Tuple<int, int> StructMemberInfo(CODEVIEW_HEADER cv, string Struct, string Member)
         {
+#if !NETSTANDARD2_0
             IDiaSession Session;
             IDiaSymbol Master = null;
             IDiaEnumSymbols EnumSymbols = null;
@@ -412,13 +641,45 @@ namespace Dia2Sharp
 
             if (result.Count() > 0)
                 return result.First().Value;
+#endif
 
+#if NETSTANDARD2_0
+            IDictionary<string, dynamic> dInfo = null;
+            dynamic memberInfo = null;
+            var cnt = Member.Split('.').Length;
+
+            var typeInfo = SymAPI.GetType(Struct, cv);
+
+            dInfo = typeInfo as IDictionary<string, dynamic>;
+            if (cnt == 1)
+                memberInfo = dInfo[Member];
+            else
+                for (int i = 0; i < cnt; i++)
+                {
+                    var path = Member.Split('.')[i];
+
+                    dInfo = typeInfo as IDictionary<string, dynamic>;
+                    memberInfo = dInfo[path];
+
+                    if (i < cnt)
+                        typeInfo = memberInfo;
+
+                }
+
+            dInfo = memberInfo as IDictionary<string, dynamic>;
+            return Tuple.Create((int)dInfo["OffsetPos"], (int)dInfo["Length"]);
+
+            /* bah, screw this just return the object :\
+            var foo = new DiaSource(cv);
+            foo.loadDataFromPdb(cv.PDBFullPath);
+            foo.openSession(out Session);
+            */
+#else
             var foo = new DiaSource();
-            foo.loadDataFromPdb(PDBFile);
+            foo.loadDataFromPdb(cv.PDBFullPath);
             foo.openSession(out Session);
             if (Session == null)
                 return null;
-
             Session.findChildren(Session.globalScope,(uint) DebugHelp.SymTagEnum.Null, Struct, 0, out EnumSymbols);
             do
             {
@@ -440,6 +701,7 @@ namespace Dia2Sharp
                            select symx).FirstOrDefault();
 
             return resultx.Value;
+#endif
         }
 
 

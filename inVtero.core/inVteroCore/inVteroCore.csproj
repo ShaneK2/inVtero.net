@@ -6,9 +6,19 @@
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>TRACE;DEBUG;NETSTANDARD2_0;</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="inVteroCore.dll.config" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\ConsoleUtils\Scan.cs" Link="Hashing\Scan.cs" />
     <Compile Include="..\..\inVtero.net\ConfigOptions.cs" Link="ConfigOptions.cs" />
     <Compile Include="..\..\inVtero.net\DeLocate.cs" Link="DeLocate.cs" />
     <Compile Include="..\..\inVtero.net\DetectedProc.cs" Link="DetectedProc.cs" />
@@ -29,6 +39,9 @@
     <Compile Include="..\..\inVtero.net\PageTable.cs" Link="PageTable.cs" />
     <Compile Include="..\..\inVtero.net\PFN.cs" Link="PFN.cs" />
     <Compile Include="..\..\inVtero.net\PhysicalMemoryStream.cs" Link="PhysicalMemoryStream.cs" />
+    <Compile Include="..\..\inVtero.net\PS\inVteroPS.cs" Link="PS\inVteroPS.cs" />
+    <Compile Include="..\..\inVtero.net\PS\LoadInVteroDB.cs" Link="PS\LoadInVteroDB.cs" />
+    <Compile Include="..\..\inVtero.net\PS\SnapScan.cs" Link="PS\SnapScan.cs" />
     <Compile Include="..\..\inVtero.net\Scanner.cs" Link="Scanner.cs" />
     <Compile Include="..\..\inVtero.net\Specialties\AMemoryRunDetector.cs" Link="Specialties\AMemoryRunDetector.cs" />
     <Compile Include="..\..\inVtero.net\Specialties\BasicRunDetector.cs" Link="Specialties\BasicRunDetector.cs" />
@@ -52,14 +65,31 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="inVteroCore.dll.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Hashing\" />
     <Folder Include="Support\" />
     <Folder Include="Specialties\" />
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\inVteroPS\inVtero.ps1" Link="inVtero.ps1">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\inVteroPS\inVteroPS.psd1" Link="inVteroPS.psd1">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Include="..\..\inVteroPS\inVteroPS.psm1" Link="inVteroPS.psm1">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CoreCompat.ELFSharp" Version="1.0.5" />
-    <PackageReference Include="NetStandardHashLib" Version="1.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
     <PackageReference Include="protobuf-net" Version="2.3.2" />
     <PackageReference Include="System.Buffers" Version="4.4.0" />
@@ -67,6 +97,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Dia2Sharp\Dia2Sharp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="NetStandardHashLib">
+      <HintPath>..\..\..\..\..\HashLib\NetStandardHashLib\bin\Release\netstandard2.0\NetStandardHashLib.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Management.Automation">
+      <HintPath>..\..\..\..\..\..\..\..\..\Program Files\PowerShell\6.0.0-beta.5\System.Management.Automation.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

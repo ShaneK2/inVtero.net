@@ -34,6 +34,10 @@ namespace inVtero.net
         public MemoryMappedFile BitMap;
         public MemoryMappedViewAccessor BitMapView;
         public long BitmapLen;
+        FileStream BackingStream;
+
+        string BitmapBackingFile;
+        bool DeleteOnExit;
 
         static byte[] ZeroBuff;
         static byte[] FFFBuff;
@@ -42,53 +46,111 @@ namespace inVtero.net
         {
             ZeroBuff = new byte[PAGE_SIZE];
             FFFBuff = new byte[PAGE_SIZE];
+            #if !NETSTANDARD2_0
             fixed (byte* allSetBits = FFFBuff)
                 SetMemory(allSetBits, 0xff, PAGE_SIZE);
+            #endif
         }
 
-        public UnsafeHelp(string BitmapFileName, long CountOfEntries = 0, bool InMemory = false)
+        UnsafeHelp() {  }
+
+        public UnsafeHelp Clone()
         {
-            var bitmapName = "UnsafeBitmap" + Path.GetFileNameWithoutExtension(BitmapFileName);
+            var rv = new UnsafeHelp();
+            rv.BitmapBackingFile = BitmapBackingFile;
+            rv.SetupHandles();
+            return rv;
+        }
+
+        void SetupHandles()
+        {
+            try {
+                BackingStream = new FileStream(BitmapBackingFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+                BitMap = MemoryMappedFile.CreateFromFile(
+                        BackingStream,
+                        null,
+                        0, MemoryMappedFileAccess.ReadWrite, HandleInheritability.None, false);
+            }
+            catch (Exception ex) {
+                throw new FileLoadException($"Unable to setup mapping for {BitmapBackingFile}", ex);
+            }
+
+            if (File.Exists(BitmapBackingFile) && BitMap == null)
+                throw new FileLoadException($"Can not load bitmap from {BitmapBackingFile}");
+
+            BitMapView = BitMap.CreateViewAccessor();
+            BitmapLen = BitMapView.Capacity;
+            GetBitmapHandle();
+        }
+
+        public UnsafeHelp(string BitmapFileName, long CountOfEntries = 0, bool ShareExistingFile = true, bool Tempoary = false)
+        {
+            long ByteSize = (CountOfEntries >> 3) + sizeof(long);
+            BitmapBackingFile = BitmapFileName;
+
+            if(ShareExistingFile && !Tempoary && !File.Exists(BitmapBackingFile))
+            {
+                throw new FileNotFoundException($"Can't find shared file mapping {BitmapBackingFile}");
+            }
+
+            if (!File.Exists(BitmapBackingFile) || Tempoary)
+            {
+                // get a new file name
+                BitmapBackingFile = Path.GetTempFileName();
+                DeleteOnExit = true;
+            }
+            if (!File.Exists(BitmapBackingFile) || DeleteOnExit)
+            {
+                using (var fs = File.OpenWrite(BitmapBackingFile))
+                {
+                    fs.Seek(ByteSize, SeekOrigin.Begin);
+                    fs.WriteByte(0);
+                }
+            }
+
+            SetupHandles();
+        }
+
+#if DEPRECATE_FAVOUR_CORE
+        public UnsafeHelp(string BitmapFileName, long CountOfEntries = 0, bool Shared = false, bool Tempoary = false)
+        {
             long ByteSize = (CountOfEntries >> MagicNumbers.BIT_SHIFT)+sizeof(long);
+            BitmapBackingFile = BitmapFileName;
 
-            if (InMemory)
+            if (!Shared && File.Exists(BitmapBackingFile) || Tempoary)
             {
-                try
+                // get a new file name
+                BitmapBackingFile = Path.GetTempFileName();
+                DeleteOnExit = true;
+            }
+
+            if (!File.Exists(BitmapBackingFile))
+            {
+                using (var fs = File.OpenWrite(BitmapBackingFile))
                 {
-                    BitMap = MemoryMappedFile.CreateOrOpen(
-                        bitmapName, 
-                        ByteSize, 
-                        MemoryMappedFileAccess.ReadWrite);
-                } catch (Exception ex)
-                {
+                    fs.Seek(ByteSize, SeekOrigin.Begin);
+                    fs.WriteByte(0);
+                }
+            }
+            try
+            {
+                BackingStream = new FileStream(BitmapBackingFile, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+                BitMap = MemoryMappedFile.CreateFromFile(
+                        BackingStream, 
+                        null, 
+                        0, MemoryMappedFileAccess.ReadWrite, HandleInheritability.None, false);
+            } catch (Exception ex) { 
                     throw new MemoryMapWindowFailedException($"Unable to setup mapping for {BitmapFileName}", ex);
-                }
-            }
-            else
-            {
-                // is there a bitmap 
-                try
-                {
-                    BitMap = MemoryMappedFile.OpenExisting(bitmapName, MemoryMappedFileRights.ReadWrite);
-                }
-                catch (Exception ex)
-                {
-                    if (BitMap == null && !InMemory)
-                        BitMap = MemoryMappedFile.CreateFromFile(
-                                BitmapFileName,
-                                FileMode.OpenOrCreate,
-                                bitmapName,
-                                ByteSize);
-                }
             }
 
-            if (File.Exists(BitmapFileName) && BitMap == null && !InMemory)
+            if (File.Exists(BitmapFileName) && BitMap == null)
                 throw new FileLoadException($"Can not load bitmap from {BitmapFileName}");
 
             BitMapView = BitMap.CreateViewAccessor();
             BitmapLen = BitMapView.Capacity;
             GetBitmapHandle();
         }
+#endif
 
         public static unsafe void ReadBytes<T>(MemoryMappedViewAccessor view, long offset, ref T[] arr, int Count = 512)
         {
@@ -114,7 +176,9 @@ namespace inVtero.net
 
         public unsafe void MemSetBitmap(int c)
         {
+#if !NETSTANDARD2_0
             SetMemory(lp, 0, (ulong) BitmapLen);
+#endif
         }
 
         public unsafe void GetBitmapHandle()
@@ -165,7 +229,7 @@ namespace inVtero.net
 
             return rv;
         }
-
+#if !NETSTANDARD2_0
         public static unsafe int IsFFFPage<T>(T[] input)
         {
             fixed (byte* allSetBits = FFFBuff)
@@ -179,6 +243,8 @@ namespace inVtero.net
             }
             return -1;
         }
+
+
         public static unsafe int IsZeroPage<T>(T[] input)
         {
             fixed (byte* ZeroBytes = ZeroBuff)
@@ -201,7 +267,7 @@ namespace inVtero.net
 
         [DllImport("msvcrt.dll", EntryPoint = "memcmp", CallingConvention = CallingConvention.Cdecl, SetLastError = false), SuppressUnmanagedCodeSecurity]
         public static unsafe extern int CompareMemory(void* s1, void* s2, ulong count);
-
+#endif
 
         public static unsafe bool UnsafeCompare(byte[] a1, byte[] a2)
         {
@@ -316,7 +382,7 @@ namespace inVtero.net
             }
         }
         private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
-
+#if !NETSTANDARD2_0
         private const uint FILE_READ_EA = 0x0008;
         private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x2000000;
 
@@ -363,8 +429,9 @@ namespace inVtero.net
                 CloseHandle(h);
             }
         }
+#endif
 
-        #region IDisposable Support
+#region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
 
         protected virtual void Dispose(bool disposing)
@@ -376,6 +443,10 @@ namespace inVtero.net
                     ReleaseBitmapHandle();
                     BitMapView.Dispose();
                     BitMap.Dispose();
+
+                    BackingStream.Dispose();
+                    if (DeleteOnExit)
+                        File.Delete(BitmapBackingFile);
                 }
                 // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
                 // TODO: set large fields to null.
@@ -391,7 +462,7 @@ namespace inVtero.net
             // TODO: uncomment the following line if the finalizer is overridden above.
             // GC.SuppressFinalize(this);
         }
-        #endregion
+#endregion
 
     }
 }

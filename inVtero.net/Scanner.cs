@@ -704,10 +704,9 @@ namespace inVtero.net
             {
                 using (var fs = new FileStream(Filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 {
-                    var mapName = Path.GetFileNameWithoutExtension(Filename) + DateTime.Now.ToBinary().ToString("X16");
                     using (var mmap =
                         MemoryMappedFile.CreateFromFile(fs,
-                        mapName,
+                        null,
                         0,
                         MemoryMappedFileAccess.Read,
                         HandleInheritability.Inheritable,
@@ -817,9 +816,8 @@ namespace inVtero.net
             // TODO: This path is only 1 time and pretty infrequent so far though 
             using (var fs = new FileStream(File, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
-                var mapName = Path.GetFileNameWithoutExtension(File) + From.ToString("X16");
                 using (var mmap =
-                    MemoryMappedFile.CreateFromFile(fs, mapName, 0, MemoryMappedFileAccess.Read,
+                    MemoryMappedFile.CreateFromFile(fs, null, 0, MemoryMappedFileAccess.Read,
                     HandleInheritability.Inheritable, false))
                 {
                     using (var reader = mmap.CreateViewAccessor(From, Count * 4, MemoryMappedFileAccess.Read))

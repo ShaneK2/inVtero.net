@@ -6,4 +6,8 @@
     <StartupObject>quickcore.Program</StartupObject>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="NetStandardHashLib" Version="1.0.0" />
+  </ItemGroup>
+
 </Project>

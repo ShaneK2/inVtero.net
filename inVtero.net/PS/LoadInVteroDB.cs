@@ -7,7 +7,7 @@ using inVtero.net;
 using inVtero.net.Hashing;
 using System.IO;
 
-#if FALSE
+#if FALSE || NETSTANDARD2_0
 using System.Management.Automation;
 
 namespace inVtero.net.PS
@@ -128,7 +128,7 @@ namespace inVtero.net.PS
                         File.Exists(Path.Combine(apath, "inVtero.DB.bin")))
                         return;
                 }
-                throw new ValidationMetadataException($"Argument {arguments} does not specify a folder where an inVtero.net DB is located.");
+                throw new ApplicationException($"Argument {arguments} does not specify a folder where an inVtero.net DB is located.");
             }
         }
 
@@ -142,7 +142,7 @@ namespace inVtero.net.PS
                     if (Directory.Exists(apath))
                         return;
                 }
-                throw new ValidationMetadataException($"Argument {arguments} does not specify a folder.");
+                throw new ApplicationException($"Argument {arguments} does not specify a folder.");
             }
         }
     }

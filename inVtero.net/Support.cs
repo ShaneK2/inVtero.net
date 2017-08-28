@@ -124,6 +124,15 @@ namespace inVtero.net
             WriteLine(var);
         }
 
+        public static void WriteColor(int Level, ConsoleColor ForeGround, ConsoleColor BackGround, string var)
+        {
+            if (Vtero.VerboseLevel >= Level) WriteColor(ForeGround, BackGround, var);
+        }
+        public static void WriteColor(int Level, ConsoleColor ForeGround, string var)
+        {
+            if (Vtero.VerboseLevel >= Level) WriteColor(ForeGround, var);
+        }
+
         static void LowerBoundOutput()
         {
             const int BarHeight = 5;
@@ -183,20 +192,14 @@ namespace inVtero.net
         public long Address;
         public VIRTUAL_ADDRESS(long VA) { Address = VA; }
 
-        public static bool IsKernelRange(long VA)
-        {
-            return (VA < 0 || VA > HIGHEST_USER_ADDRESS);
-        }
+        public static bool IsKernelRange(long VA) => (VA < 0 || VA > HIGHEST_USER_ADDRESS);
+        
+        public static bool IsKernelRange(ulong VA) => VA > HIGHEST_USER_ADDRESS;
 
         // we connstrin addresses so much so that it's easier for python
-        public static long Reduce(long VA)
-        {
-            return (long)((ulong)VA & ~0xffff000000000000);
-        }
-        public static ulong Extend(long Address)
-        {
-            return ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address);
-        }
+        public static long Reduce(long VA)=> (long)((ulong)VA & ~0xffff000000000000);
+
+        public static ulong Extend(long Address) => ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address);
 
         public ulong FullAddr { get { return ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address); } }
         public string xStr { get { return ((Address < 0 || Address > HIGHEST_USER_ADDRESS) ? (ulong)Address | 0xffff000000000000 : (ulong)Address).ToString("x16"); } }

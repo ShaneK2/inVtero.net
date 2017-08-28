@@ -68,10 +68,6 @@ namespace inVtero.net
 
         public ConcurrentDictionary<long, MemSection> Sections { get; private set; }
 
-        /*
-        public CODEVIEW_HEADER DebugData;
-        public Extract ext;
-        */
         public Dictionary<int, long> TopPageTablePage;
 
         // Since we have a known PT, start collecting meta info
@@ -132,9 +128,12 @@ namespace inVtero.net
             if (Address != 0)
                 memRead = GetVirtualLongLen(Address, minLen);
 
+#if NETSTANDARD2_0
+            var rv = Sym.xCoreStructInfo(pdb.DebugDetails, Struct, Address, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
+#else
             var rv = Sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, Address, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
+#endif
             rv.SelfAddr = Address;
-
             return rv;
         }
 
@@ -158,7 +157,11 @@ namespace inVtero.net
             }
             CODEVIEW.TryLoadSymbols(ID.GetHashCode(), pdb.DebugDetails, pdb.VA.Address);
 
+#if NETSTANDARD2_0
+            return Sym.xCoreStructInfo(pdb.DebugDetails, Struct, 0, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
+#else
             return Sym.xStructInfo(pdb.DebugDetails.PDBFullPath, Struct, 0, memRead, GetVirtualByteLen, GetVirtualLongLen, ExpandoChanged);
+#endif
         }
 
         /// <summary>
@@ -212,11 +215,15 @@ namespace inVtero.net
 
         public long GetSymAddress(string SymName)
         {
+
             var AddrName = SymName + "Address";
             if (SymbolStore.ContainsKey(AddrName))
                 return SymbolStore[AddrName];
-
             DebugHelp.SYMBOL_INFO symInfo = new DebugHelp.SYMBOL_INFO();
+
+#if NETSTANDARD2_0
+            symInfo = SymAPI.SymFromName(SymName, KernelSection.DebugDetails);
+#else
 
             symInfo.SizeOfStruct = 0x58;
             symInfo.MaxNameLen = 1024;
@@ -228,10 +235,10 @@ namespace inVtero.net
                     WriteColor(ConsoleColor.Yellow, $"GetSymValue: {new Win32Exception(Marshal.GetLastWin32Error()).Message }.");
                 return BAD_VALUE_READ;
             }
+#endif
 
-            SymbolStore.Add(AddrName, symInfo.Address);
-
-            return symInfo.Address;
+            SymbolStore.Add(AddrName, (long) symInfo.Address);
+            return (long) symInfo.Address;
         }
 
         public string GetSymNameHard(ulong Address, MemSection sec = null)
@@ -318,6 +325,7 @@ namespace inVtero.net
 
         public void LoadSymbols(MemSection OnlyMS = null)
         {
+
             foreach (var ms in Sections)
             {
                 if (OnlyMS == null || (OnlyMS != null && OnlyMS.VA.Address == ms.Key))
@@ -407,7 +415,7 @@ namespace inVtero.net
             return KVS;
         }
 
-        #if !NETSTANDARD2_0
+#if !NETSTANDARD2_0
         public List<ScanResult> YaraScan(string RulesFile, bool IncludeData = false, bool KernelSpace = false)
         {
             var rv = new List<ScanResult>();
@@ -481,7 +489,7 @@ namespace inVtero.net
             YaraOutput = rv;
             return YaraOutput;
         }
-        #endif
+#endif
 
         // tid&buffer
         public List<Tuple<long, long[]>> KernelThreadStacks;
@@ -559,48 +567,54 @@ namespace inVtero.net
         public void InitSymbolsForVad()
         {
             _MMVAD_Def = xStructInfo("_MMVAD");
-            if (_MMVAD_Def.Dictionary.ContainsKey("Core"))
+            var _MMVAD_DefDict = _MMVAD_Def as IDictionary<string, object>;
+
+            try
             {
-                flagBitPos = _MMVAD_Def.Core.u.VadFlags.Protection.BitPosition;
-                flagsOffsetPos = _MMVAD_Def.Core.u.VadFlags.Protection.OffsetPos;
-                flagsLength = (long)_MMVAD_Def.Core.u.VadFlags.Protection.Length;
+                if (_MMVAD_DefDict.ContainsKey("Core"))
+                {
+                    flagBitPos = _MMVAD_Def.Core.u.VadFlags.Protection.BitPosition;
+                    flagsOffsetPos = _MMVAD_Def.Core.u.VadFlags.Protection.OffsetPos;
+                    flagsLength = (long)_MMVAD_Def.Core.u.VadFlags.Protection.Length;
 
-                rightPos = _MMVAD_Def.Core.VadNode.Right.OffsetPos;
-                leftPos = _MMVAD_Def.Core.VadNode.Left.OffsetPos;
+                    rightPos = _MMVAD_Def.Core.VadNode.Right.OffsetPos;
+                    leftPos = _MMVAD_Def.Core.VadNode.Left.OffsetPos;
 
-                startingVPNPos = _MMVAD_Def.Core.StartingVpn.OffsetPos;
-                endingVPNPPos = _MMVAD_Def.Core.EndingVpn.OffsetPos;
-                startHighPos = _MMVAD_Def.Core.StartingVpnHigh.OffsetPos;
-                endHighPos = _MMVAD_Def.Core.EndingVpnHigh.OffsetPos;
+                    startingVPNPos = _MMVAD_Def.Core.StartingVpn.OffsetPos;
+                    endingVPNPPos = _MMVAD_Def.Core.EndingVpn.OffsetPos;
+                    startHighPos = _MMVAD_Def.Core.StartingVpnHigh.OffsetPos;
+                    endHighPos = _MMVAD_Def.Core.EndingVpnHigh.OffsetPos;
+                }
+                else
+                {
+                    flagBitPos = _MMVAD_Def.u.VadFlags.Protection.BitPosition;
+                    flagsOffsetPos = _MMVAD_Def.u.VadFlags.Protection.OffsetPos;
+                    flagsLength = (long)_MMVAD_Def.u.VadFlags.Protection.Length;
+
+                    rightPos = _MMVAD_Def.RightChild.OffsetPos;
+                    leftPos = _MMVAD_Def.LeftChild.OffsetPos;
+
+                    startingVPNPos = _MMVAD_Def.StartingVpn.OffsetPos;
+                    endingVPNPPos = _MMVAD_Def.EndingVpn.OffsetPos;
+
+                    startHighPos = -1;
+                    endHighPos = -1;
+                    // startHighPos = _MMVAD_Def.StartingVpnHigh.OffsetPos;
+                    //endHighPos = _MMVAD_Def.EndingVpnHigh.OffsetPos;
+                }
+
+                _SUBSECTION_Def = xStructInfo("_SUBSECTION");
+                _CONTROL_AREA_Def = xStructInfo("_CONTROL_AREA");
+                _FILE_OBJECT_Def = xStructInfo("_FILE_OBJECT");
+
+                ssPos = _MMVAD_Def.Subsection.OffsetPos;
+                caPos = _SUBSECTION_Def.ControlArea.OffsetPos;
+                foPos = _CONTROL_AREA_Def.FilePointer.OffsetPos;
+                fnPos = _FILE_OBJECT_Def.FileName.OffsetPos;
+
+                vadLength = (int)_MMVAD_Def.Length;
             }
-            else
-            {
-                flagBitPos = _MMVAD_Def.u.VadFlags.Protection.BitPosition;
-                flagsOffsetPos = _MMVAD_Def.u.VadFlags.Protection.OffsetPos;
-                flagsLength = (long)_MMVAD_Def.u.VadFlags.Protection.Length;
-
-                rightPos = _MMVAD_Def.RightChild.OffsetPos;
-                leftPos = _MMVAD_Def.LeftChild.OffsetPos;
-
-                startingVPNPos = _MMVAD_Def.StartingVpn.OffsetPos;
-                endingVPNPPos = _MMVAD_Def.EndingVpn.OffsetPos;
-
-                startHighPos = -1;
-                endHighPos = -1;
-                // startHighPos = _MMVAD_Def.StartingVpnHigh.OffsetPos;
-                //endHighPos = _MMVAD_Def.EndingVpnHigh.OffsetPos;
-            }
-
-            _SUBSECTION_Def = xStructInfo("_SUBSECTION");
-            _CONTROL_AREA_Def = xStructInfo("_CONTROL_AREA");
-            _FILE_OBJECT_Def = xStructInfo("_FILE_OBJECT");
-
-            ssPos = _MMVAD_Def.Subsection.OffsetPos;
-            caPos = _SUBSECTION_Def.ControlArea.OffsetPos;
-            foPos = _CONTROL_AREA_Def.FilePointer.OffsetPos;
-            fnPos = _FILE_OBJECT_Def.FileName.OffsetPos;
-
-            vadLength = (int)_MMVAD_Def.Length;
+            catch (Exception ex) { }
         }
 
         public void CopySymbolsForVad(DetectedProc other)
@@ -1017,7 +1031,10 @@ namespace inVtero.net
             var hr = new ConcurrentStack<HashRecord>();
 
             if (Sections.Count < 2)
+            {
+                if (Vtero.VerboseLevel > 1) Console.WriteLine($"Walking VAD for process.");
                 ListVad(VadRootPtr);
+            }
 
             if (KernelSpace)
                 MergeKernelModules();
@@ -1041,6 +1058,8 @@ namespace inVtero.net
                 //    memsec.NormalizedName = GetNormalized(memsec.DebugDetails.PdbName, true);
                 //else
                 memsec.NormalizedName = GetNormalized(memsec.VadFile, true);
+
+                if (Vtero.VerboseLevel > 1) Console.WriteLine($"Analyzing memory section: {memsec.NormalizedName}");
 
                 if (memsec.Module != null && !Vtero.ModuleCache.ContainsKey(VA))
                     Vtero.ModuleCache[VA] = memsec;
@@ -1138,16 +1157,16 @@ namespace inVtero.net
                 if (s.Module.ReReState != null)
                     rere = s.Module.ReReState;
                 else
-                    s.Module.ReReState = rere = HDB.ReRe.GetLocated(s.Module.Is64, s.NormalizedName, s.Module.TimeStamp, (ulong)s.VadAddr);
+                    s.Module.ReReState = rere = HDB.ReRe.GetLocated(s.Module.Is64, s.NormalizedName, s.Module.TimeStamp, (ulong)s.VadAddr, (uint)((s.Module != null && s.Module.SizeOfImage != 0) ? s.Module.SizeOfImage : (s.VadLength + 0x1000)));
 
                 if (rere != null && (rere.OrigImageBase != (ulong)s.VA.Address))
                 {
                     if (SecOffset == 0)
                         DeLocate.DelocateHeader(block, rere.OrigImageBase, s.Module.ImageBaseOffset, s.Module.Is64);
                     else if (!s.Module.Is64)
-                        rere.DeLocateBuff32(block, (uint)s.Module.ReReState.Delta, (uint)SecOffset, rere.RelocData.ToArray());
+                        rere.DeLocateBuff32(block, (uint)s.Module.ReReState.Delta, (uint)SecOffset, rere.RelocData.Processed.ToArray());
                     else
-                        rere.DeLocateBuff64(block, rere.Delta, (ulong)SecOffset, rere.RelocData.ToArray());
+                        rere.DeLocateBuff64(block, rere.Delta, (ulong)SecOffset, rere.RelocData.Processed.ToArray());
                 }
             }
         }
@@ -1352,6 +1371,9 @@ namespace inVtero.net
 
         public static string GetNormalized(string Name, bool IsFileName = true)
         {
+            char[] seps = { '\\', '/' };
+
+
             string modName, normName;
             if (string.IsNullOrWhiteSpace(Name))
                 return string.Empty;
@@ -1363,8 +1385,8 @@ namespace inVtero.net
             if (IsFileName && ImagePath.Contains(".") && pathTrim[0].LastIndexOf(".") + 4 < pathTrim[0].Length)
                 ImagePath = ImagePath.Substring(0, pathTrim[0].LastIndexOf(".") + 4);
 
-            if (ImagePath.Contains(Path.DirectorySeparatorChar))
-                normName = ImagePath.Split(Path.DirectorySeparatorChar).Last();
+            if (ImagePath.Contains(Path.DirectorySeparatorChar) || ImagePath.Contains(seps[0]) || ImagePath.Contains(seps[1]))
+                normName = ImagePath.Split(seps).Last();
             else
                 normName = ImagePath;
 
@@ -1428,7 +1450,7 @@ namespace inVtero.net
             long VA = sec.VA.Address;
 
             var _va = VA + Ext.DebugDirPos;
-            var block = GetVirtualByte(_va);
+            var block = GetVirtualByteLen(_va,28);
 
             var TimeDate2 = BitConverter.ToUInt32(block, 4);
             if (TimeDate2 != Ext.TimeStamp & Vtero.VerboseOutput)
@@ -1443,7 +1465,7 @@ namespace inVtero.net
 
             // Advance to the debug section where we may find the code view info
             _va = VA + RawData;
-            var b2 = GetVirtualByte(_va);
+            var b2 = GetVirtualByteLen(_va, 64);
             var bytes2 = new byte[16];
             var s2 = b2[0];
             Array.ConstrainedCopy(b2, 4, bytes2, 0, 16);
@@ -1453,11 +1475,13 @@ namespace inVtero.net
 
             // char* at end
             var str2 = Encoding.Default.GetString(b2, 24, 32).Trim();
-            var cv2 = new CODEVIEW_HEADER { VSize = Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes2, Age = age2, aGuid = gid2, Sig = s2, PdbName = str2 };
             if (str2.Contains(".") && str2.Contains(".pdb"))
                 sec.Name = str2.Substring(0, str2.IndexOf(".pdb") + 4).ToLower();
             else
                 sec.Name = str2.ToLower();
+
+            var cv2 = new CODEVIEW_HEADER { VSize = Ext.SizeOfImage, TimeDateStamp = TimeDate2, byteGuid = bytes2, Age = age2, aGuid = gid2, Sig = s2, PdbName = sec.Name, BaseVA = VIRTUAL_ADDRESS.Extend(sec.VA.Address) };
+
 
             if (sec.Name == "ntkrnlmp.pdb")
                 sec.Name = "ntoskrnl.exe";

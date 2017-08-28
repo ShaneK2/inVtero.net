@@ -17,6 +17,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -67,6 +68,32 @@ namespace inVtero.net
                 return result;
             }
             return (inputArg) => InnerFunc(inputArg);
+        }
+
+        static ExpandoObject ShallowCopy(ExpandoObject original)
+        {
+            var clone = new ExpandoObject();
+
+            var _original = (IDictionary<string, object>)original;
+            var _clone = (IDictionary<string, object>)clone;
+
+            foreach (var kvp in _original)
+                _clone.Add(kvp);
+
+            return clone;
+        }
+
+        public static ExpandoObject DeepCopy(this ExpandoObject original)
+        {
+            var clone = new ExpandoObject();
+
+            var _original = (IDictionary<string, object>)original;
+            var _clone = (IDictionary<string, object>)clone;
+
+            foreach (var kvp in _original)
+                _clone.Add(kvp.Key, kvp.Value is ExpandoObject ? DeepCopy((ExpandoObject)kvp.Value) : kvp.Value);
+
+            return clone;
         }
 
         public static IEnumerable<T> IntersectMany<T>(this IEnumerable<IEnumerable<T>> sets) where T : IComparable
