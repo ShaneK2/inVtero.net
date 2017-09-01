@@ -1,0 +1,3 @@
+[submodule "inVtero.net/Support/Capstone.NET"]
+	path = inVtero.net/Support/Capstone.NET
+	url = https://github.com/K2/Capstone.NET.git
