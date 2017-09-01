@@ -148,6 +148,10 @@
       <Project>{bba65fad-57b1-4b78-b262-e542a88440d6}</Project>
       <Name>inVtero.net</Name>
     </ProjectReference>
+    <ProjectReference Include="..\inVtero.net\Support\Capstone.NET\Capstone.NET.csproj">
+      <Project>{a631ce5c-e28f-49de-8e17-57918ae2afcf}</Project>
+      <Name>Capstone.NET</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

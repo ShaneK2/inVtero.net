@@ -111,6 +111,9 @@
     <Reference Include="Microsoft.WindowsAzure.Storage, Version=8.4.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\WindowsAzure.Storage.8.4.0\lib\net45\Microsoft.WindowsAzure.Storage.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json, Version=10.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.10.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="protobuf-net, Version=2.3.2.0, Culture=neutral, PublicKeyToken=257b51d87d2e4d67, processorArchitecture=MSIL">
       <HintPath>..\packages\protobuf-net.2.3.2\lib\net40\protobuf-net.dll</HintPath>
     </Reference>
@@ -145,9 +148,6 @@
     <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\inVtero.core\inVteroCore\PS\SnapScan.cs">
-      <Link>PS\SnapScan.cs</Link>
-    </Compile>
     <Compile Include="ConfigOptions.cs" />
     <Compile Include="DeLocate.cs" />
     <Compile Include="DetectedProc.cs" />
@@ -171,6 +171,7 @@
     <Compile Include="PFN.cs" />
     <Compile Include="PhysicalMemoryStream.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="PS\SnapScan.cs" />
     <Compile Include="Scanner.cs" />
     <Compile Include="Specialties\AMemoryRunDetector.cs" />
     <Compile Include="Specialties\BasicRunDetector.cs" />
@@ -181,7 +182,7 @@
     <Compile Include="Specialties\VMWare.cs" />
     <Compile Include="Specialties\XEN.cs" />
     <Compile Include="Support.cs" />
-    <Compile Include="Support\Capstone.cs" />
+    <None Include="Support\Capstone.cs" />
     <Compile Include="Support\DataMon.cs" />
     <Compile Include="Support\Heaps.cs" />
     <Compile Include="Support\JunctionPoint.cs" />
@@ -220,6 +221,10 @@
     <ProjectReference Include="..\Dia2Sharp\Dia2Sharp.csproj">
       <Project>{f2cd767a-d27b-44d6-a56e-363ab2de0c51}</Project>
       <Name>Dia2Sharp</Name>
+    </ProjectReference>
+    <ProjectReference Include="Support\Capstone.NET\Capstone.NET.csproj">
+      <Project>{a631ce5c-e28f-49de-8e17-57918ae2afcf}</Project>
+      <Name>Capstone.NET</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
