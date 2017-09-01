@@ -23,7 +23,6 @@ def AssignProc(v, p):
     p.KernelSection = v.KernelProc.KernelSection
     p.CopySymbolsForVad(v.KernelProc)
     p.ID = v.KernelProc.ID
-    p.sym = v.KernelProc.sym
 
 
 

@@ -68,13 +68,21 @@ namespace Dia2Sharp
             cv.Name = name;
             cv.PdbName = pdb;
             cv.Type = typename;
-            cv.BaseVA = ParseUlong(baseva, ref parsed);
-            cv.SymAddr = ParseUlong(symaddr, ref parsed);
-            cv.VSize = ParseUint(vsize, ref parsed);
-            cv.Age = ParseUint(age, ref parsed);
-            cv.Sig = ParseUint(sig, ref parsed);
-            cv.TimeDateStamp = ParseUint(timestamp, ref parsed);
-            cv.aGuid = Guid.Parse(guid);
+
+            if(!string.IsNullOrWhiteSpace(baseva))
+                cv.BaseVA = ParseUlong(baseva, ref parsed);
+            if (!string.IsNullOrWhiteSpace(symaddr))
+                cv.SymAddr = ParseUlong(symaddr, ref parsed);
+            if (!string.IsNullOrWhiteSpace(vsize))
+                cv.VSize = ParseUint(vsize, ref parsed);
+            if (!string.IsNullOrWhiteSpace(age))
+                cv.Age = ParseUint(age, ref parsed);
+            if (!string.IsNullOrWhiteSpace(sig))
+                cv.Sig = ParseUint(sig, ref parsed);
+            if (!string.IsNullOrWhiteSpace(timestamp))
+                cv.TimeDateStamp = ParseUint(timestamp, ref parsed);
+            if (!string.IsNullOrWhiteSpace(guid))
+                cv.aGuid = Guid.Parse(guid);
             return cv;
         }
 

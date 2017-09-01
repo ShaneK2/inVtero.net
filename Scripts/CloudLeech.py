@@ -10,6 +10,8 @@ import System
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
+clr.AddReferenceToFileAndPath("Capstone.NET.dll")
+
 from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
 from inVtero.net.Support import *
@@ -36,7 +38,8 @@ NopArr = Array[Byte]([ 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 ])
 def UnLock(vtero, p):
     p.MergeVAMetaData()
     for s in p.Sections.Values:
-        print s.Name + " ",
+        if s.Name is not None:
+            print s.Name + " ",
         if s.VadFile is not None:
             print s.VadFile + " entry: ",
             print s.VadAddr.ToString("x") + " + ",

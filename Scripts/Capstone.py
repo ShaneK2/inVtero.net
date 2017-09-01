@@ -3,6 +3,8 @@ import System
 
 clr.AddReferenceToFileAndPath("inVtero.net.dll")
 clr.AddReferenceToFileAndPath("inVtero.net.ConsoleUtils.dll")
+clr.AddReferenceToFileAndPath("Capstone.NET.dll")
+
 from inVtero.net import *
 from inVtero.net.ConsoleUtils import *
 from inVtero.net.Support import *

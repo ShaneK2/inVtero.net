@@ -191,9 +191,8 @@ namespace inVtero.net
             List<Tuple<string, ulong, ulong>> rv = new List<Tuple<string, ulong, ulong>>();
 
             var modToAdd = from mod in Sections.Values
-                           where mod.DebugDetails != null && !string.IsNullOrWhiteSpace(mod.DebugDetails.PDBFullPath) &&
-                           string.IsNullOrWhiteSpace(Module) ||
-                           Path.GetFileNameWithoutExtension(mod.DebugDetails.PDBFullPath).ToLower().Contains(Path.GetFileNameWithoutExtension(Module).ToLower())
+                           where mod.DebugDetails != null && (string.IsNullOrWhiteSpace(Module) ||
+                           (!string.IsNullOrEmpty(mod.DebugDetails.PDBFullPath) && Path.GetFileNameWithoutExtension(mod.DebugDetails.PDBFullPath).ToLower().Contains(Path.GetFileNameWithoutExtension(Module).ToLower())))
                            select mod;
 
             foreach(var toAdd in modToAdd)
@@ -386,6 +385,13 @@ namespace inVtero.net
                             KernelSection.VadLength = KernelSection.Length = artifact.SizeOfImage;
                             KernelSection.VadAddr = artifact.VA;
                             KernelSection.VadFile = ms.Name = "ntoskrnl.exe";
+                        }
+
+                        if(ms.DebugDetails == null)
+                        {
+                            if (Vtero.VerboseLevel > 1)
+                                WriteColor(ConsoleColor.Yellow, $"failed debug info for PE @address {range.VA.Address:X}, extracted headers: {artifact}");
+                            continue;
                         }
 
                         // we can clobber this guy all the time I guess since everything is stateless in Sym and managed
@@ -1897,6 +1903,9 @@ namespace inVtero.net
             do
             {
                 var block2 = VGetBlock(VA);
+                if (block2 == null)
+                    return rv;
+
                 var copy_cnt = len - done < PAGE_SIZE ? (len - done) : PAGE_SIZE;
                 Array.Copy(block2, 0, rv, done, copy_cnt);
                 VA += PAGE_SIZE;
