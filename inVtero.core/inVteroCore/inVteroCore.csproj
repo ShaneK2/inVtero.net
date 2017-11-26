@@ -14,8 +14,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="PS\TypeInfo.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Remove="inVteroCore.dll.config" />
-    <None Remove="Show-TypeInfo.ps1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,6 +46,7 @@
     <Compile Include="..\..\inVtero.net\PS\inVteroPS.cs" Link="PS\inVteroPS.cs" />
     <Compile Include="..\..\inVtero.net\PS\LoadInVteroDB.cs" Link="PS\LoadInVteroDB.cs" />
     <Compile Include="..\..\inVtero.net\PS\SnapScan.cs" Link="PS\SnapScan.cs" />
+    <Compile Include="..\..\inVtero.net\PS\TypeInfo.cs" Link="PS\TypeInfo.cs" />
     <Compile Include="..\..\inVtero.net\Scanner.cs" Link="Scanner.cs" />
     <Compile Include="..\..\inVtero.net\Specialties\AMemoryRunDetector.cs" Link="Specialties\AMemoryRunDetector.cs" />
     <Compile Include="..\..\inVtero.net\Specialties\BasicRunDetector.cs" Link="Specialties\BasicRunDetector.cs" />
@@ -68,9 +72,6 @@
     <Content Include="inVteroCore.dll.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="Show-TypeInfo.ps1">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -91,6 +92,7 @@
     <None Include="..\..\inVteroPS\inVteroPS.psm1" Link="inVteroPS.psm1">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\inVteroPS\Show-TypeInfo.ps1" Link="Show-TypeInfo.ps1" />
   </ItemGroup>
 
   <ItemGroup>

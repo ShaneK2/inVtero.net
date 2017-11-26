@@ -15,7 +15,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{37B7
 		..\inVteroPS\inVtero.ps1 = ..\inVteroPS\inVtero.ps1
 		..\inVteroPS\inVteroPS.psd1 = ..\inVteroPS\inVteroPS.psd1
 		..\inVteroPS\inVteroPS.psm1 = ..\inVteroPS\inVteroPS.psm1
-		Show-TypeInfo.ps1 = Show-TypeInfo.ps1
+		..\inVteroPS\Show-TypeInfo.ps1 = ..\inVteroPS\Show-TypeInfo.ps1
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SubModules", "SubModules", "{CF3F4994-0890-4AF1-BEAC-168B136F12BC}"
