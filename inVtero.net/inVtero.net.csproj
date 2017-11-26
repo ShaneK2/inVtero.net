@@ -152,6 +152,9 @@
     <Compile Include="..\inVtero.core\inVteroCore\Hashing\JITHashServer.cs">
       <Link>Hashing\JITHashServer.cs</Link>
     </Compile>
+    <Compile Include="..\inVtero.core\inVteroCore\PS\TypeInfo.cs">
+      <Link>PS\TypeInfo.cs</Link>
+    </Compile>
     <Compile Include="ConfigOptions.cs" />
     <Compile Include="DeLocate.cs" />
     <Compile Include="DetectedProc.cs" />
