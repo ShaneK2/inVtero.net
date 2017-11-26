@@ -2,7 +2,13 @@
 ## Binary Setup package
 https://github.com/ShaneK2/inVtero.net/blob/master/quickdumps/publish.zip
 
-## IMPORTANT => You do need to have msdia140.dll registered "cmd /c regsvr32 msdia140.dll" (see zip)
+Linux uses symbol servers for type resolution, it just works ;)
+
+Check out inVteroCore release for providing integrity for XEN and VMWare on Linux (or anywhere CORECLR runs, OSX & FBSD)
+
+
+##$ IMPORTANT (Windows users on .NET) => You do need to have msdia140.dll registered "cmd /c regsvr32 msdia140.dll" (see zip)
+
 
 No configuration needed, completely dynamic / duck typing
 
