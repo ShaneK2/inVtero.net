@@ -23,7 +23,8 @@ $p += ";.;" + $moduleItem.DirectoryName
 Import-Module -Force $moduleItem.FullName
 $Module = Get-Module $moduleItem.BaseName
 
-[inVtero.net.Vtero]::VerboseOutput = $true
+# some info from the internals
+#[inVtero.net.Vtero]::VerboseOutput = $true
 
 ConvertTo-TypeInfo -I C:\windows\system32\ntoskrnl.exe -T _EPROCESS
 

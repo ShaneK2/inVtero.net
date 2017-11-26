@@ -208,16 +208,16 @@ namespace inVteroCore.PS
                 if ((typeInfo.TypeName as string).StartsWith("<un"))
                 {
                     Bug = true;
-                    WriteLine("/* !TODO: Fix for this declaration");
+                    WriteObject("/* !TODO: Fix for this declaration");
                 }
 
                 var structHdr = $"typedef struct {typeInfo.TypeName}";
                 if (structHdr.Length > maxWidth)
                     maxWidth = structHdr.Length;
 
-                Write(structHdr.PadRight(maxWidth+10));
+                WriteObject(structHdr.PadRight(maxWidth+10), true);
                 // meta
-                Write($"\t// total length {typeInfo.Length:x6}{Environment.NewLine}{{{Environment.NewLine}");
+                WriteObject($"\t// total length {typeInfo.Length:x6}{Environment.NewLine}{{{Environment.NewLine}");
 
                 foreach (var name in SymNames.Keys)
                 {
@@ -233,16 +233,16 @@ namespace inVteroCore.PS
                     // meta info
                     var meta = $"// +0x{MetaInfo.OffsetPos:x6} len(0x{MetaInfo.Length:x6}) ";
 
-                    Write($"  {line.PadRight(maxWidth + 10)} {meta}"); 
+                    WriteObject($"  {line.PadRight(maxWidth + 10)} {meta}"); 
 
                     // fine end of line
-                    Console.WriteLine();
+                    //Console.WriteLine();
                 }
                 var shortStructName = (typeInfo.TypeName as string).Substring(1);
 
-                WriteLine($"}} {shortStructName}, *P{shortStructName};{Environment.NewLine}");
+                WriteObject($"}} {shortStructName}, *P{shortStructName};{Environment.NewLine}");
                 if (Bug)
-                    WriteLine("***/");
+                    WriteObject("***/");
             }
         }
 
