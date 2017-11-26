@@ -406,7 +406,7 @@ namespace inVtero.net
         }
 
         // These parallel function's almost always are I/O bound and slower 
-        public void HashAllProcs(MetaDB DB, bool DoBitmapScan = true, bool DoCloudScan = false)
+        public void HashAllProcs(MetaDB DB, bool DoBitmapScan = true, bool DoCloudScan = false, bool DoPageHashScan = false)
         {
             ConcurrentBag<Tuple<long, string, string>[]> rv = new ConcurrentBag<Tuple<long, string, string>[]>();
             HashRecord[] hr;
@@ -450,7 +450,7 @@ namespace inVtero.net
 
 
                     if (Vtero.VerboseLevel > 3) WriteLine("Hashing");
-                    hr = proc.VADHash(CollectKernel, true, true, true, DoBitmapScan, DoCloudScan);
+                    hr = proc.VADHash(CollectKernel, true, true, true, DoBitmapScan, DoCloudScan, DoPageHashScan);
 
                     if (!DoBitmapScan && !DoCloudScan)
                     {

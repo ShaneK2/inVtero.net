@@ -79,7 +79,6 @@ namespace inVtero.net.Hashing
         // at any time with just setting 1 here
         BlockingCollection<Tuple<int, HashRec[]>> ReadyQueue = new BlockingCollection<Tuple<int, HashRec[]>>(1);
 
-
         public FileLoader(MetaDB mDB, int bufferCount = 0, string metaInfoString = null, Func < HashLib.IHash> getHP = null)
         {
             var sep = new char[] { ':' };

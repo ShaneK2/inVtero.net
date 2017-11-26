@@ -20,6 +20,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Dia2Sharp;
+using inVteroCore.Hashing;
 
 namespace inVtero.net
 {
@@ -40,6 +41,11 @@ namespace inVtero.net
         [ProtoIgnore]
         public ulong Address { get { return (ulong) VA.Address; } }
         public long Length { get; set; }
+
+        public (string Name, (long Address, byte[] Block, MiniSection miss)[] SparseArray) SparseListInfo;
+
+        // if we used the HashServer or pdb2json/PageHash REST calls we will see this populated with the results of a sha256 check
+        public HashSet<PageHashBlockResult> PageHashResponse;
 
         public VIRTUAL_ADDRESS VA;
 

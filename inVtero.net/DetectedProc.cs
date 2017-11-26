@@ -36,6 +36,10 @@ using System.Globalization;
 using inVtero.net.Hashing;
 using System.Dynamic;
 using static inVtero.net.MagicNumbers;
+#if NETSTANDARD2_0
+using CapstoneCore;
+#endif
+using inVteroCore.Hashing;
 
 
 namespace inVtero.net
@@ -87,11 +91,11 @@ namespace inVtero.net
         // the high bit signals if we collected a kernel address space for this AS group
         public int AddressSpaceID;
         
-        #if !NETSTANDARD2_0
+#if !NETSTANDARD2_0
         [ProtoIgnore]
         public List<ScanResult> YaraOutput;
         public long YaraTotalScanned;
-        #endif
+#endif
 
         [ProtoIgnore]
         public dynamic EProc;
@@ -1032,7 +1036,101 @@ namespace inVtero.net
 
         }
 
-        public HashRecord[] VADHash(bool KernelSpace = false, bool DoReReLocate = true, bool ExecOnly = true, bool SinglePFNDump = true, bool BitmapScan = true, bool CloudScan = false)
+        /// <summary>
+        /// Link together the logical metadata from any detected PE headers with the VAD permission bits from the kernel 
+        /// as well as the current flags set for the PTE
+        /// </summary>
+        /// <param name="VA"></param>
+        /// <param name="memsec"></param>
+        /// <param name="SinglePFNDump"></param>
+        /// <param name="ExecOnly"></param>
+        void AttachSparseListInfo(long VA, MemSection memsec, bool SinglePFNDump, bool ExecOnly)
+        {
+            byte[] ablock = null;
+            string aName = string.Empty;
+            bool PagedIn = false;
+            List<(long Address, byte[] Block, MiniSection Miss)> SparseList = new List<(long, byte[], MiniSection)>();
+
+            (string Name, (long Address, byte[] Block, MiniSection Miss)[] SparseArray) rv;
+
+            if (memsec.Module == null)
+            {
+                var blx = VGetBlock(VA, ref PagedIn);
+                if (PagedIn)
+                {
+                    memsec.Module = Extract.IsBlockaPE(blx);
+                    SparseList.Add((VA, blx, new MiniSection()));
+                }
+            }
+            memsec.NormalizedName = GetNormalized(memsec.VadFile, true);
+
+            if (Vtero.VerboseLevel > 1) Console.WriteLine($"Analyzing memory section: {memsec.NormalizedName}");
+
+            if (memsec.Module != null && !Vtero.ModuleCache.ContainsKey(VA))
+                Vtero.ModuleCache[VA] = memsec;
+
+            if (memsec.Module == null)
+            {
+                // find this from other process
+                if (Vtero.ModuleCache.ContainsKey(VA))
+                {
+                    var cachdSec = Vtero.ModuleCache[VA];
+                    if (cachdSec.NormalizedName.Contains(memsec.NormalizedName) && cachdSec.Module != null)
+                        memsec.Module = cachdSec.Module;
+                }
+            }
+
+            for (long SecOffset = 0; SecOffset < memsec.VadLength; SecOffset += PAGE_SIZE)
+            {
+                var pte = MemAccess.VirtualToPhysical(CR3Value, VA + SecOffset);
+
+                if (SinglePFNDump)
+                {
+                    if (MemAccess.IsDumpedPFN(pte))
+                        continue;
+                    MemAccess.SetDumpedPFN(pte);
+                }
+
+                if (ExecOnly && pte.NoExecute && SecOffset > 0)
+                    continue;
+
+                // skip since we cheated and got the header early
+                if (SecOffset > 0 || ablock == null)
+                {
+                    ablock = VGetBlock(VA + SecOffset, ref PagedIn);
+
+                    SparseList.Add((VA + SecOffset, ablock, new MiniSection() { Characteristics = (pte.NoExecute ? PECaricteristicFlags.HasData : PECaricteristicFlags.Exec) } ));
+                }
+                if (!PagedIn)
+                    continue;
+
+                aName = memsec.NormalizedName;
+
+                if (memsec.Module != null)
+                {
+                    MiniSection ms = MiniSection.Empty;
+                    // apply the module name
+                    // append the module section name (.text whatever)
+                    for (int i = 0; i < memsec.Module.Sections.Count(); i++)
+                    {
+                        if (SecOffset >= memsec.Module.Sections[i].VirtualAddress &&
+                            SecOffset < memsec.Module.Sections[i].VirtualAddress + memsec.Module.Sections[i].RawFileSize)
+                        {
+                            ms = memsec.Module.Sections[i];
+                            aName += GetNormalized(ms.Name, false);
+                            break;
+                        }
+                    }
+                }
+                else
+                    aName += $"+0x{SecOffset:x}";
+            }
+            rv.Name = aName;
+            rv.SparseArray = SparseList.ToArray();
+            memsec.SparseListInfo = rv;
+        }
+
+        public void JitHashScan(bool KernelSpace = false, bool SinglePFNDump = true, bool ExecOnly = true)
         {
             var hr = new ConcurrentStack<HashRecord>();
 
@@ -1046,108 +1144,99 @@ namespace inVtero.net
                 MergeKernelModules();
 
             foreach (var s in Sections)
+                AttachSparseListInfo(s.Key, s.Value, SinglePFNDump, ExecOnly);
+
+            Parallel.ForEach(Sections, async (s) => await JITHashServer.CheckSetFor(this, s.Value));
+
+            foreach(var s in Sections.Values)
             {
-                string Name = string.Empty;
-                long VA = s.Value.VadAddr;
+                if (s.PageHashResponse != null)
+                {
+                    var cnt = (from phz in s.PageHashResponse
+                               where phz.HashCheckEquivalant
+                               select phz).Count();
+
+                    WriteColor(ConsoleColor.Cyan, $"Validated {s.SparseListInfo.Name} @ {cnt * 100.0 / (s.SparseListInfo.SparseArray.Length - 1)}");
+                } else
+                    WriteColor(ConsoleColor.Yellow, $"NO DATA {s.SparseListInfo.Name} @ {0}%");
+            }
+        }
+
+        public HashRecord[] VADHash(bool KernelSpace = false, bool DoReReLocate = true, bool ExecOnly = true, bool SinglePFNDump = true, bool BitmapScan = true, bool CloudScan = false, bool PageHashScan = false)
+        {
+            var hr = new ConcurrentStack<HashRecord>();
+
+            if (Sections.Count < 2)
+            {
+                if (Vtero.VerboseLevel > 1) Console.WriteLine($"Walking VAD for process.");
+                ListVad(VadRootPtr);
+            }
+
+            if (KernelSpace)
+                MergeKernelModules();
+
+            foreach (var s in Sections)
+                AttachSparseListInfo(s.Key, s.Value, SinglePFNDump, ExecOnly);
+
+            if (PageHashScan)
+                Parallel.ForEach(Sections, async (s) => await JITHashServer.CheckSetFor(this, s.Value));
+
+            foreach (var s in Sections)
+            {
+                long VA = s.Value.VA.Address;
                 var memsec = s.Value;
-                bool PagedIn = false;
-                byte[] block = null;
-
-                if (memsec.Module == null)
-                {
-                    block = VGetBlock(VA, ref PagedIn);
-                    if (PagedIn) 
-                        memsec.Module = Extract.IsBlockaPE(block);
-                }
-
-                //if (ProcessID == 4 && memsec.DebugDetails != null)
-                //    memsec.NormalizedName = GetNormalized(memsec.DebugDetails.PdbName, true);
-                //else
-                memsec.NormalizedName = GetNormalized(memsec.VadFile, true);
-
-                if (Vtero.VerboseLevel > 1) Console.WriteLine($"Analyzing memory section: {memsec.NormalizedName}");
-
-                if (memsec.Module != null && !Vtero.ModuleCache.ContainsKey(VA))
-                    Vtero.ModuleCache[VA] = memsec;
-
-                if (memsec.Module == null)
-                {
-                    // find this from other process
-                    if (Vtero.ModuleCache.ContainsKey(VA))
-                    {
-                        var cachdSec = Vtero.ModuleCache[VA];
-                        if (cachdSec.NormalizedName.Contains(memsec.NormalizedName) && cachdSec.Module != null)
-                            memsec.Module = cachdSec.Module;
-                    }
-                }
 
                 // proc is set in hashrecord so we can track it back later if we want to see what/where
                 var hRecord = new HashRecord();
-
-                for (long SecOffset = 0; SecOffset < s.Value.VadLength; SecOffset += PAGE_SIZE)
+                int svr_validated = 0;
+                foreach ((long Addr, byte[] Block, MiniSection miss) in s.Value.SparseListInfo.SparseArray)
                 {
-                    var pte = MemAccess.VirtualToPhysical(CR3Value, VA + SecOffset);
-
-                    if (SinglePFNDump)
+                    bool isSha256Validated = false;
+                    try
                     {
-                        if (MemAccess.IsDumpedPFN(pte))
-                            continue;
-                        MemAccess.SetDumpedPFN(pte);
+                        isSha256Validated = ((from phz in s.Value.PageHashResponse
+                                                  where phz.Address == Addr && phz.HashCheckEquivalant
+                                                  select phz).Count() > 0);
+                    } // since this is from the network
+                    // it may be malformed empty or something, ignore failures since we have fail closed
+                    catch (Exception ex) { }
+                    if (isSha256Validated)
+                    {
+                        svr_validated++;
+                        ProcValidate++;
+                        ProcTotal++;
+                        continue;
                     }
 
-                    if (ExecOnly && pte.NoExecute && SecOffset > 0)
-                        continue;
 
-                    // skip since we cheated and got the header early
-                    if (SecOffset > 0 || block == null)
-                        block = VGetBlock(VA + SecOffset, ref PagedIn);
-
-                    if (!PagedIn)
-                        continue;
-
-                    Name = memsec.NormalizedName;
-
-                    if (memsec.Module != null)
-                    {
-                        MiniSection ms = MiniSection.Empty;
-                        // apply the module name
-                        // append the module section name (.text whatever)
-                        for (int i = 0; i < memsec.Module.Sections.Count(); i++)
-                        {
-                            if (SecOffset >= memsec.Module.Sections[i].VirtualAddress &&
-                                SecOffset < memsec.Module.Sections[i].VirtualAddress + memsec.Module.Sections[i].RawFileSize)
-                            {
-                                ms = memsec.Module.Sections[i];
-                                Name += GetNormalized(ms.Name, false);
-                                break;
-                            }
-                        }
-                        if (ExecOnly && (ms.IsExec || ms.IsCode) && DoReReLocate)
-                            AttemptDelocate(block, memsec, SecOffset);
-                    }
-                    else
-                        Name += $"+0x{SecOffset:x}";
+                    if (ExecOnly && (miss.IsExec || miss.IsCode) && DoReReLocate)
+                        AttemptDelocate(Block, memsec, Addr - VA);
 
                     HashRec[] hrecs = null;
 
-                    if(!CloudScan)
-                        hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null, 0, VA + SecOffset, HDB.MinBlockSize);
+                    if (!CloudScan)
+                        hrecs = FractHashTree.CreateRecsFromMemory(Block, HDB.MinBlockSize, null, 0, Addr, HDB.MinBlockSize);
                     else
-                        hrecs = FractHashTree.CreateRecsFromMemory(block, HDB.MinBlockSize, null, 0, VA + SecOffset, HDB.MinBlockSize, false, true);
+                        hrecs = FractHashTree.CreateRecsFromMemory(Block, HDB.MinBlockSize, null, 0, Addr, HDB.MinBlockSize, false, true);
 
                     if (BitmapScan)
                     {
                         var passed = HDB.BitmapScan(hrecs);
-                        //ProcTotal += hrecs.Length;
-                        //ProcValidate += passed;
-                        hRecord.AddBlock(Name, VA + SecOffset, hrecs, passed);
-                    } else
+                        hRecord.AddBlock(s.Value.SparseListInfo.Name, Addr, hrecs, passed);
+                    }
+                    else
                         // setup records for expensive check by caller
-                        hRecord.AddBlock(Name, VA + SecOffset, hrecs);
+                        hRecord.AddBlock(s.Value.SparseListInfo.Name, Addr, hrecs);
                 }
+                if (Vtero.VerboseLevel > 2)
+                    WriteColor(ConsoleColor.Green, $"JitHash validated {svr_validated} of {s.Value.SparseListInfo.SparseArray.Length} entries");
+
+                // ensure we wipe out a chance for some memory to be dominated / kept alive
+                Array.ForEach(s.Value.SparseListInfo.SparseArray, (x) => x.Block = null);
+                s.Value.SparseListInfo.SparseArray = null;
+
                 hr.Push(hRecord);
             }
-
             HashRecords = hr.ToArray();
             return HashRecords;
         }
@@ -1176,7 +1265,6 @@ namespace inVtero.net
                 }
             }
         }
-
 
         public void VADDump(string Folder, bool KernelSpace = false, bool DoReReLocate = true)
         {
@@ -1455,7 +1543,7 @@ namespace inVtero.net
             Extract Ext = sec.Module;
             long VA = sec.VA.Address;
 
-            var _va = VA + Ext.DebugDirPos;
+            var _va = VA + Ext.Directories[(int) PEDirectory.Debug].Item1;
             var block = GetVirtualByteLen(_va,28);
 
             var TimeDate2 = BitConverter.ToUInt32(block, 4);

@@ -2,9 +2,9 @@
   "profiles": {
     "inVteroCore": {
       "commandName": "Executable",
-      "executablePath": "C:\\Program Files\\PowerShell\\6.0.0-beta.5\\powershell.exe",
-      "commandLineArgs": ".\\inVtero.ps1",
-      "workingDirectory": "C:\\Users\\files\\Source\\Code\\inVtero.net\\master\\inVtero.net\\inVtero.core\\inVteroCore\\bin\\Release\\netstandard2.0"
+      "executablePath": "C:\\Users\\files\\Source\\git\\PowerShell\\src\\powershell-win-core\\bin\\Debug\\netcoreapp2.0\\win7-x64\\publish\\pwsh.exe",
+      "commandLineArgs": "-i",
+      "workingDirectory": "C:\\Users\\files\\Source\\Code\\inVtero.net\\master\\inVtero.net\\inVtero.core\\inVteroCore\\bin\\Debug\\netstandard2.0\\"
     }
   }
 }

@@ -6,7 +6,7 @@
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefineConstants>TRACE;DEBUG;NETSTANDARD2_0;</DefineConstants>
+    <DefineConstants>TRACE;NETSTANDARD2_0;DEBUG;NETSTANDARD2_0</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <None Remove="inVteroCore.dll.config" />
+    <None Remove="Show-TypeInfo.ps1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,7 +53,6 @@
     <Compile Include="..\..\inVtero.net\Specialties\VMWare.cs" Link="Specialties\VMWare.cs" />
     <Compile Include="..\..\inVtero.net\Specialties\XEN.cs" Link="Specialties\XEN.cs" />
     <Compile Include="..\..\inVtero.net\Support.cs" Link="Support.cs" />
-    <Compile Include="..\..\inVtero.net\Support\Capstone.cs" Link="Support\Capstone.cs" />
     <Compile Include="..\..\inVtero.net\Support\DataMon.cs" Link="Support\DataMon.cs" />
     <Compile Include="..\..\inVtero.net\Support\Heaps.cs" Link="Support\Heaps.cs" />
     <Compile Include="..\..\inVtero.net\Support\JunctionPoint.cs" Link="Support\JunctionPoint.cs" />
@@ -68,10 +68,12 @@
     <Content Include="inVteroCore.dll.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="Show-TypeInfo.ps1">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Hashing\" />
     <Folder Include="Support\" />
     <Folder Include="Specialties\" />
   </ItemGroup>
@@ -83,6 +85,9 @@
     <Content Include="..\..\inVteroPS\inVteroPS.psd1" Link="inVteroPS.psd1">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\..\inVteroPS\CapstoneDisassembly.ps1" Link="CapstoneDisassembly.ps1">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <None Include="..\..\inVteroPS\inVteroPS.psm1" Link="inVteroPS.psm1">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -91,12 +96,14 @@
   <ItemGroup>
     <PackageReference Include="CoreCompat.ELFSharp" Version="1.0.5" />
     <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
+    <PackageReference Include="PowerShellStandard.Library" Version="3.0.0-preview-01" />
     <PackageReference Include="protobuf-net" Version="2.3.2" />
     <PackageReference Include="System.Buffers" Version="4.4.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Dia2Sharp\Dia2Sharp.csproj" />
+    <ProjectReference Include="..\SubModules\CapstoneCore\CapstoneCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

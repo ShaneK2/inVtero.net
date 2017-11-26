@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26730.12
+VisualStudioVersion = 15.0.26730.16
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inVtero.net", "inVtero.net\inVtero.net.csproj", "{BBA65FAD-57B1-4B78-B262-E542A88440D6}"
 EndProject
@@ -193,8 +193,8 @@ Global
 		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Debug|x64.Build.0 = CSV4|x64
 		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Debug|x86.ActiveCfg = Debug|x64
 		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Release|Any CPU.ActiveCfg = Release|x64
-		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Release|x64.ActiveCfg = Release|x64
-		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Release|x64.Build.0 = Release|x64
+		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Release|x64.ActiveCfg = CSV4|x64
+		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Release|x64.Build.0 = CSV4|x64
 		{A631CE5C-E28F-49DE-8E17-57918AE2AFCF}.Release|x86.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution

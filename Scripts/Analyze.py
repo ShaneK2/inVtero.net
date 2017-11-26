@@ -253,7 +253,9 @@ def QuickSetup(MemoryDump, IgnoreSave = False):
     kMinorVer = proc.GetSymValueLong("NtBuildNumber") & 0xffff
     Console.ForegroundColor = ConsoleColor.Cyan
     print "Kernel build: " + kMinorVer.ToString()
+    vtero.MemAccess.MapViewSize = 128 * 1024
     logicalList = vtero.WalkProcList(vtero.KernelProc)
+    vtero.KernelProc.InitSymbolsForVad()
     return vtero
 
 #########################################################################

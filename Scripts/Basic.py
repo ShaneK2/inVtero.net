@@ -19,7 +19,7 @@ from System.Text import Encoding
 
 def AssignProc(v, p):
     p.MemAccess = Mem(v.MemAccess)
-    pt = PageTable.AddProcess(p, p.MemAccess)
+    #pt = PageTable.AddProcess(p, p.MemAccess)
     p.KernelSection = v.KernelProc.KernelSection
     p.CopySymbolsForVad(v.KernelProc)
     p.ID = v.KernelProc.ID
@@ -77,9 +77,9 @@ def db(p, addr, len=128, bytesPerLine = 16):
             Misc.WxColor(ConsoleColor.Green, ConsoleColor.Black, words[curr+c].ToString("x2") + " ")
         for ch in range(0, bytesPerLine):
             myChar = Encoding.ASCII.GetString(words, curr+ch,1)[0]
-            if Char.IsLetterOrDigit(myChar) == False:
-                myChar = " "
-            Misc.WxColor(ConsoleColor.Cyan, ConsoleColor.Black, myChar + " ")
+            #if Char.IsLetterOrDigit(myChar) == False:
+            #    myChar = " "
+            Misc.WxColor(ConsoleColor.Cyan, ConsoleColor.Black, myChar)
         Console.Write(Environment.NewLine)
         curr = curr + bytesPerLine
 

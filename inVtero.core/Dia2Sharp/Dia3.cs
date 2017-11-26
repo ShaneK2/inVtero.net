@@ -418,14 +418,16 @@ namespace Dia2Sharp
         static ConcurrentDictionary<string, Task<string>> _web_cache = new ConcurrentDictionary<string, Task<string>>();
 
         // Returns JSON string
-        public async static Task<string> GET(string queryStr = null, string url = "https://pdb2json.azurewebsites.net/api/")
+        public async static Task<string> GET(string queryStr = null, 
+            //string url = "http://zammey:7071/api/")
+            string url = "https://pdb2json.azurewebsites.net/api/")
         {
             var fullUri = $"{url}{queryStr}";
             return await GetWebPageAsync(fullUri);
         }
 
         static Task<string> GetWebPageAsync(string uri)
-        {
+        {   
             if (_web_cache.TryGetValue(uri, out Task<string> downloadTask)) return downloadTask;
             return _web_cache[uri] = new WebClient().DownloadStringTaskAsync(uri);
         }

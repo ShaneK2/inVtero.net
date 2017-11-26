@@ -46,6 +46,11 @@ namespace inVtero.net.PS
         public bool LocalBitmap { get; set; }
 
         [Parameter(Mandatory = false,
+            HelpMessage = "Enable Cloud PageHash Scan"),
+            Alias("CHash")]
+        public bool PageHash { get; set; }
+
+        [Parameter(Mandatory = false,
             HelpMessage = "Enable Cloud Bitmap Scan"),
             Alias("CBit")]
         public bool CloudBitmap { get; set; }
@@ -95,7 +100,7 @@ namespace inVtero.net.PS
             foreach(var p in vtero.Processes)
                 WriteColor(1, ConsoleColor.Cyan, $"{p}");
 
-            try { vtero.HashAllProcs(mdb, LocalBitmap, CloudBitmap); }
+            try { vtero.HashAllProcs(mdb, LocalBitmap, CloudBitmap, PageHash); }
             catch (Exception ex) { WriteColor(ConsoleColor.Red, $"Exception in Hash Generation {ex} "); }
 
             WriteColor(1, ConsoleColor.Cyan, "Done");

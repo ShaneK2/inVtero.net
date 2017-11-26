@@ -21,10 +21,10 @@ if($IsCoreCLR)
 		#$InputSnapshot = "/data/test/MSEdge - Win10_preview-e70efcb2.vmem"
 	} 
 	elseif($IsWindows) {
-		$vm = "Windows 10 x64-PRO-1703\Windows 10 x64-PRO-1703-40599dd1.vmem";
+		$vm = "Windows Server 2016-02431799.vmem";
 		#$vm = "MSEdge.Win10.RS2.VMWare\MSEdge - Win10_preview\MSEdge - Win10_preview-e70efcb2.vmem";
 		$InVteroDir = "C:\temp\inVtero.net"
-		$InputSnapshot = "C:\Users\files\VMs\" + $vm
+		$InputSnapshot = "D:\Users\files\VMs\Windows Server 2016\" + $vm
 	}
 	elseif($IsOsX)
 	{
@@ -50,9 +50,9 @@ $Module = Get-Module $moduleItem.BaseName
 
 # setup GLobal flags
 [inVtero.net.Vtero]::VerboseLevel = 1
-[inVtero.net.Vtero]::VerboseOutput = true;
-[inVtero.net.Vtero]::DiagOutput = false;
-[inVtero.net.Vtero]::DisableProgressBar = true;
+[inVtero.net.Vtero]::VerboseOutput = $true
+[inVtero.net.Vtero]::DiagOutput = $false
+[inVtero.net.Vtero]::DisableProgressBar = $true
 
 #Add-InVteroDB -VF C:\temp\psIV -HS 256 -BufferCount 100000000 -I C:\Windows\System32\drivers
 # stopwatch for perf testing
@@ -61,7 +61,7 @@ Write-Host "Running Test-Snapshot cmdlet..."
 Measure-Command {
 try
 {
-	Test-Snapshot -VF $InVteroDir -HashSize 256 -InputFile $InputSnapshot -M GENERIC
+	Test-Snapshot -CHash $True -VF $InVteroDir -HashSize 256 -InputFile $InputSnapshot -M GENERIC 
 } catch {
     Write-Error $_.Exception.ToString()
 	Read-Host
